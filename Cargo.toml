@@ -66,8 +66,6 @@ glob = "0.3"
 # HTTP (for OAuth)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
-# Process execution
-pty-process = "0.4"
 
 # Browser
 webbrowser = "1.0"
@@ -77,6 +75,9 @@ dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 console = "0.15"
 shellexpand = "3.1"
 terminal_size = "0.4"
+
+[target.'cfg(unix)'.dependencies]
+pty-process = "0.4"
 
 [dev-dependencies]
 tempfile = "3.10"
