@@ -221,7 +221,7 @@ fn filter_latest_models(models: Vec<String>) -> Vec<String> {
         debug!("  Parsed {}: family={}, version=({}, {}, {})", model, family, major, minor, date);
         
         // Check if this is better than current best
-        let dominated = latest.get(family).map_or(false, |(_, (cur_m, cur_n, cur_d))| {
+        let dominated = latest.get(family).is_some_and(|(_, (cur_m, cur_n, cur_d))| {
             // Compare by: major, then minor, then date
             (major, minor, date) <= (*cur_m, *cur_n, *cur_d)
         });
@@ -268,7 +268,7 @@ fn save_claude_models(models: &[String]) -> Result<(), std::io::Error> {
     }
     
     let json = serde_json::to_string_pretty(&configs)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     std::fs::write(&path, json)?;
     
     info!("Saved {} Claude Code models to {:?}", configs.len(), path);

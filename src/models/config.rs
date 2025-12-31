@@ -249,7 +249,7 @@ impl ModelRegistry {
                  FROM models ORDER BY name",
             )
             .map_err(|e| {
-                ModelConfigError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                ModelConfigError::Io(std::io::Error::other(e.to_string()))
             })?;
 
         let rows = stmt
@@ -277,13 +277,11 @@ impl ModelRegistry {
                 })
             })
             .map_err(|e| {
-                ModelConfigError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                ModelConfigError::Io(std::io::Error::other(e.to_string()))
             })?;
 
-        for row in rows {
-            if let Ok(config) = row {
-                registry.models.insert(config.name.clone(), config);
-            }
+        for config in rows.flatten() {
+            registry.models.insert(config.name.clone(), config);
         }
 
         // Also load legacy JSON files (for OAuth models, etc.)
@@ -334,10 +332,7 @@ impl ModelRegistry {
                     ],
                 )
                 .map_err(|e| {
-                    ModelConfigError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        e.to_string(),
-                    ))
+                    ModelConfigError::Io(std::io::Error::other(e.to_string()))
                 })?;
         }
 
@@ -372,7 +367,7 @@ impl ModelRegistry {
                 ],
             )
             .map_err(|e| {
-                ModelConfigError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                ModelConfigError::Io(std::io::Error::other(e.to_string()))
             })?;
 
         Ok(())
@@ -606,7 +601,7 @@ impl ModelRegistry {
                     .custom_endpoint
                     .as_ref()
                     .map(|e| {
-                        e.api_key.as_ref().map_or(false, |key| {
+                        e.api_key.as_ref().is_some_and(|key| {
                             if key.starts_with('$') {
                                 // It's an env var reference, check DB then env
                                 let var_name = key

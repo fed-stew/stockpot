@@ -134,7 +134,7 @@ impl InvokeAgentExecutor {
     }
 
     fn definition() -> ToolDefinition {
-        InvokeAgentTool::default().definition()
+        InvokeAgentTool.definition()
     }
 }
 
@@ -270,7 +270,7 @@ impl serdes_ai_agent::ToolExecutor<()> for InvokeAgentExecutor {
         })
         .await
         .map_err(|e| ToolError::execution_failed(format!("Task join error: {}", e)))?
-        .map_err(|e| ToolError::execution_failed(e))?;
+        .map_err(ToolError::execution_failed)?;
 
         Ok(ToolReturn::json(serde_json::json!({
             "agent": args.agent_name,

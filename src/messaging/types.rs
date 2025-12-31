@@ -126,7 +126,7 @@ pub enum AgentEvent {
 }
 
 /// Tool execution lifecycle.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolMessage {
     pub tool_name: String,
     pub status: ToolStatus,
@@ -136,18 +136,6 @@ pub struct ToolMessage {
     pub result: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-impl Default for ToolMessage {
-    fn default() -> Self {
-        Self {
-            tool_name: String::new(),
-            status: ToolStatus::default(),
-            args: None,
-            result: None,
-            error: None,
-        }
-    }
 }
 
 /// Tool execution status.

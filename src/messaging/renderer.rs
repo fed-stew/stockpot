@@ -556,7 +556,7 @@ impl TerminalRenderer {
         match msg.status {
             ToolStatus::Started => {
                 // Print tool name in dim
-                print!("\n");
+                println!();
                 stdout()
                     .execute(SetAttribute(Attribute::Dim))?
                     .execute(Print(&msg.tool_name))?
