@@ -1,0 +1,84 @@
+[package]
+name = "stockpot"
+version = "0.1.0"
+edition = "2021"
+default-run = "spot"
+description = "AI-powered coding assistant CLI"
+license = "MIT"
+authors = ["Stockpot Contributors"]
+repository = "https://github.com/your-org/stockpot"
+keywords = ["ai", "cli", "coding", "assistant", "llm"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "spot"
+path = "src/main.rs"
+
+[dependencies]
+# SerdesAI - AI agent framework
+serdes-ai = { path = "../serdesAI/serdes-ai", features = ["full"] }
+serdes-ai-core = { path = "../serdesAI/serdes-ai-core" }
+serdes-ai-agent = { path = "../serdesAI/serdes-ai-agent", features = ["tracing-integration"] }
+serdes-ai-models = { path = "../serdesAI/serdes-ai-models", features = ["full", "chatgpt-oauth", "claude-code-oauth"] }
+serdes-ai-providers = { path = "../serdesAI/serdes-ai-providers", features = ["full"] }
+serdes-ai-tools = { path = "../serdesAI/serdes-ai-tools" }
+serdes-ai-mcp = { path = "../serdesAI/serdes-ai-mcp" }
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+reedline = "0.37"
+nu-ansi-term = "0.50"
+
+# Terminal UI
+crossterm = "0.28"
+ratatui = "0.29"
+syntect = "5.2"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+
+# Async
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4"] }
+which = "6.0"
+regex = "1.10"
+glob = "0.3"
+
+# HTTP (for OAuth)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Process execution
+pty-process = "0.4"
+
+# Browser
+webbrowser = "1.0"
+
+# Interactive terminal
+dialoguer = { version = "0.11", features = ["fuzzy-select"] }
+console = "0.15"
+shellexpand = "3.1"
+
+[dev-dependencies]
+tempfile = "3.10"
+tokio-test = "0.4"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

@@ -1,0 +1,36 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Debug
+*.log
+/logs/
+/working_logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Temporary/working files
+*.md.bak
+compass_artifact_*
+
+# Debug/proxy scripts
+mitmproxy_logger.py
+run_with_proxy.sh
