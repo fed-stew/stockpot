@@ -42,6 +42,9 @@ pub mod session;
 pub mod tokens;
 pub mod tools;
 
+#[cfg(feature = "gui")]
+pub mod gui;
+
 // Re-export commonly used types
 pub use agents::{
     AgentManager, SpotAgent, BoxedAgent, AgentExecutor, ExecutorResult, 

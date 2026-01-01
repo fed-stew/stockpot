@@ -14,6 +14,11 @@ categories = ["command-line-utilities", "development-tools"]
 name = "spot"
 path = "src/main.rs"
 
+[[bin]]
+name = "stockpot-gui"
+path = "src/bin/stockpot-gui.rs"
+required-features = ["gui"]
+
 [dependencies]
 # SerdesAI - AI agent framework
 serdes-ai = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full"] }
@@ -76,6 +81,10 @@ console = "0.15"
 shellexpand = "3.1"
 terminal_size = "0.4"
 
+# GUI (optional - for stockpot-gui binary)
+gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", optional = true }
+unicode-segmentation = { version = "1.11", optional = true }
+
 [target.'cfg(unix)'.dependencies]
 pty-process = "0.4"
 
@@ -84,6 +93,10 @@ tempfile = "3.10"
 tokio-test = "0.4"
 assert_cmd = "2.0"
 predicates = "3.1"
+
+[features]
+default = []
+gui = ["dep:gpui", "dep:unicode-segmentation"]
 
 [profile.release]
 lto = "thin"
