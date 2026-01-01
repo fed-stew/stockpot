@@ -1,8 +1,11 @@
 //! Stockpot GUI - GPUI-based graphical interface for the stockpot agent framework
 
+use std::sync::Arc;
+
 use gpui::{prelude::*, px, size, App, Application, Bounds, SharedString, WindowBounds, WindowOptions};
 
-use stockpot::gui::{register_keybindings, ChatApp};
+use stockpot::gui::{register_keybindings, ChatApp, GlobalLanguageRegistry};
+use zed_theme::{ActiveTheme as _, LoadThemes};
 
 fn main() {
     // Create a Tokio runtime for async operations (HTTP clients, etc.)
@@ -10,6 +13,25 @@ fn main() {
     let _guard = runtime.enter();
 
     Application::new().run(|cx: &mut App| {
+        // Zed markdown depends on Zed's settings + theme globals.
+        zed_settings::init(cx);
+        zed_theme::init(LoadThemes::JustBase, cx);
+
+        // Enable syntax highlighting in fenced code blocks.
+        let language_registry = Arc::new(zed_language::LanguageRegistry::new(
+            cx.background_executor().clone(),
+        ));
+        language_registry.set_theme(cx.theme().clone());
+
+        let fs: Arc<dyn zed_fs::Fs> = Arc::new(zed_fs::RealFs::new(
+            None,
+            cx.background_executor().clone(),
+        ));
+        let node_runtime = zed_node_runtime::NodeRuntime::unavailable();
+
+        zed_languages::init(language_registry.clone(), fs, node_runtime, cx);
+        cx.set_global(GlobalLanguageRegistry(language_registry));
+
         // Register keybindings
         register_keybindings(cx);
 

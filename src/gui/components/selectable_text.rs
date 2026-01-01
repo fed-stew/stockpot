@@ -8,10 +8,12 @@ use std::ops::Range;
 use gpui::{
     div, prelude::*, App, ClipboardItem, Context, CursorStyle, FocusHandle, Focusable, Hsla,
     IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point, SharedString,
-    StyledText, TextRun, Window,
+    StyledText, Window,
 };
 
 use crate::gui::theme::Theme;
+
+use super::markdown_text;
 
 gpui::actions!(selectable_text, [Copy, SelectAll]);
 
@@ -51,17 +53,27 @@ impl SelectableText {
         cx.notify();
     }
 
-    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
-        self.selected_range = 0..self.content.len();
+    fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
+        let rendered = markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+        self.selected_range = 0..rendered.text.len();
         cx.notify();
     }
 
-    fn copy(&mut self, _: &Copy, _window: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(
-                self.content[self.selected_range.clone()].to_string(),
-            ));
+    fn copy(&mut self, _: &Copy, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected_range.is_empty() {
+            return;
         }
+
+        let rendered = markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+        let start = self.selected_range.start.min(rendered.text.len());
+        let end = self.selected_range.end.min(rendered.text.len());
+        if start >= end {
+            return;
+        }
+
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            rendered.text[start..end].to_string(),
+        ));
     }
 
     fn on_mouse_down(
@@ -79,11 +91,15 @@ impl SelectableText {
         if event.modifiers.shift {
             self.select_to(offset);
         } else if event.click_count == 2 {
-            let (start, end) = self.word_boundaries(offset);
+            let rendered =
+                markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+            let (start, end) = Self::word_boundaries(rendered.text.as_ref(), offset);
             self.selected_range = start..end;
             self.drag_start_offset = start;
         } else if event.click_count == 3 {
-            self.selected_range = 0..self.content.len();
+            let rendered =
+                markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+            self.selected_range = 0..rendered.text.len();
             self.drag_start_offset = 0;
         } else {
             self.selected_range = offset..offset;
@@ -131,7 +147,14 @@ impl SelectableText {
     }
 
     fn hit_test_position(&self, position: Point<gpui::Pixels>, window: &Window) -> usize {
-        if self.content.is_empty() {
+        let text_style = window.text_style();
+        let rendered =
+            markdown_text::render_markdown(self.content.as_ref(), &text_style, &self.theme);
+        eprintln!(
+            "[SelectableText] markdown rendered, text len={}",
+            rendered.text.len()
+        );
+        if rendered.text.is_empty() {
             return 0;
         }
 
@@ -144,7 +167,6 @@ impl SelectableText {
             return 0;
         }
 
-        let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let line_height = if window.line_height() == gpui::Pixels::ZERO {
             gpui::Pixels::from(1.0)
@@ -157,24 +179,17 @@ impl SelectableText {
             bounds.size.width
         };
 
-        let run = TextRun {
-            len: self.content.len(),
-            font: text_style.font(),
-            color: self.theme.text.into(),
-            background_color: None,
-            underline: None,
-            strikethrough: None,
-        };
-
         let Ok(lines) = window.text_system().shape_text(
-            self.content.clone(),
+            rendered.text.clone(),
             font_size,
-            &[run],
+            &rendered.runs,
             Some(wrap_width),
             None,
         ) else {
             return 0;
         };
+
+        let rendered_len = rendered.text.len();
 
         let mut y_offset = gpui::Pixels::ZERO;
         let mut char_offset = 0usize;
@@ -193,7 +208,7 @@ impl SelectableText {
                     .closest_index_for_position(pos_in_line, line_height_px)
                     .unwrap_or_else(|i| i);
 
-                return (char_offset + index_in_line).min(self.content.len());
+                return (char_offset + index_in_line).min(rendered_len);
             }
 
             y_offset += line_size.height;
@@ -203,11 +218,11 @@ impl SelectableText {
             }
         }
 
-        self.content.len()
+        rendered_len
     }
 
-    fn word_boundaries(&self, offset: usize) -> (usize, usize) {
-        let content = self.content.as_ref();
+    fn word_boundaries(content: &str, offset: usize) -> (usize, usize) {
+        let offset = offset.min(content.len());
 
         let start = content[..offset]
             .char_indices()
@@ -224,43 +239,6 @@ impl SelectableText {
 
         (start, end)
     }
-
-    /// Build TextRuns with selection highlighting
-    fn build_text_runs(&self, window: &Window) -> Vec<TextRun> {
-        let text_style = window.text_style();
-        let selection_color: Hsla = gpui::hsla(0.6, 0.8, 0.5, 0.3);
-
-        let make_run = |len: usize, selected: bool| TextRun {
-            len,
-            font: text_style.font(),
-            color: self.theme.text.into(),
-            background_color: if selected { Some(selection_color) } else { None },
-            underline: None,
-            strikethrough: None,
-        };
-
-        if self.selected_range.is_empty() || self.content.is_empty() {
-            return vec![make_run(self.content.len(), false)];
-        }
-
-        let mut runs = Vec::new();
-        let start = self.selected_range.start.min(self.content.len());
-        let end = self.selected_range.end.min(self.content.len());
-
-        if start > 0 {
-            runs.push(make_run(start, false));
-        }
-
-        if end > start {
-            runs.push(make_run(end - start, true));
-        }
-
-        if end < self.content.len() {
-            runs.push(make_run(self.content.len() - end, false));
-        }
-
-        runs
-    }
 }
 
 impl Focusable for SelectableText {
@@ -271,15 +249,39 @@ impl Focusable for SelectableText {
 
 impl Render for SelectableText {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let runs = self.build_text_runs(window);
-        let styled_text = StyledText::new(self.content.clone()).with_runs(runs);
+        eprintln!("[SelectableText] render called, content len={}", self.content.len());
+        let text_style = window.text_style();
+        let rendered =
+            markdown_text::render_markdown(self.content.as_ref(), &text_style, &self.theme);
+        eprintln!(
+            "[SelectableText] markdown rendered, text len={}",
+            rendered.text.len()
+        );
+
+        let selection_color: Hsla = gpui::hsla(0.6, 0.8, 0.5, 0.3);
+        let runs = markdown_text::apply_selection_background(
+            &rendered.runs,
+            self.selected_range.clone(),
+            selection_color,
+        );
+
+        let styled_text = StyledText::new(rendered.text.clone()).with_runs(runs);
+        let rendered_preview: String = rendered.text.as_ref().chars().take(100).collect();
+        eprintln!(
+            "[SelectableText] StyledText content (first 100): '{}'",
+            rendered_preview
+        );
         let view = cx.entity().clone();
 
         let bounds_tracker = gpui::canvas(
             move |bounds, _window, cx| {
-                view.update(cx, |this, _| {
-                    this.element_bounds = Some(bounds);
-                });
+                eprintln!("[SelectableText] bounds_tracker called, bounds={:?}", bounds);
+                let should_update = view.read(cx).element_bounds != Some(bounds);
+                if should_update {
+                    view.update(cx, |this, _| {
+                        this.element_bounds = Some(bounds);
+                    });
+                }
                 ()
             },
             |_, _, _, _| {},

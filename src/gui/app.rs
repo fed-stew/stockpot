@@ -9,7 +9,7 @@ use gpui::{
     WeakEntity, Window,
 };
 
-use super::components::{TextInput, SelectableText};
+use super::components::{TextInput, ZedMarkdownText};
 use super::state::{Conversation, MessageRole};
 use super::theme::Theme;
 use crate::agents::{AgentExecutor, AgentManager};
@@ -71,8 +71,8 @@ pub struct ChatApp {
     show_settings: bool,
     /// Error message to display
     error_message: Option<String>,
-    /// Selectable text entities for each message (keyed by message ID)
-    message_texts: HashMap<String, Entity<SelectableText>>,
+    /// Rendered markdown entities for each message (keyed by message ID)
+    message_texts: HashMap<String, Entity<ZedMarkdownText>>,
 }
 
 impl ChatApp {
@@ -243,14 +243,14 @@ impl ChatApp {
         cx.notify();
     }
 
-    /// Create a SelectableText entity for a message
+    /// Create a Zed markdown-rendered entity for a message
     fn create_message_text(&mut self, id: &str, content: &str, cx: &mut Context<Self>) {
         let theme = self.theme.clone();
-        let entity = cx.new(|cx| SelectableText::new(cx, content.to_string(), theme));
+        let entity = cx.new(|cx| ZedMarkdownText::new(cx, content.to_string(), theme));
         self.message_texts.insert(id.to_string(), entity);
     }
 
-    /// Update a SelectableText entity's content
+    /// Update a message entity's content
     fn update_message_text(&mut self, id: &str, content: &str, cx: &mut Context<Self>) {
         if let Some(entity) = self.message_texts.get(id) {
             entity.update(cx, |text, cx| {
@@ -271,7 +271,7 @@ impl ChatApp {
         // Add user message to conversation
         self.conversation.add_user_message(&text);
 
-        // Create SelectableText entity for this message
+        // Create markdown-rendered entity for this message
         if let Some(msg) = self.conversation.messages.last() {
             let id = msg.id.clone();
             self.create_message_text(&id, &text, cx);
@@ -1011,10 +1011,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-x", super::components::Cut, Some("TextInput")),
         KeyBinding::new("home", super::components::Home, Some("TextInput")),
         KeyBinding::new("end", super::components::End, Some("TextInput")),
-        // Selectable text keybindings (for message content)
-        KeyBinding::new("cmd-c", super::components::SelectableCopy, Some("SelectableText")),
-        KeyBinding::new("ctrl-c", super::components::SelectableCopy, Some("SelectableText")),
-        KeyBinding::new("cmd-a", super::components::SelectableSelectAll, Some("SelectableText")),
-        KeyBinding::new("ctrl-a", super::components::SelectableSelectAll, Some("SelectableText")),
+        // Markdown keybindings (for message content)
+        KeyBinding::new("cmd-c", markdown::Copy, Some("Markdown")),
+        KeyBinding::new("ctrl-c", markdown::Copy, Some("Markdown")),
     ]);
 }
