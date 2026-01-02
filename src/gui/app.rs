@@ -294,12 +294,12 @@ impl ChatApp {
                 if matches!(tool.status, ToolStatus::Started) {
                     // Show tool call in conversation
                     self.conversation
-                        .append_to_current(&format!("\n🔧 {}", tool.tool_name));
+                        .append_to_current(&format!("\n\n🔧 {}", tool.tool_name));
                 } else if matches!(tool.status, ToolStatus::Completed) {
-                    self.conversation.append_to_current(" ✓\n");
+                    self.conversation.append_to_current(" ✓\n\n");
                 } else if matches!(tool.status, ToolStatus::Failed) {
                     self.conversation
-                        .append_to_current(&format!(" ✗ {}\n", tool.error.unwrap_or_default()));
+                        .append_to_current(&format!(" ✗ {}\n\n", tool.error.unwrap_or_default()));
                 }
                 if let Some(current_msg) = self.conversation.messages.last() {
                     let id = current_msg.id.clone();

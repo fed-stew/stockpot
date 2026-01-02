@@ -90,6 +90,7 @@ zed_language = { git = "https://github.com/zed-industries/zed", package = "langu
 zed_languages = { git = "https://github.com/zed-industries/zed", package = "languages", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", features = ["load-grammars"], optional = true }
 zed_fs = { git = "https://github.com/zed-industries/zed", package = "fs", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
 zed_node_runtime = { git = "https://github.com/zed-industries/zed", package = "node_runtime", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
+rfd = { version = "0.14", optional = true }
 unicode-segmentation = { version = "1.11", optional = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -103,7 +104,7 @@ predicates = "3.1"
 
 [features]
 default = []
-gui = ["dep:gpui", "dep:markdown", "dep:zed_theme", "dep:zed_settings", "dep:zed_language", "dep:zed_languages", "dep:zed_fs", "dep:zed_node_runtime", "dep:unicode-segmentation"]
+gui = ["dep:gpui", "dep:markdown", "dep:zed_theme", "dep:zed_settings", "dep:zed_language", "dep:zed_languages", "dep:zed_fs", "dep:zed_node_runtime", "dep:rfd", "dep:unicode-segmentation"]
 
 [profile.release]
 lto = "thin"

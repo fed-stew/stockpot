@@ -36,7 +36,7 @@ impl ChatApp {
                         anchored().position(position).child(
                             div()
                                 .id("agent-dropdown-list")
-                                .w(bounds.size.width.max(px(200.)))
+                                .w(bounds.size.width.max(px(260.)))
                                 .max_h(px(300.))
                                 .overflow_y_scroll()
                                 .scrollbar_width(px(8.))
