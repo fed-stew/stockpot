@@ -1,4 +1,5 @@
 use gpui::{div, prelude::*, px, Context, SharedString, StatefulInteractiveElement, Styled};
+use gpui_component::text::markdown;
 
 use super::ChatApp;
 use crate::gui::components::scrollbar;
@@ -9,7 +10,6 @@ impl ChatApp {
         let messages = self.conversation.messages.clone();
         let theme = self.theme.clone();
         let has_messages = !messages.is_empty();
-        let message_texts = self.message_texts.clone();
 
         div()
             .id("messages-container")
@@ -74,9 +74,6 @@ impl ChatApp {
                                 } else {
                                     theme.assistant_bubble
                                 };
-                                let text_entity = message_texts.get(&msg.id).cloned();
-                                let has_entity = text_entity.is_some();
-                                let msg_content = msg.content.clone();
                                 let is_streaming = msg.is_streaming;
 
                                 div()
@@ -94,17 +91,20 @@ impl ChatApp {
                                     )
                                     .child(
                                         div()
-                                            .max_w(px(700.))
-                                            .min_w(px(100.))
                                             .p(px(12.))
                                             .rounded(px(8.))
                                             .bg(bubble_bg)
                                             .text_color(theme.text)
-                                            .when_some(text_entity, |d, entity| d.child(entity))
-                                            .when(!has_entity, |d| {
-                                                // Fallback to plain text if no entity exists
-                                                d.child(msg_content)
-                                            })
+                                            .overflow_hidden()
+                                            .min_w_0()
+                                            // User messages: constrained width, Assistant: full width
+                                            .when(is_user, |d| d.max_w(px(600.)))
+                                            .when(!is_user, |d| d.w_full().max_w_full())
+                                            // Use gpui-component's markdown renderer
+                                            .child(
+                                                markdown(&msg.content)
+                                                    .selectable(true)
+                                            )
                                             .when(is_streaming, |d: gpui::Div| {
                                                 d.child(
                                                     div()

@@ -31,6 +31,7 @@ struct ListFilesArgs {
     directory: Option<String>,
     recursive: Option<bool>,
     max_depth: Option<usize>,
+    max_entries: Option<usize>,
 }
 
 #[async_trait]
@@ -57,7 +58,12 @@ impl Tool for ListFilesTool {
                 )
                 .integer(
                     "max_depth",
-                    "Maximum depth for recursive listing. Defaults to 10.",
+                    "Maximum depth for recursive listing. Defaults to 10 (hard cap: 50).",
+                    false,
+                )
+                .integer(
+                    "max_entries",
+                    "Maximum number of entries to return. Defaults to 2000 (hard cap: 10000).",
                     false,
                 )
                 .build()
@@ -79,8 +85,9 @@ impl Tool for ListFilesTool {
         let directory = args.directory.as_deref().unwrap_or(".");
         let recursive = args.recursive.unwrap_or(true);
         let max_depth = args.max_depth;
+        let max_entries = args.max_entries;
 
-        match file_ops::list_files(directory, recursive, max_depth) {
+        match file_ops::list_files(directory, recursive, max_depth, max_entries) {
             Ok(result) => {
                 // Format as a readable summary with file tree
                 let mut output =
@@ -97,9 +104,21 @@ impl Tool for ListFilesTool {
                     output.push_str(&format!("\n{}{}{}{}", indent, entry.name, marker, size));
                 }
 
+                let truncation_note = if result.truncated {
+                    format!(
+                        " (truncated to {} entries; totals reflect returned entries only)",
+                        result.max_entries
+                    )
+                } else {
+                    String::new()
+                };
+
                 output.push_str(&format!(
-                    "\n\nSummary: {} files, {} directories, {} bytes total",
-                    result.total_files, result.total_dirs, result.total_size
+                    "\n\nSummary: {} files, {} directories, {} bytes total{}",
+                    result.total_files,
+                    result.total_dirs,
+                    result.total_size,
+                    truncation_note
                 ));
 
                 Ok(ToolReturn::text(output))

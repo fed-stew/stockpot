@@ -235,7 +235,7 @@ pub fn show_help() {
   \x1b[1;34m/claude-code-auth\x1b[0m      Authenticate with Claude Code OAuth
 
 \x1b[1mModel Discovery:\x1b[0m
-  \x1b[1;34m/add-model\x1b[0m             Browse and add models from models.dev
+  \x1b[1;34m/add-model\x1b[0m             Browse and add models from bundled models.conf
   \x1b[1;34m/extra-models\x1b[0m          List configured extra models
 
   \x1b[1;34m/version, /v\x1b[0m           Show version
@@ -258,7 +258,7 @@ pub fn show_models(db: &Database, registry: &ModelRegistry, current_model: &str)
 
     if available.is_empty() {
         println!("\n\x1b[2mNo available models found.\x1b[0m");
-        println!("\x1b[2mUse /add-model to add models from models.dev\x1b[0m");
+        println!("\x1b[2mUse /add-model to add models from bundled models.conf (edit + rebuild to change it)\x1b[0m");
         println!("\x1b[2mOr set API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.\x1b[0m\n");
         return;
     }

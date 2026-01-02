@@ -1094,7 +1094,7 @@ pub async fn get_model(
             "Found model in registry"
         );
 
-        // Handle custom endpoint models (e.g., from models.dev)
+        // Handle custom endpoint models (e.g., from /add-model)
         if let Some(endpoint) = &config.custom_endpoint {
             debug!(
                 endpoint_url = %endpoint.url,

@@ -9,7 +9,7 @@ use gpui::{
     Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Styled, WeakEntity, Window,
 };
 
-use super::components::{ScrollbarDragState, TextInput, ZedMarkdownText};
+use super::components::{ScrollbarDragState, TextInput};
 use super::state::{Conversation, MessageRole};
 use super::theme::Theme;
 use crate::agents::{AgentExecutor, AgentManager, UserMode};
@@ -98,8 +98,6 @@ pub struct ChatApp {
     default_model_dropdown_bounds: Option<gpui::Bounds<gpui::Pixels>>,
     /// Error message to display
     error_message: Option<String>,
-    /// Rendered markdown entities for each message (keyed by message ID)
-    message_texts: HashMap<String, Entity<ZedMarkdownText>>,
 
     /// Scroll handle for settings content
     settings_scroll_handle: ScrollHandle,
@@ -201,7 +199,6 @@ impl ChatApp {
             show_default_model_dropdown: false,
             default_model_dropdown_bounds: None,
             error_message: None,
-            message_texts: HashMap::new(),
 
             settings_scroll_handle: ScrollHandle::new(),
             settings_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
@@ -274,22 +271,11 @@ impl ChatApp {
         match msg {
             Message::TextDelta(delta) => {
                 self.conversation.append_to_current(&delta.text);
-                // Update the SelectableText entity for the current message
-                if let Some(current_msg) = self.conversation.messages.last() {
-                    let id = current_msg.id.clone();
-                    let content = current_msg.content.clone();
-                    self.update_message_text(&id, &content, cx);
-                }
             }
             Message::Thinking(thinking) => {
                 // Display thinking in a muted style
                 self.conversation
                     .append_to_current(&format!("\n\n💭 {}\n\n", thinking.text));
-                if let Some(current_msg) = self.conversation.messages.last() {
-                    let id = current_msg.id.clone();
-                    let content = current_msg.content.clone();
-                    self.update_message_text(&id, &content, cx);
-                }
             }
             Message::Tool(tool) => {
                 if matches!(tool.status, ToolStatus::Started) {
@@ -302,20 +288,10 @@ impl ChatApp {
                     self.conversation
                         .append_to_current(&format!(" ✗ {}\n\n", tool.error.unwrap_or_default()));
                 }
-                if let Some(current_msg) = self.conversation.messages.last() {
-                    let id = current_msg.id.clone();
-                    let content = current_msg.content.clone();
-                    self.update_message_text(&id, &content, cx);
-                }
             }
             Message::Agent(agent) => match agent.event {
                 AgentEvent::Started => {
                     self.conversation.start_assistant_message();
-                    // Create SelectableText entity for the new assistant message
-                    if let Some(msg) = self.conversation.messages.last() {
-                        let id = msg.id.clone();
-                        self.create_message_text(&id, "", cx);
-                    }
                     self.is_generating = true;
                 }
                 AgentEvent::Completed { .. } => {
@@ -325,11 +301,6 @@ impl ChatApp {
                 AgentEvent::Error { message } => {
                     self.conversation
                         .append_to_current(&format!("\n\n❌ Error: {}", message));
-                    if let Some(current_msg) = self.conversation.messages.last() {
-                        let id = current_msg.id.clone();
-                        let content = current_msg.content.clone();
-                        self.update_message_text(&id, &content, cx);
-                    }
                     self.conversation.finish_current_message();
                     self.is_generating = false;
                     self.error_message = Some(message);
@@ -338,22 +309,6 @@ impl ChatApp {
             _ => {}
         }
         cx.notify();
-    }
-
-    /// Create a Zed markdown-rendered entity for a message
-    fn create_message_text(&mut self, id: &str, content: &str, cx: &mut Context<Self>) {
-        let theme = self.theme.clone();
-        let entity = cx.new(|cx| ZedMarkdownText::new(cx, content.to_string(), theme));
-        self.message_texts.insert(id.to_string(), entity);
-    }
-
-    /// Update a message entity's content
-    fn update_message_text(&mut self, id: &str, content: &str, cx: &mut Context<Self>) {
-        if let Some(entity) = self.message_texts.get(id) {
-            entity.update(cx, |text, cx| {
-                text.set_content(content.to_string(), cx);
-            });
-        }
     }
 
     /// Handle sending a message with real agent execution
@@ -367,12 +322,6 @@ impl ChatApp {
 
         // Add user message to conversation
         self.conversation.add_user_message(&text);
-
-        // Create markdown-rendered entity for this message
-        if let Some(msg) = self.conversation.messages.last() {
-            let id = msg.id.clone();
-            self.create_message_text(&id, &text, cx);
-        }
 
         // Clear input
         self.text_input.update(cx, |input, cx| {
@@ -462,7 +411,7 @@ impl ChatApp {
         .detach();
     }
 
-    /// Fetch providers from models.dev for the Add Model dialog
+    /// Load providers from the bundled models.conf catalog for the Add Model dialog
     fn fetch_providers(&mut self, cx: &mut Context<Self>) {
         self.add_model_loading = true;
         self.add_model_error = None;
@@ -482,7 +431,7 @@ impl ChatApp {
                 }
                 Err(e) => {
                     this.update(cx, |app, cx| {
-                        app.add_model_error = Some(format!("Failed to fetch providers: {}", e));
+                        app.add_model_error = Some(format!("Failed to load providers: {}", e));
                         app.add_model_loading = false;
                         cx.notify();
                     })
@@ -672,12 +621,8 @@ impl ChatApp {
             )
         };
 
-        // Add to conversation and create SelectableText entity
+        // Add to conversation
         self.conversation.add_user_message(&files_text);
-        if let Some(msg) = self.conversation.messages.last() {
-            let id = msg.id.clone();
-            self.create_message_text(&id, &files_text, cx);
-        }
         self.execute_agent(files_text, cx);
         cx.notify();
     }
@@ -691,7 +636,6 @@ impl ChatApp {
     ) {
         self.conversation.clear();
         self.message_history.clear();
-        self.message_texts.clear();
         self.text_input.update(cx, |input, cx| {
             input.clear(cx);
         });
@@ -892,8 +836,5 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-x", super::components::Cut, Some("TextInput")),
         KeyBinding::new("home", super::components::Home, Some("TextInput")),
         KeyBinding::new("end", super::components::End, Some("TextInput")),
-        // Markdown keybindings (for message content)
-        KeyBinding::new("cmd-c", markdown::Copy, Some("Markdown")),
-        KeyBinding::new("ctrl-c", markdown::Copy, Some("Markdown")),
     ]);
 }

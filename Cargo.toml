@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 default-run = "spot"
 description = "AI-powered coding assistant CLI"
@@ -85,14 +85,9 @@ shellexpand = "3.1"
 terminal_size = "0.4"
 
 # GUI (optional - for stockpot-gui binary)
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
-markdown = { git = "https://github.com/zed-industries/zed", package = "markdown", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
-zed_theme = { git = "https://github.com/zed-industries/zed", package = "theme", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
-zed_settings = { git = "https://github.com/zed-industries/zed", package = "settings", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
-zed_language = { git = "https://github.com/zed-industries/zed", package = "language", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
-zed_languages = { git = "https://github.com/zed-industries/zed", package = "languages", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", features = ["load-grammars"], optional = true }
-zed_fs = { git = "https://github.com/zed-industries/zed", package = "fs", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
-zed_node_runtime = { git = "https://github.com/zed-industries/zed", package = "node_runtime", rev = "9677da9a60836b15b5358f58988b5cebeb3fdb72", optional = true }
+gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", optional = true }
+gpui-component = { path = "/home/jan/sources/gpui-component/crates/ui", optional = true }
+gpui-component-assets = { path = "/home/jan/sources/gpui-component/crates/assets", optional = true }
 rfd = { version = "0.14", optional = true }
 unicode-segmentation = { version = "1.11", optional = true }
 
@@ -107,7 +102,7 @@ predicates = "3.1"
 
 [features]
 default = []
-gui = ["dep:gpui", "dep:markdown", "dep:zed_theme", "dep:zed_settings", "dep:zed_language", "dep:zed_languages", "dep:zed_fs", "dep:zed_node_runtime", "dep:rfd", "dep:unicode-segmentation"]
+gui = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets", "dep:rfd", "dep:unicode-segmentation"]
 
 [profile.release]
 lto = "thin"

@@ -43,31 +43,50 @@ pub struct ListFilesResult {
     pub total_files: usize,
     pub total_dirs: usize,
     pub total_size: u64,
+    pub truncated: bool,
+    pub max_entries: usize,
 }
+
+const LIST_FILES_DEFAULT_MAX_ENTRIES: usize = 2_000;
+const LIST_FILES_HARD_MAX_ENTRIES: usize = 10_000;
+const LIST_FILES_DEFAULT_MAX_DEPTH: usize = 10;
+const LIST_FILES_HARD_MAX_DEPTH: usize = 50;
 
 /// List files in a directory.
 pub fn list_files(
     directory: &str,
     recursive: bool,
     max_depth: Option<usize>,
+    max_entries: Option<usize>,
 ) -> Result<ListFilesResult, FileError> {
     let path = Path::new(directory);
     if !path.exists() {
         return Err(FileError::NotFound(directory.to_string()));
     }
 
+    let max_entries = max_entries
+        .unwrap_or(LIST_FILES_DEFAULT_MAX_ENTRIES)
+        .clamp(1, LIST_FILES_HARD_MAX_ENTRIES);
+
     let mut entries = Vec::new();
     let mut total_files = 0;
     let mut total_dirs = 0;
     let mut total_size = 0u64;
+    let mut truncated = false;
+
+    let max_depth = max_depth
+        .unwrap_or(LIST_FILES_DEFAULT_MAX_DEPTH)
+        .min(LIST_FILES_HARD_MAX_DEPTH);
 
     list_files_recursive(
         path,
         path,
         &mut entries,
         recursive,
-        max_depth.unwrap_or(10),
+        max_depth,
         0,
+        max_entries,
+        &mut truncated,
     )?;
 
     for entry in &entries {
@@ -84,6 +103,8 @@ pub fn list_files(
         total_files,
         total_dirs,
         total_size,
+        truncated,
+        max_entries,
     })
 }
 
@@ -94,16 +115,33 @@ fn list_files_recursive(
     recursive: bool,
     max_depth: usize,
     depth: usize,
+    max_entries: usize,
+    truncated: &mut bool,
 ) -> Result<(), FileError> {
     if depth > max_depth {
         return Ok(());
     }
 
-    let mut dir_entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+    if entries.len() >= max_entries {
+        *truncated = true;
+        return Ok(());
+    }
+
+    let read_dir = fs::read_dir(dir);
+    let mut dir_entries: Vec<_> = match read_dir {
+        Ok(read_dir) => read_dir.filter_map(|e| e.ok()).collect(),
+        Err(e) if depth == 0 => return Err(e.into()),
+        Err(_) => return Ok(()),
+    };
 
     dir_entries.sort_by_key(|a| a.file_name());
 
     for entry in dir_entries {
+        if entries.len() >= max_entries {
+            *truncated = true;
+            break;
+        }
+
         let path = entry.path();
         let relative = path.strip_prefix(base).unwrap_or(&path);
         let relative_str = relative.to_string_lossy().to_string();
@@ -112,8 +150,17 @@ fn list_files_recursive(
             continue;
         }
 
-        let metadata = entry.metadata()?;
-        let is_dir = metadata.is_dir();
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+
+        let metadata = match entry.metadata() {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+
+        let is_dir = file_type.is_dir();
         let name = entry.file_name().to_string_lossy().to_string();
 
         entries.push(FileEntry {
@@ -125,7 +172,16 @@ fn list_files_recursive(
         });
 
         if is_dir && recursive {
-            list_files_recursive(base, &path, entries, recursive, max_depth, depth + 1)?;
+            list_files_recursive(
+                base,
+                &path,
+                entries,
+                recursive,
+                max_depth,
+                depth + 1,
+                max_entries,
+                truncated,
+            )?;
         }
     }
 
@@ -505,5 +561,19 @@ mod tests {
         let result = grep("(", dir.path().to_str().unwrap(), None).expect("grep failed");
         assert_eq!(result.total_matches, 1);
         assert!(result.matches[0].content.contains("(paren)"));
+    }
+
+    #[test]
+    fn list_files_respects_max_entries() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        fs::write(dir.path().join("a.txt"), "a").expect("write failed");
+        fs::write(dir.path().join("b.txt"), "b").expect("write failed");
+
+        let result = list_files(dir.path().to_str().unwrap(), false, Some(1), Some(1))
+            .expect("list_files failed");
+
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.truncated);
+        assert_eq!(result.max_entries, 1);
     }
 }

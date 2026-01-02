@@ -8,7 +8,6 @@ mod scrollbar;
 mod selectable_text;
 mod text_input;
 mod toolbar;
-mod zed_markdown;
 
 pub use chat_view::ChatView;
 pub use input_field::InputField;
@@ -22,4 +21,3 @@ pub use text_input::{
     SelectRight, Submit, TextElement, TextInput,
 };
 pub use toolbar::Toolbar;
-pub use zed_markdown::ZedMarkdownText;

@@ -1,7 +1,7 @@
 //! Interactive model discovery and configuration.
 //!
 //! This module provides functionality to browse available AI providers
-//! and models from models.dev, and configure them for use.
+//! and models from a build-time bundled catalog, and configure them for use.
 
 use crate::db::Database;
 use crate::models::{CustomEndpoint, ModelConfig, ModelRegistry, ModelType};
@@ -10,9 +10,10 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
-const MODELS_API_URL: &str = "https://models.dev/api.json";
+const BUNDLED_MODELS_CATALOG_JSON: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/models.conf"));
 
-/// Provider information from models.dev
+/// Provider information from the bundled catalog (`models.conf`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProviderInfo {
     pub id: String,
@@ -28,7 +29,7 @@ pub struct ProviderInfo {
     pub models: HashMap<String, ModelInfo>,
 }
 
-/// Model information from models.dev
+/// Model information from the bundled catalog (`models.conf`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelInfo {
     pub id: String,
@@ -42,25 +43,15 @@ pub struct ModelInfo {
     pub output_price: Option<f64>,
 }
 
-/// Fetch all providers from models.dev
+/// Load all providers from the build-time bundled catalog (`models.conf`).
+///
+/// To change the catalog, edit `models.conf` in the repo and rebuild.
 pub async fn fetch_providers() -> Result<HashMap<String, ProviderInfo>> {
-    println!("\x1b[2mFetching providers from models.dev...\x1b[0m");
+    println!("\x1b[2mLoading providers from bundled models.conf...\x1b[0m");
 
-    let client = reqwest::Client::new();
-    let response = client
-        .get(MODELS_API_URL)
-        .header("User-Agent", "stockpot/0.1")
-        .send()
-        .await?;
+    let providers: HashMap<String, ProviderInfo> = serde_json::from_str(BUNDLED_MODELS_CATALOG_JSON)
+        .map_err(|e| anyhow!("Failed to parse bundled models.conf: {}", e))?;
 
-    if !response.status().is_success() {
-        return Err(anyhow!(
-            "Failed to fetch providers: HTTP {}",
-            response.status()
-        ));
-    }
-
-    let providers: HashMap<String, ProviderInfo> = response.json().await?;
     Ok(providers)
 }
 
@@ -320,7 +311,7 @@ pub async fn run_add_model(db: &Database) -> Result<()> {
 
     // Get the API endpoint URL - use provider.api if available, otherwise use known fallbacks
     let api_url = provider.api.clone().unwrap_or_else(|| {
-        // Known provider API endpoints (when not specified in models.dev)
+        // Known provider API endpoints (when not specified in the bundled catalog)
         match provider.id.as_str() {
             "cerebras" => "https://api.cerebras.ai/v1".to_string(),
             "together" => "https://api.together.xyz/v1".to_string(),
@@ -384,7 +375,7 @@ pub fn list_custom_models(db: &Database) -> Result<()> {
 
     if available.is_empty() {
         println!("\x1b[2mNo available models found.\x1b[0m");
-        println!("\x1b[2mUse /add_model to add models from models.dev\x1b[0m");
+        println!("\x1b[2mUse /add_model to add models from the bundled models.conf catalog (edit + rebuild to change it)\x1b[0m");
         return Ok(());
     }
 
