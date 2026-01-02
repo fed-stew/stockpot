@@ -34,13 +34,13 @@ pub static IGNORE_PATTERNS: &[&str] = &[
 /// Check if a path should be ignored.
 pub fn should_ignore(path: &str) -> bool {
     let path_lower = path.to_lowercase();
-    
+
     for pattern in IGNORE_PATTERNS {
         if path_lower.contains(pattern) {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -54,16 +54,49 @@ pub fn get_extension(path: &str) -> Option<&str> {
 /// Check if path is likely a text file.
 pub fn is_text_file(path: &str) -> bool {
     let text_extensions = [
-        "txt", "md", "rs", "py", "js", "ts", "tsx", "jsx",
-        "json", "yaml", "yml", "toml", "ini", "cfg",
-        "html", "css", "scss", "less",
-        "sh", "bash", "zsh", "fish",
-        "c", "h", "cpp", "hpp", "cc", "cxx",
-        "go", "java", "kt", "swift", "rb", "php",
-        "sql", "graphql", "proto",
-        "xml", "svg", "dockerfile", "makefile",
+        "txt",
+        "md",
+        "rs",
+        "py",
+        "js",
+        "ts",
+        "tsx",
+        "jsx",
+        "json",
+        "yaml",
+        "yml",
+        "toml",
+        "ini",
+        "cfg",
+        "html",
+        "css",
+        "scss",
+        "less",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "c",
+        "h",
+        "cpp",
+        "hpp",
+        "cc",
+        "cxx",
+        "go",
+        "java",
+        "kt",
+        "swift",
+        "rb",
+        "php",
+        "sql",
+        "graphql",
+        "proto",
+        "xml",
+        "svg",
+        "dockerfile",
+        "makefile",
     ];
-    
+
     if let Some(ext) = get_extension(path) {
         text_extensions.contains(&ext.to_lowercase().as_str())
     } else {
@@ -72,8 +105,15 @@ pub fn is_text_file(path: &str) -> bool {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
-        
-        let text_files = ["Makefile", "Dockerfile", "Rakefile", "Gemfile", ".gitignore", ".env"];
+
+        let text_files = [
+            "Makefile",
+            "Dockerfile",
+            "Rakefile",
+            "Gemfile",
+            ".gitignore",
+            ".env",
+        ];
         text_files.contains(&name)
     }
 }

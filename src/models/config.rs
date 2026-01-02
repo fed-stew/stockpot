@@ -248,9 +248,7 @@ impl ModelRegistry {
                         api_key_env, headers, azure_deployment, azure_api_version
                  FROM models ORDER BY name",
             )
-            .map_err(|e| {
-                ModelConfigError::Io(std::io::Error::other(e.to_string()))
-            })?;
+            .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
 
         let rows = stmt
             .query_map([], |row| {
@@ -276,9 +274,7 @@ impl ModelRegistry {
                     round_robin_models: Vec::new(),
                 })
             })
-            .map_err(|e| {
-                ModelConfigError::Io(std::io::Error::other(e.to_string()))
-            })?;
+            .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
 
         for config in rows.flatten() {
             registry.models.insert(config.name.clone(), config);
@@ -331,9 +327,7 @@ impl ModelRegistry {
                         &model.description,
                     ],
                 )
-                .map_err(|e| {
-                    ModelConfigError::Io(std::io::Error::other(e.to_string()))
-                })?;
+                .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
         }
 
         Ok(())
@@ -362,13 +356,14 @@ impl ModelRegistry {
                     config.supports_tools as i64,
                     &config.description,
                     config.custom_endpoint.as_ref().map(|e| &e.url),
-                    config.custom_endpoint.as_ref().and_then(|e| e.api_key.as_ref()),
+                    config
+                        .custom_endpoint
+                        .as_ref()
+                        .and_then(|e| e.api_key.as_ref()),
                     headers_json,
                 ],
             )
-            .map_err(|e| {
-                ModelConfigError::Io(std::io::Error::other(e.to_string()))
-            })?;
+            .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(())
     }
@@ -602,8 +597,7 @@ impl ModelRegistry {
                 true
             }
             ModelType::AzureOpenai => {
-                has_api_key(db, "AZURE_OPENAI_API_KEY")
-                    || has_api_key(db, "AZURE_OPENAI_ENDPOINT")
+                has_api_key(db, "AZURE_OPENAI_API_KEY") || has_api_key(db, "AZURE_OPENAI_ENDPOINT")
             }
             ModelType::CustomOpenai | ModelType::CustomAnthropic => {
                 // Custom endpoints - check if API key is configured
@@ -767,21 +761,21 @@ mod tests {
     #[test]
     fn test_resolve_env_var() {
         std::env::set_var("PUPPY_TEST_VAR", "woof");
-        
+
         // Test ${VAR} syntax (recommended for embedding)
         let result = resolve_env_var("prefix_${PUPPY_TEST_VAR}_suffix");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "prefix_woof_suffix");
-        
+
         // Test $VAR at end of string
         let result = resolve_env_var("bark_$PUPPY_TEST_VAR");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "bark_woof");
-        
+
         // Test non-existent var returns error
         let result = resolve_env_var("${NONEXISTENT_PUPPY_VAR_XYZ}");
         assert!(result.is_err());
-        
+
         std::env::remove_var("PUPPY_TEST_VAR");
     }
 
@@ -789,7 +783,7 @@ mod tests {
     fn test_registry_defaults() {
         let mut registry = ModelRegistry::new();
         assert!(registry.is_empty());
-        
+
         registry.add_builtin_defaults();
         assert!(!registry.is_empty());
         assert!(registry.contains("gpt-4o"));
@@ -814,7 +808,7 @@ mod tests {
 
         let json = serde_json::to_string(&config).unwrap();
         let parsed: ModelConfig = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.name, "test-model");
         assert_eq!(parsed.model_type, ModelType::CustomOpenai);
         assert!(parsed.custom_endpoint.is_some());

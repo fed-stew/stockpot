@@ -54,7 +54,11 @@ impl SelectableText {
     }
 
     fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
-        let rendered = markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+        let rendered = markdown_text::render_markdown(
+            self.content.as_ref(),
+            &window.text_style(),
+            &self.theme,
+        );
         self.selected_range = 0..rendered.text.len();
         cx.notify();
     }
@@ -64,7 +68,11 @@ impl SelectableText {
             return;
         }
 
-        let rendered = markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+        let rendered = markdown_text::render_markdown(
+            self.content.as_ref(),
+            &window.text_style(),
+            &self.theme,
+        );
         let start = self.selected_range.start.min(rendered.text.len());
         let end = self.selected_range.end.min(rendered.text.len());
         if start >= end {
@@ -91,14 +99,20 @@ impl SelectableText {
         if event.modifiers.shift {
             self.select_to(offset);
         } else if event.click_count == 2 {
-            let rendered =
-                markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+            let rendered = markdown_text::render_markdown(
+                self.content.as_ref(),
+                &window.text_style(),
+                &self.theme,
+            );
             let (start, end) = Self::word_boundaries(rendered.text.as_ref(), offset);
             self.selected_range = start..end;
             self.drag_start_offset = start;
         } else if event.click_count == 3 {
-            let rendered =
-                markdown_text::render_markdown(self.content.as_ref(), &window.text_style(), &self.theme);
+            let rendered = markdown_text::render_markdown(
+                self.content.as_ref(),
+                &window.text_style(),
+                &self.theme,
+            );
             self.selected_range = 0..rendered.text.len();
             self.drag_start_offset = 0;
         } else {
@@ -249,7 +263,10 @@ impl Focusable for SelectableText {
 
 impl Render for SelectableText {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        eprintln!("[SelectableText] render called, content len={}", self.content.len());
+        eprintln!(
+            "[SelectableText] render called, content len={}",
+            self.content.len()
+        );
         let text_style = window.text_style();
         let rendered =
             markdown_text::render_markdown(self.content.as_ref(), &text_style, &self.theme);
@@ -275,14 +292,16 @@ impl Render for SelectableText {
 
         let bounds_tracker = gpui::canvas(
             move |bounds, _window, cx| {
-                eprintln!("[SelectableText] bounds_tracker called, bounds={:?}", bounds);
+                eprintln!(
+                    "[SelectableText] bounds_tracker called, bounds={:?}",
+                    bounds
+                );
                 let should_update = view.read(cx).element_bounds != Some(bounds);
                 if should_update {
                     view.update(cx, |this, _| {
                         this.element_bounds = Some(bounds);
                     });
                 }
-                ()
             },
             |_, _, _, _| {},
         )

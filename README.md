@@ -280,7 +280,7 @@ Communicates via NDJSON over stdio:
 
 ```json
 // → Outbound
-{"type": "ready", "version": "0.1.0", "agent": "stockpot", "model": "gpt-4o"}
+{"type": "ready", "version": "0.5.0", "agent": "stockpot", "model": "gpt-4o"}
 {"type": "text_delta", "text": "Hello..."}
 {"type": "tool_call_start", "tool_name": "read_file"}
 {"type": "complete", "run_id": "..."}

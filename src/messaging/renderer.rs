@@ -1,8 +1,8 @@
 //! Terminal renderer for messages with rich markdown support.
 
 use super::{
-    AgentEvent, AgentMessage, DiffLineType, FileOperation, Message, MessageLevel,
-    TextDeltaMessage, ToolMessage, ToolStatus,
+    AgentEvent, AgentMessage, DiffLineType, FileOperation, Message, MessageLevel, TextDeltaMessage,
+    ToolMessage, ToolStatus,
 };
 use crossterm::{
     style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
@@ -142,7 +142,7 @@ impl TerminalRenderer {
         let mut in_code_block = false;
         let mut code_lang = String::new();
         let mut code_buffer = String::new();
-        
+
         for line in content.lines() {
             if let Some(rest) = line.strip_prefix("```") {
                 if in_code_block {
@@ -163,19 +163,19 @@ impl TerminalRenderer {
                 self.render_markdown_line(line)?;
             }
         }
-        
+
         // Handle unclosed code block
         if in_code_block && !code_buffer.is_empty() {
             self.render_code_block(&code_lang, &code_buffer)?;
         }
-        
+
         Ok(())
     }
 
     /// Render a single line of markdown.
     fn render_markdown_line(&self, line: &str) -> std::io::Result<()> {
         let mut stdout = stdout();
-        
+
         // Headers
         if let Some(rest) = line.strip_prefix("### ") {
             stdout
@@ -204,7 +204,7 @@ impl TerminalRenderer {
                 .execute(Print("\n"))?;
             return Ok(());
         }
-        
+
         // Bullet lists
         if let Some(rest) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
             stdout
@@ -215,21 +215,25 @@ impl TerminalRenderer {
             stdout.execute(Print("\n"))?;
             return Ok(());
         }
-        
+
         // Numbered lists
         if let Some(rest) = line.strip_prefix(|c: char| c.is_ascii_digit()) {
             if let Some(rest) = rest.strip_prefix(". ") {
                 stdout.execute(SetForegroundColor(Color::Yellow))?;
                 // Get the number
-                let num = line.chars().take_while(|c| c.is_ascii_digit()).collect::<String>();
-                stdout.execute(Print(format!("{}. ", num)))?
+                let num = line
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>();
+                stdout
+                    .execute(Print(format!("{}. ", num)))?
                     .execute(ResetColor)?;
                 self.render_inline_markdown(rest)?;
                 stdout.execute(Print("\n"))?;
                 return Ok(());
             }
         }
-        
+
         // Blockquotes
         if let Some(rest) = line.strip_prefix("> ") {
             stdout
@@ -240,7 +244,7 @@ impl TerminalRenderer {
             stdout.execute(Print("\n"))?;
             return Ok(());
         }
-        
+
         // Horizontal rule
         if line == "---" || line == "***" || line == "___" {
             stdout
@@ -250,11 +254,11 @@ impl TerminalRenderer {
                 .execute(Print("\n"))?;
             return Ok(());
         }
-        
+
         // Regular line - render inline markdown
         self.render_inline_markdown(line)?;
         stdout.execute(Print("\n"))?;
-        
+
         Ok(())
     }
 
@@ -263,7 +267,7 @@ impl TerminalRenderer {
         let mut stdout = stdout();
         let mut chars = text.chars().peekable();
         let mut buffer = String::new();
-        
+
         while let Some(c) = chars.next() {
             match c {
                 '`' => {
@@ -370,40 +374,45 @@ impl TerminalRenderer {
                 _ => buffer.push(c),
             }
         }
-        
+
         // Flush remaining buffer
         if !buffer.is_empty() {
             stdout.execute(Print(&buffer))?;
         }
-        
+
         Ok(())
     }
 
     /// Render a code block with syntax highlighting.
     fn render_code_block(&self, lang: &str, code: &str) -> std::io::Result<()> {
         let mut stdout = stdout();
-        
+
         // Find syntax for the language
-        let syntax = self.syntax_set
+        let syntax = self
+            .syntax_set
             .find_syntax_by_token(lang)
             .or_else(|| self.syntax_set.find_syntax_by_extension(lang))
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
-        
+
         let theme = &self.theme_set.themes["base16-ocean.dark"];
         let mut highlighter = HighlightLines::new(syntax, theme);
-        
+
         // Print code block header
         stdout
             .execute(SetForegroundColor(Color::DarkGrey))?
-            .execute(Print(format!("┌── {}\n", if lang.is_empty() { "code" } else { lang })))?
+            .execute(Print(format!(
+                "┌── {}\n",
+                if lang.is_empty() { "code" } else { lang }
+            )))?
             .execute(ResetColor)?;
-        
+
         // Highlight and print each line
         for line in LinesWithEndings::from(code) {
-            stdout.execute(SetForegroundColor(Color::DarkGrey))?
+            stdout
+                .execute(SetForegroundColor(Color::DarkGrey))?
                 .execute(Print("│ "))?
                 .execute(ResetColor)?;
-            
+
             match highlighter.highlight_line(line, &self.syntax_set) {
                 Ok(ranges) => {
                     let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
@@ -414,17 +423,22 @@ impl TerminalRenderer {
                 }
             }
         }
-        
+
         // Print code block footer
         stdout
             .execute(SetForegroundColor(Color::DarkGrey))?
             .execute(Print("└──\n"))?
             .execute(ResetColor)?;
-        
+
         Ok(())
     }
 
-    fn render_shell(&self, command: &str, output: Option<&str>, exit_code: Option<i32>) -> std::io::Result<()> {
+    fn render_shell(
+        &self,
+        command: &str,
+        output: Option<&str>,
+        exit_code: Option<i32>,
+    ) -> std::io::Result<()> {
         stdout()
             .execute(SetForegroundColor(Color::DarkYellow))?
             .execute(Print("$ "))?
@@ -448,7 +462,12 @@ impl TerminalRenderer {
         Ok(())
     }
 
-    fn render_file(&self, op: &FileOperation, path: &str, _content: Option<&str>) -> std::io::Result<()> {
+    fn render_file(
+        &self,
+        op: &FileOperation,
+        path: &str,
+        _content: Option<&str>,
+    ) -> std::io::Result<()> {
         let (icon, verb) = match op {
             FileOperation::Read => ("📖", "Read"),
             FileOperation::Write => ("✏️", "Wrote"),
@@ -742,8 +761,10 @@ mod tests {
 
     #[test]
     fn test_custom_style() {
-        let mut style = RenderStyle::default();
-        style.success_color = Color::Blue;
+        let style = RenderStyle {
+            success_color: Color::Blue,
+            ..Default::default()
+        };
         let renderer = TerminalRenderer::with_style(style);
         assert_eq!(renderer.style.success_color, Color::Blue);
     }

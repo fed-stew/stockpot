@@ -27,12 +27,13 @@ impl<'a> Settings<'a> {
 
     /// Get a setting value.
     pub fn get(&self, key: &str) -> Result<Option<String>, SettingsError> {
-        let result: Result<String, _> = self.db.conn().query_row(
-            "SELECT value FROM settings WHERE key = ?",
-            [key],
-            |row| row.get(0),
-        );
-        
+        let result: Result<String, _> =
+            self.db
+                .conn()
+                .query_row("SELECT value FROM settings WHERE key = ?", [key], |row| {
+                    row.get(0)
+                });
+
         match result {
             Ok(value) => Ok(Some(value)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -42,13 +43,19 @@ impl<'a> Settings<'a> {
 
     /// Get a setting value or return a default.
     pub fn get_or(&self, key: &str, default: &str) -> String {
-        self.get(key).ok().flatten().unwrap_or_else(|| default.to_string())
+        self.get(key)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| default.to_string())
     }
 
     /// Get a boolean setting.
     pub fn get_bool(&self, key: &str) -> Result<bool, SettingsError> {
         match self.get(key)? {
-            Some(v) => Ok(matches!(v.to_lowercase().as_str(), "true" | "1" | "yes" | "on")),
+            Some(v) => Ok(matches!(
+                v.to_lowercase().as_str(),
+                "true" | "1" | "yes" | "on"
+            )),
             None => Ok(false),
         }
     }
@@ -65,17 +72,22 @@ impl<'a> Settings<'a> {
 
     /// Delete a setting.
     pub fn delete(&self, key: &str) -> Result<(), SettingsError> {
-        self.db.conn().execute("DELETE FROM settings WHERE key = ?", [key])?;
+        self.db
+            .conn()
+            .execute("DELETE FROM settings WHERE key = ?", [key])?;
         Ok(())
     }
 
     /// List all settings.
     pub fn list(&self) -> Result<Vec<(String, String)>, SettingsError> {
-        let mut stmt = self.db.conn().prepare("SELECT key, value FROM settings ORDER BY key")?;
+        let mut stmt = self
+            .db
+            .conn()
+            .prepare("SELECT key, value FROM settings ORDER BY key")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
-        
+
         let mut settings = Vec::new();
         for row in rows {
             settings.push(row?);
@@ -107,7 +119,9 @@ impl<'a> Settings<'a> {
 
     /// Get the current user mode.
     pub fn user_mode(&self) -> UserMode {
-        self.get_or("user_mode", "normal").parse().unwrap_or_default()
+        self.get_or("user_mode", "normal")
+            .parse()
+            .unwrap_or_default()
     }
 
     /// Set the user mode.
@@ -128,7 +142,11 @@ impl<'a> Settings<'a> {
     }
 
     /// Set the pinned model for an agent.
-    pub fn set_agent_pinned_model(&self, agent_name: &str, model_name: &str) -> Result<(), SettingsError> {
+    pub fn set_agent_pinned_model(
+        &self,
+        agent_name: &str,
+        model_name: &str,
+    ) -> Result<(), SettingsError> {
         self.set(&Self::agent_pin_key(agent_name), model_name)
     }
 
@@ -140,9 +158,10 @@ impl<'a> Settings<'a> {
     /// Get all agent->model pin mappings.
     pub fn get_all_agent_pinned_models(&self) -> Result<HashMap<String, String>, SettingsError> {
         let prefix = "agent_pin.";
-        let mut stmt = self.db.conn().prepare(
-            "SELECT key, value FROM settings WHERE key LIKE ? ORDER BY key"
-        )?;
+        let mut stmt = self
+            .db
+            .conn()
+            .prepare("SELECT key, value FROM settings WHERE key LIKE ? ORDER BY key")?;
         let pattern = format!("{}%", prefix);
         let rows = stmt.query_map([pattern], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))

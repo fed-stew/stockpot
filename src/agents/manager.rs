@@ -1,9 +1,9 @@
 //! Agent manager for registry and switching.
 
 use super::base::{BoxedAgent, SpotAgent};
-use super::{AgentVisibility, UserMode};
 use super::builtin;
 use super::json_agent::load_json_agents;
+use super::{AgentVisibility, UserMode};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -31,7 +31,7 @@ impl AgentManager {
         self.register(Box::new(builtin::StockpotAgent));
         self.register(Box::new(builtin::PlanningAgent));
         self.register(Box::new(builtin::ExploreAgent));
-        
+
         // Reviewers
         self.register(Box::new(builtin::CodeReviewerAgent));
     }
@@ -66,7 +66,8 @@ impl AgentManager {
 
     /// Get the current agent name.
     pub fn current_name(&self) -> String {
-        self.current_agent.read()
+        self.current_agent
+            .read()
             .map(|n| n.clone())
             .unwrap_or_else(|_| "stockpot".to_string())
     }
@@ -76,8 +77,10 @@ impl AgentManager {
         if !self.agents.contains_key(name) {
             return Err(AgentError::NotFound(name.to_string()));
         }
-        
-        let mut current = self.current_agent.write()
+
+        let mut current = self
+            .current_agent
+            .write()
             .map_err(|_| AgentError::LockError)?;
         *current = name.to_string();
         Ok(())
@@ -203,7 +206,11 @@ mod tests {
         let filtered = manager.list_filtered(UserMode::Developer);
 
         // Developer mode should show all agents
-        assert_eq!(all.len(), filtered.len(), "Developer mode should show all agents");
+        assert_eq!(
+            all.len(),
+            filtered.len(),
+            "Developer mode should show all agents"
+        );
     }
 
     #[test]
@@ -214,7 +221,10 @@ mod tests {
 
         assert_eq!("normal".parse::<UserMode>().unwrap(), UserMode::Normal);
         assert_eq!("expert".parse::<UserMode>().unwrap(), UserMode::Expert);
-        assert_eq!("developer".parse::<UserMode>().unwrap(), UserMode::Developer);
+        assert_eq!(
+            "developer".parse::<UserMode>().unwrap(),
+            UserMode::Developer
+        );
 
         assert!("invalid".parse::<UserMode>().is_err());
     }

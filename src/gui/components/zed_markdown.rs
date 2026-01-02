@@ -1,4 +1,6 @@
-use gpui::{div, prelude::*, Context, Entity, Focusable, IntoElement, Render, SharedString, Window};
+use gpui::{
+    div, prelude::*, Context, Entity, Focusable, IntoElement, Render, SharedString, Window,
+};
 
 use crate::gui::{theme::Theme, GlobalLanguageRegistry};
 use zed_theme::ActiveTheme as _;
@@ -39,16 +41,15 @@ impl Focusable for ZedMarkdownText {
 
 impl Render for ZedMarkdownText {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut style = markdown::MarkdownStyle::default();
-        style.base_text_style = window.text_style();
-        style.syntax = cx.theme().syntax().clone();
-        style.selection_background_color = cx.theme().colors().element_selection_background;
+        let style = markdown::MarkdownStyle {
+            base_text_style: window.text_style(),
+            syntax: cx.theme().syntax().clone(),
+            selection_background_color: cx.theme().colors().element_selection_background,
+            container_style: gpui::StyleRefinement::default().flex().flex_col(),
+            rule_color: self.theme.text_muted.into(),
+            ..Default::default()
+        };
 
-        style.container_style = gpui::StyleRefinement::default().flex().flex_col();
-
-        style.rule_color = self.theme.text_muted.into();
-
-        div()
-            .child(markdown::MarkdownElement::new(self.markdown.clone(), style))
+        div().child(markdown::MarkdownElement::new(self.markdown.clone(), style))
     }
 }

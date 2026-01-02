@@ -61,7 +61,14 @@ pub fn list_files(
     let mut total_dirs = 0;
     let mut total_size = 0u64;
 
-    list_files_recursive(path, path, &mut entries, recursive, max_depth.unwrap_or(10), 0)?;
+    list_files_recursive(
+        path,
+        path,
+        &mut entries,
+        recursive,
+        max_depth.unwrap_or(10),
+        0,
+    )?;
 
     for entry in &entries {
         if entry.is_dir {
@@ -92,10 +99,8 @@ fn list_files_recursive(
         return Ok(());
     }
 
-    let mut dir_entries: Vec<_> = fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .collect();
-    
+    let mut dir_entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+
     dir_entries.sort_by_key(|a| a.file_name());
 
     for entry in dir_entries {
@@ -149,7 +154,7 @@ pub fn read_file(
 
     let metadata = fs::metadata(file_path)?;
     let max = max_size.unwrap_or(10 * 1024 * 1024); // 10MB default
-    
+
     if metadata.len() > max {
         return Err(FileError::TooLarge(metadata.len(), max));
     }
@@ -163,7 +168,7 @@ pub fn read_file(
         let end_idx = num_lines
             .map(|n| (start_idx + n).min(total_lines))
             .unwrap_or(total_lines);
-        
+
         lines[start_idx..end_idx].join("\n")
     } else {
         content
@@ -180,7 +185,7 @@ pub fn read_file(
 /// Write content to a file.
 pub fn write_file(path: &str, content: &str, create_dirs: bool) -> Result<(), FileError> {
     let file_path = Path::new(path);
-    
+
     if create_dirs {
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent)?;
@@ -276,7 +281,9 @@ pub fn grep(
     let max_matches = requested.min(GREP_HARD_MAX_MATCHES);
 
     if pattern.is_empty() {
-        return Err(FileError::GrepError("pattern must not be empty".to_string()));
+        return Err(FileError::GrepError(
+            "pattern must not be empty".to_string(),
+        ));
     }
 
     let path = PathBuf::from(directory);
@@ -291,22 +298,26 @@ pub fn grep(
     }
 
     if !abs_path.is_dir() {
-        return Err(FileError::GrepError(format!("Not a directory: {}", directory)));
+        return Err(FileError::GrepError(format!(
+            "Not a directory: {}",
+            directory
+        )));
     }
 
     // Support a tiny subset of common ripgrep-ish flags embedded in the pattern.
-    let (pattern, case_insensitive) =
-        if let Some(rest) = pattern.strip_prefix("--ignore-case ") {
-            (rest, true)
-        } else if let Some(rest) = pattern.strip_prefix("-i ") {
-            (rest, true)
-        } else {
-            (pattern, false)
-        };
+    let (pattern, case_insensitive) = if let Some(rest) = pattern.strip_prefix("--ignore-case ") {
+        (rest, true)
+    } else if let Some(rest) = pattern.strip_prefix("-i ") {
+        (rest, true)
+    } else {
+        (pattern, false)
+    };
 
     let pattern = pattern.trim();
     if pattern.is_empty() {
-        return Err(FileError::GrepError("pattern must not be empty".to_string()));
+        return Err(FileError::GrepError(
+            "pattern must not be empty".to_string(),
+        ));
     }
 
     let regex_pattern = if case_insensitive {
@@ -348,10 +359,7 @@ pub fn grep(
 
         let entry_path = entry.path();
 
-        let is_file = entry
-            .file_type()
-            .map(|ft| ft.is_file())
-            .unwrap_or(false);
+        let is_file = entry.file_type().map(|ft| ft.is_file()).unwrap_or(false);
         if !is_file {
             continue;
         }
@@ -389,7 +397,7 @@ pub fn grep(
 }
 
 /// Apply a unified diff to a file.
-/// 
+///
 /// Parses the unified diff format and applies it to the file:
 /// ```text
 /// --- a/file.txt
@@ -400,15 +408,16 @@ pub fn grep(
 /// +added line
 /// ```
 pub fn apply_diff(path: &str, diff_text: &str) -> Result<(), FileError> {
-    use super::diff::{UnifiedDiff, apply_unified_diff};
-    
+    use super::diff::{apply_unified_diff, UnifiedDiff};
+
     // Parse the diff to check if it's a new file
-    let parsed = UnifiedDiff::parse(diff_text)
-        .map_err(|e| FileError::Io(std::io::Error::new(
+    let parsed = UnifiedDiff::parse(diff_text).map_err(|e| {
+        FileError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            e.to_string()
-        )))?;
-    
+            e.to_string(),
+        ))
+    })?;
+
     // Read original content (or empty for new files)
     let original = if parsed.is_new_file {
         String::new()
@@ -427,15 +436,16 @@ pub fn apply_diff(path: &str, diff_text: &str) -> Result<(), FileError> {
     }
 
     // Apply the diff
-    let patched = apply_unified_diff(&original, diff_text)
-        .map_err(|e| FileError::Io(std::io::Error::new(
+    let patched = apply_unified_diff(&original, diff_text).map_err(|e| {
+        FileError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            e.to_string()
-        )))?;
-    
+            e.to_string(),
+        ))
+    })?;
+
     // Write back
     write_file(path, &patched, true)?;
-    
+
     Ok(())
 }
 

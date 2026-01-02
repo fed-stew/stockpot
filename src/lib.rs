@@ -47,22 +47,19 @@ pub mod gui;
 
 // Re-export commonly used types
 pub use agents::{
-    AgentManager, SpotAgent, BoxedAgent, AgentExecutor, ExecutorResult,
-    ExecutorError, StreamEvent, AgentCapabilities, AgentVisibility, UserMode,
-    JsonAgent, JsonAgentDef, load_json_agents,
+    load_json_agents, AgentCapabilities, AgentExecutor, AgentManager, AgentVisibility, BoxedAgent,
+    ExecutorError, ExecutorResult, JsonAgent, JsonAgentDef, SpotAgent, StreamEvent, UserMode,
 };
 pub use auth::{ChatGptAuth, ClaudeCodeAuth, OAuthProvider};
+pub use cli::{create_reedline, SpotCompleter, SpotPrompt, COMMANDS};
 pub use config::{Settings, XdgDirs};
 pub use db::Database;
-pub use mcp::{McpManager, McpConfig, McpServerEntry};
-pub use messaging::{Message, MessageBus, MessageSender, TerminalRenderer, Spinner, SpinnerHandle};
-pub use session::{SessionManager, SessionData, SessionMeta, SessionError, format_relative_time};
-pub use models::{ModelRegistry, ModelSettings, ModelConfig, ModelType};
-pub use tokens::{estimate_tokens, estimate_message_tokens, should_compact};
-pub use cli::{SpotCompleter, SpotPrompt, create_reedline, COMMANDS};
+pub use mcp::{McpConfig, McpManager, McpServerEntry};
+pub use messaging::{Message, MessageBus, MessageSender, Spinner, SpinnerHandle, TerminalRenderer};
+pub use models::{ModelConfig, ModelRegistry, ModelSettings, ModelType};
+pub use session::{format_relative_time, SessionData, SessionError, SessionManager, SessionMeta};
+pub use tokens::{estimate_message_tokens, estimate_tokens, should_compact};
 pub use tools::{
-    SpotToolRegistry, ArcTool,
-    list_files, read_file, write_file, grep,
-    UnifiedDiff, apply_unified_diff, is_unified_diff,
-    InvokeAgentTool, ListAgentsTool,
+    apply_unified_diff, grep, is_unified_diff, list_files, read_file, write_file, ArcTool,
+    InvokeAgentTool, ListAgentsTool, SpotToolRegistry, UnifiedDiff,
 };

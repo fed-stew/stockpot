@@ -7,7 +7,7 @@
 //!
 //! ### Outbound Messages (stdout)
 //! ```json
-//! {"type": "ready", "version": "0.1.0"}
+//! {"type": "ready", "version": "0.5.0"}
 //! {"type": "text_delta", "text": "Hello "}
 //! {"type": "tool_call", "name": "read_file", "args": {...}}
 //! {"type": "tool_result", "name": "read_file", "success": true, "output": "..."}
@@ -45,13 +45,9 @@ pub enum BridgeOutMessage {
         model: String,
     },
     /// Text content streaming.
-    TextDelta {
-        text: String,
-    },
+    TextDelta { text: String },
     /// Thinking/reasoning content.
-    ThinkingDelta {
-        text: String,
-    },
+    ThinkingDelta { text: String },
     /// Tool call started.
     ToolCallStart {
         tool_name: String,
@@ -59,13 +55,9 @@ pub enum BridgeOutMessage {
         tool_call_id: Option<String>,
     },
     /// Tool call arguments streaming.
-    ToolCallDelta {
-        delta: String,
-    },
+    ToolCallDelta { delta: String },
     /// Tool call completed.
-    ToolCallComplete {
-        tool_name: String,
-    },
+    ToolCallComplete { tool_name: String },
     /// Tool executed with result.
     ToolExecuted {
         tool_name: String,
@@ -74,29 +66,17 @@ pub enum BridgeOutMessage {
         error: Option<String>,
     },
     /// Request step started.
-    RequestStart {
-        step: u32,
-    },
+    RequestStart { step: u32 },
     /// Run completed successfully.
-    Complete {
-        run_id: String,
-    },
+    Complete { run_id: String },
     /// Error occurred.
-    Error {
-        message: String,
-    },
+    Error { message: String },
     /// Agent switched.
-    AgentChanged {
-        agent: String,
-    },
+    AgentChanged { agent: String },
     /// Model switched.
-    ModelChanged {
-        model: String,
-    },
+    ModelChanged { model: String },
     /// MCP server status.
-    McpStatus {
-        servers: Vec<McpServerStatus>,
-    },
+    McpStatus { servers: Vec<McpServerStatus> },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,17 +89,13 @@ impl BridgeOutMessage {
     /// Convert a Message bus event to a Bridge output message.
     fn from_message(msg: Message) -> Option<Self> {
         match msg {
-            Message::TextDelta(delta) => Some(BridgeOutMessage::TextDelta {
-                text: delta.text,
-            }),
+            Message::TextDelta(delta) => Some(BridgeOutMessage::TextDelta { text: delta.text }),
             Message::Thinking(thinking) => Some(BridgeOutMessage::ThinkingDelta {
                 text: thinking.text,
             }),
             Message::Agent(agent) => match agent.event {
                 AgentEvent::Started => None, // Silent - UI can track from tool/text events
-                AgentEvent::Completed { run_id } => {
-                    Some(BridgeOutMessage::Complete { run_id })
-                }
+                AgentEvent::Completed { run_id } => Some(BridgeOutMessage::Complete { run_id }),
                 AgentEvent::Error { message } => Some(BridgeOutMessage::Error { message }),
             },
             Message::Tool(tool) => match tool.status {
@@ -163,13 +139,9 @@ pub enum BridgeInCommand {
     /// Cancel the current operation.
     Cancel,
     /// Switch agent.
-    SwitchAgent {
-        agent: String,
-    },
+    SwitchAgent { agent: String },
     /// Switch model.
-    SwitchModel {
-        model: String,
-    },
+    SwitchModel { model: String },
     /// Start MCP server.
     McpStart {
         #[serde(default)]
@@ -183,10 +155,7 @@ pub enum BridgeInCommand {
     /// List MCP tools.
     McpList,
     /// Approve/reject a tool call (for confirmation mode).
-    ToolResponse {
-        call_id: String,
-        approved: bool,
-    },
+    ToolResponse { call_id: String, approved: bool },
     /// Shutdown the bridge.
     Shutdown,
 }
@@ -265,8 +234,8 @@ impl<'a> Bridge<'a> {
         debug!(agent = %agent.name(), model = %self.current_model, "Bridge handling prompt");
 
         // Create executor with message bus
-        let executor = AgentExecutor::new(self.db, &self.model_registry)
-            .with_bus(self.message_bus.sender());
+        let executor =
+            AgentExecutor::new(self.db, &self.model_registry).with_bus(self.message_bus.sender());
 
         // Spawn bridge renderer
         let receiver = self.message_bus.subscribe();
@@ -403,14 +372,16 @@ impl<'a> Bridge<'a> {
     async fn handle_mcp_list(&self) {
         let running = self.mcp_manager.running_servers().await;
         let config = self.mcp_manager.config();
-        
-        let servers: Vec<McpServerStatus> = config.servers.keys()
+
+        let servers: Vec<McpServerStatus> = config
+            .servers
+            .keys()
             .map(|name| McpServerStatus {
                 name: name.clone(),
                 running: running.contains(name),
             })
             .collect();
-        
+
         self.emit(BridgeOutMessage::McpStatus { servers });
     }
 
@@ -444,46 +415,44 @@ impl<'a> Bridge<'a> {
 pub async fn run_bridge_mode() -> anyhow::Result<()> {
     let db = Database::open()?;
     db.migrate()?;
-    
+
     let mut bridge = Bridge::new(&db);
-    
+
     // Start enabled MCP servers
     let _ = bridge.mcp_manager.start_all().await;
-    
+
     // Emit ready message
     bridge.emit(BridgeOutMessage::Ready {
         version: env!("CARGO_PKG_VERSION").to_string(),
         agent: bridge.agents.current_name(),
         model: bridge.current_model.clone(),
     });
-    
+
     // Set up stdin reader in a separate thread
     let (tx, mut rx) = mpsc::channel::<BridgeInCommand>(32);
-    
+
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
         let reader = BufReader::new(stdin.lock());
-        
+
         for line in reader.lines() {
             match line {
                 Ok(line) if line.is_empty() => continue,
-                Ok(line) => {
-                    match serde_json::from_str::<BridgeInCommand>(&line) {
-                        Ok(cmd) => {
-                            if tx.blocking_send(cmd).is_err() {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("{{\"type\":\"error\",\"message\":\"Invalid JSON: {}\"}}", e);
+                Ok(line) => match serde_json::from_str::<BridgeInCommand>(&line) {
+                    Ok(cmd) => {
+                        if tx.blocking_send(cmd).is_err() {
+                            break;
                         }
                     }
-                }
+                    Err(e) => {
+                        eprintln!("{{\"type\":\"error\",\"message\":\"Invalid JSON: {}\"}}", e);
+                    }
+                },
                 Err(_) => break,
             }
         }
     });
-    
+
     // Main event loop
     while let Some(cmd) = rx.recv().await {
         match cmd {
@@ -536,7 +505,7 @@ pub async fn run_bridge_mode() -> anyhow::Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
 

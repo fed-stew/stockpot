@@ -11,22 +11,21 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-mod manager;
 mod base;
 mod builtin;
 mod executor;
 pub mod json_agent;
+mod manager;
 
-pub use base::{SpotAgent, BoxedAgent};
-pub use manager::{AgentManager, AgentInfo, AgentError};
+pub use base::{BoxedAgent, SpotAgent};
 pub use builtin::*;
-pub use executor::{
-    AgentExecutor, ExecutorResult, ExecutorStreamReceiver, StreamEvent,
-    ExecutorError, get_model,
-};
-pub use json_agent::{JsonAgent, JsonAgentDef, load_json_agents};
 #[allow(deprecated)]
 pub use executor::execute_agent;
+pub use executor::{
+    get_model, AgentExecutor, ExecutorError, ExecutorResult, ExecutorStreamReceiver, StreamEvent,
+};
+pub use json_agent::{load_json_agents, JsonAgent, JsonAgentDef};
+pub use manager::{AgentError, AgentInfo, AgentManager};
 
 /// Agent capability flags.
 #[derive(Debug, Clone, Default)]

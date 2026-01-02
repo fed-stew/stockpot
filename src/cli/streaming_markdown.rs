@@ -58,22 +58,22 @@ impl StreamingMarkdownRenderer {
     /// Render any complete lines in the buffer.
     fn render_complete_lines(&mut self) -> io::Result<()> {
         let mut stdout = stdout();
-        
+
         // Process complete lines (ending with \n)
         while let Some(newline_pos) = self.line_buffer.find('\n') {
             let line = self.line_buffer[..newline_pos].to_string();
             self.line_buffer = self.line_buffer[newline_pos + 1..].to_string();
-            
+
             // Parse the line into events
             let events = self.parser.parse_line(&line);
-            
+
             // Render each event
             let mut renderer = Renderer::new(&mut stdout, self.width);
             for event in &events {
                 renderer.render_event(event)?;
             }
         }
-        
+
         stdout.flush()?;
         Ok(())
     }
@@ -81,18 +81,18 @@ impl StreamingMarkdownRenderer {
     /// Flush any remaining content and reset state.
     pub fn flush(&mut self) -> io::Result<()> {
         let mut stdout = stdout();
-        
+
         // If there's remaining content without a trailing newline, render it
         if !self.line_buffer.is_empty() {
             let line = std::mem::take(&mut self.line_buffer);
             let events = self.parser.parse_line(&line);
-            
+
             let mut renderer = Renderer::new(&mut stdout, self.width);
             for event in &events {
                 renderer.render_event(event)?;
             }
         }
-        
+
         // Finalize the parser (closes any open blocks)
         let final_events = self.parser.finalize();
         if !final_events.is_empty() {
@@ -101,12 +101,12 @@ impl StreamingMarkdownRenderer {
                 renderer.render_event(event)?;
             }
         }
-        
+
         stdout.flush()?;
-        
+
         // Reset for next use
         self.parser.reset();
-        
+
         Ok(())
     }
 

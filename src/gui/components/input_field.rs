@@ -16,3 +16,9 @@ impl InputField {
         }
     }
 }
+
+impl Default for InputField {
+    fn default() -> Self {
+        Self::new()
+    }
+}

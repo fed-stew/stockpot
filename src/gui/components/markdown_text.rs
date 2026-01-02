@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use gpui::{Hsla, SharedString, TextRun, TextStyle, font, hsla};
+use gpui::{font, hsla, Hsla, SharedString, TextRun, TextStyle};
 
 use crate::gui::theme::Theme;
 
@@ -21,7 +21,10 @@ pub struct RenderedMarkdown {
 }
 
 pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> RenderedMarkdown {
-    eprintln!("[markdown] render_markdown called, source len={}", source.len());
+    eprintln!(
+        "[markdown] render_markdown called, source len={}",
+        source.len()
+    );
     let segments = parse_markdown(source);
     eprintln!("[markdown] parsed {} segments:", segments.len());
     for (i, seg) in segments.iter().take(10).enumerate() {
@@ -43,7 +46,9 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
             MarkdownSegment::Plain(s) => (s, base_font.clone(), base_color, None),
             MarkdownSegment::Bold(s) => (s, base_font.clone().bold(), base_color, None),
             MarkdownSegment::Italic(s) => (s, base_font.clone().italic(), base_color, None),
-            MarkdownSegment::BoldItalic(s) => (s, base_font.clone().bold().italic(), base_color, None),
+            MarkdownSegment::BoldItalic(s) => {
+                (s, base_font.clone().bold().italic(), base_color, None)
+            }
             MarkdownSegment::Code(s) => (s, code_font.clone(), base_color, Some(code_bg)),
             MarkdownSegment::Header(_level, s) => (s, base_font.clone().bold(), header_color, None),
         };
@@ -211,9 +216,9 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         let remaining = &input[i..];
 
         // Try to match code: `code`
-        if remaining.starts_with('`') {
-            if let Some(end) = remaining[1..].find('`') {
-                let code = &remaining[1..1 + end];
+        if let Some(stripped) = remaining.strip_prefix('`') {
+            if let Some(end) = stripped.find('`') {
+                let code = &stripped[..end];
                 segments.push(MarkdownSegment::Code(code.to_string()));
                 i += 1 + end + 1;
                 continue;
@@ -225,9 +230,9 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         }
 
         // Try to match bold+italic: ***text***
-        if remaining.starts_with("***") {
-            if let Some(end) = remaining[3..].find("***") {
-                let inner = &remaining[3..3 + end];
+        if let Some(stripped) = remaining.strip_prefix("***") {
+            if let Some(end) = stripped.find("***") {
+                let inner = &stripped[..end];
                 segments.push(MarkdownSegment::BoldItalic(inner.to_string()));
                 i += 3 + end + 3;
                 continue;
@@ -239,9 +244,9 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         }
 
         // Try to match bold: **text**
-        if remaining.starts_with("**") {
-            if let Some(end) = remaining[2..].find("**") {
-                let inner = &remaining[2..2 + end];
+        if let Some(stripped) = remaining.strip_prefix("**") {
+            if let Some(end) = stripped.find("**") {
+                let inner = &stripped[..end];
                 eprintln!("[markdown] found BOLD: '{}'", inner);
                 segments.push(MarkdownSegment::Bold(inner.to_string()));
                 i += 2 + end + 2;
@@ -254,16 +259,13 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         }
 
         // Try to match italic: *text*
-        if remaining.starts_with('*') {
-            if let Some(end) = remaining[1..].find('*') {
-                // Ensure we're not matching into a ** sequence.
-                if !remaining[1 + end..].starts_with('*') || end == 0 {
-                    let inner = &remaining[1..1 + end];
-                    if !inner.is_empty() {
-                        segments.push(MarkdownSegment::Italic(inner.to_string()));
-                        i += 1 + end + 1;
-                        continue;
-                    }
+        if let Some(stripped) = remaining.strip_prefix('*') {
+            if let Some(end) = stripped.find('*') {
+                let inner = &stripped[..end];
+                if !inner.is_empty() {
+                    segments.push(MarkdownSegment::Italic(inner.to_string()));
+                    i += 1 + end + 1;
+                    continue;
                 }
             }
 
@@ -273,9 +275,9 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         }
 
         // Try to match italic: _text_
-        if remaining.starts_with('_') {
-            if let Some(end) = remaining[1..].find('_') {
-                let inner = &remaining[1..1 + end];
+        if let Some(stripped) = remaining.strip_prefix('_') {
+            if let Some(end) = stripped.find('_') {
+                let inner = &stripped[..end];
                 if !inner.is_empty() {
                     segments.push(MarkdownSegment::Italic(inner.to_string()));
                     i += 1 + end + 1;
@@ -292,7 +294,7 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         // IMPORTANT: Always advance at least 1 character to prevent infinite loops.
         let first_len = remaining.chars().next().unwrap().len_utf8();
         let next_special = remaining[first_len..]
-            .find(|c| c == '`' || c == '*' || c == '_')
+            .find(|c| ['`', '*', '_'].contains(&c))
             .map(|pos| first_len + pos)
             .unwrap_or(remaining.len());
 

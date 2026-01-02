@@ -7,15 +7,17 @@ use crate::config::Settings;
 use crate::db::Database;
 use crate::mcp::McpManager;
 use crate::messaging::{
-    Message, MessageBus, Spinner, TerminalRenderer,
-    TerminalRenderer as MsgRenderer,
+    Message, MessageBus, Spinner, TerminalRenderer, TerminalRenderer as MsgRenderer,
 };
 use crate::models::ModelRegistry;
 use crate::session::SessionManager;
 use crate::tools::SpotToolRegistry;
 use reedline::{FileBackedHistory, Signal};
 use serdes_ai_core::ModelRequest;
-use std::{io::{stdout, Write}, time::Duration};
+use std::{
+    io::{stdout, Write},
+    time::Duration,
+};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
@@ -44,7 +46,7 @@ impl<'a> Repl<'a> {
     pub fn new(db: &'a Database) -> Self {
         let settings = Settings::new(db);
         let current_model = settings.model();
-        
+
         Self {
             db,
             agents: AgentManager::new(),
@@ -86,14 +88,23 @@ impl<'a> Repl<'a> {
                 .map(|a| a.name.clone())
                 .collect(),
         );
-        completer.set_sessions(self.session_manager.list().unwrap_or_default().into_iter().map(|s| s.name).collect());
+        completer.set_sessions(
+            self.session_manager
+                .list()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| s.name)
+                .collect(),
+        );
         completer.set_mcp_servers(self.mcp_manager.config().servers.keys().cloned().collect());
         completer.set_models(self.model_registry.list_available(self.db));
 
         let mut line_editor = create_reedline(completer);
         // Load history
         let history_path = crate::config::XdgDirs::new().state.join("history.txt");
-        if let Some(parent) = history_path.parent() { let _ = std::fs::create_dir_all(parent); }
+        if let Some(parent) = history_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         if let Ok(h) = FileBackedHistory::with_file(500, history_path.clone()) {
             line_editor = line_editor.with_history(Box::new(h));
         }
@@ -106,9 +117,12 @@ impl<'a> Repl<'a> {
                 Some(pinned) => (pinned, true),
                 None => (self.current_model.clone(), false),
             };
-            
+
             let prompt = SpotPrompt::with_pinned(
-                self.agents.current().map(|a| a.display_name()).unwrap_or("Coding Agent"),
+                self.agents
+                    .current()
+                    .map(|a| a.display_name())
+                    .unwrap_or("Coding Agent"),
                 &effective_model,
                 is_pinned,
             );
@@ -121,7 +135,10 @@ impl<'a> Repl<'a> {
                     }
 
                     // Try to complete partial commands
-                    let line = match super::completion_reedline::try_complete_input(line, &self.completion_context()) {
+                    let line = match super::completion_reedline::try_complete_input(
+                        line,
+                        &self.completion_context(),
+                    ) {
                         Some(l) => l,
                         None => continue,
                     };
@@ -134,7 +151,9 @@ impl<'a> Repl<'a> {
                         }
                         Ok(false) => {}
                         Err(e) => {
-                            let _ = self.renderer.render(&Message::error(format!("Error: {}", e)));
+                            let _ = self
+                                .renderer
+                                .render(&Message::error(format!("Error: {}", e)));
                         }
                     }
                 }
@@ -148,7 +167,9 @@ impl<'a> Repl<'a> {
                     break;
                 }
                 Err(err) => {
-                    let _ = self.renderer.render(&Message::error(format!("Readline error: {}", err)));
+                    let _ = self
+                        .renderer
+                        .render(&Message::error(format!("Readline error: {}", err)));
                     self.stop_mcp_servers().await;
                     break;
                 }
@@ -160,13 +181,22 @@ impl<'a> Repl<'a> {
     async fn start_mcp_servers(&self) {
         let enabled_count = self.mcp_manager.config().enabled_servers().count();
         if enabled_count > 0 {
-            println!("\x1b[2m🔌 Starting {} MCP server(s)...\x1b[0m", enabled_count);
+            println!(
+                "\x1b[2m🔌 Starting {} MCP server(s)...\x1b[0m",
+                enabled_count
+            );
             if let Err(e) = self.mcp_manager.start_all().await {
-                println!("\x1b[1;33m⚠️  Some MCP servers failed to start: {}\x1b[0m", e);
+                println!(
+                    "\x1b[1;33m⚠️  Some MCP servers failed to start: {}\x1b[0m",
+                    e
+                );
             } else {
                 let running = self.mcp_manager.running_servers().await;
                 if !running.is_empty() {
-                    println!("\x1b[2m✓ MCP servers running: {}\x1b[0m", running.join(", "));
+                    println!(
+                        "\x1b[2m✓ MCP servers running: {}\x1b[0m",
+                        running.join(", ")
+                    );
                 }
             }
         }
@@ -181,7 +211,12 @@ impl<'a> Repl<'a> {
     fn completion_context(&self) -> super::completion_reedline::CompletionContext {
         let user_mode = Settings::new(self.db).user_mode();
         super::completion_reedline::CompletionContext {
-            models: self.model_registry.list().iter().map(|s| s.to_string()).collect(),
+            models: self
+                .model_registry
+                .list()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             agents: self
                 .agents
                 .list_filtered(user_mode)
@@ -228,7 +263,9 @@ impl<'a> Repl<'a> {
             "model" | "m" => {
                 if args.is_empty() {
                     // Interactive picker
-                    if let Some(selected) = pick_model(self.db, &self.model_registry, &self.current_model) {
+                    if let Some(selected) =
+                        pick_model(self.db, &self.model_registry, &self.current_model)
+                    {
                         self.current_model = selected.clone();
                         let settings = Settings::new(self.db);
                         let _ = settings.set("model", &selected);
@@ -253,18 +290,24 @@ impl<'a> Repl<'a> {
                         .into_iter()
                         .map(|info| (info.name.clone(), info.display_name.clone()))
                         .collect();
-                    
+
                     if let Some(selected) = pick_agent(&agents, &self.agents.current_name()) {
                         if self.agents.exists(&selected) {
                             self.agents.switch(&selected)?;
                             self.message_history.clear();
-                            println!("✅ Switched to agent: {}", self.agents.current().unwrap().display_name());
+                            println!(
+                                "✅ Switched to agent: {}",
+                                self.agents.current().unwrap().display_name()
+                            );
                         }
                     }
                 } else if self.agents.exists(args) {
                     self.agents.switch(args)?;
                     self.message_history.clear();
-                    println!("✅ Switched to agent: {}", self.agents.current().unwrap().display_name());
+                    println!(
+                        "✅ Switched to agent: {}",
+                        self.agents.current().unwrap().display_name()
+                    );
                 } else {
                     println!("❌ Agent not found: {}", args);
                     println!("   Use /agents to see available agents");
@@ -274,7 +317,11 @@ impl<'a> Repl<'a> {
                 let settings = Settings::new(self.db);
                 let user_mode = settings.user_mode();
                 let agents = self.agents.list_filtered(user_mode);
-                core::cmd_agents(&agents, &self.agents.current_name(), user_mode == UserMode::Developer);
+                core::cmd_agents(
+                    &agents,
+                    &self.agents.current_name(),
+                    user_mode == UserMode::Developer,
+                );
             }
             "mcp" => mcp::handle(&self.mcp_manager, args).await,
             "set" => self.cmd_set(args)?,
@@ -322,26 +369,57 @@ impl<'a> Repl<'a> {
                 }
             }
             // Session commands
-            "save" => if let Some(name) = session::save(&self.session_manager, &self.agents, &self.message_history, &self.current_model, args) {
-                self.current_session = Some(name);
-            },
-            "load" => if let Some((name, data)) = session::load(&self.session_manager, &mut self.agents, args) {
-                self.message_history = data.messages;
-                self.current_session = Some(name);
+            "save" => {
+                if let Some(name) = session::save(
+                    &self.session_manager,
+                    &self.agents,
+                    &self.message_history,
+                    &self.current_model,
+                    args,
+                ) {
+                    self.current_session = Some(name);
+                }
+            }
+            "load" => {
+                if let Some((name, data)) =
+                    session::load(&self.session_manager, &mut self.agents, args)
+                {
+                    self.message_history = data.messages;
+                    self.current_session = Some(name);
+                }
             }
             "sessions" => session::list(&self.session_manager, self.current_session.as_deref()),
             "delete-session" => session::delete(&self.session_manager, args),
             // Context commands
             "truncate" => context::truncate(&mut self.message_history, args),
             "context" => {
-                let ctx_len = self.model_registry.get(&self.current_model).map(|c| c.context_length).unwrap_or(128000);
-                session::cmd_context(self.db, &self.message_history, self.current_session.as_deref(), &self.agents.current_name(), ctx_len);
+                let ctx_len = self
+                    .model_registry
+                    .get(&self.current_model)
+                    .map(|c| c.context_length)
+                    .unwrap_or(128000);
+                session::cmd_context(
+                    self.db,
+                    &self.message_history,
+                    self.current_session.as_deref(),
+                    &self.agents.current_name(),
+                    ctx_len,
+                );
             }
             "compact" => session::cmd_compact(&mut self.message_history, args),
-            "session" | "s" => session::show_session(self.current_session.as_deref(), Settings::new(self.db).get_bool("auto_save_session").unwrap_or(true)),
-            "resume" => if let Some((n, d)) = session::load_interactive(&self.session_manager, &mut self.agents) {
-                self.message_history = d.messages;
-                self.current_session = Some(n);
+            "session" | "s" => session::show_session(
+                self.current_session.as_deref(),
+                Settings::new(self.db)
+                    .get_bool("auto_save_session")
+                    .unwrap_or(true),
+            ),
+            "resume" => {
+                if let Some((n, d)) =
+                    session::load_interactive(&self.session_manager, &mut self.agents)
+                {
+                    self.message_history = d.messages;
+                    self.current_session = Some(n);
+                }
             }
             // Model pin commands (persisted to database)
             "pin" => self.cmd_pin(args),
@@ -351,7 +429,9 @@ impl<'a> Repl<'a> {
             "cd" => core::cmd_cd(args),
             "show" => {
                 let agent_name = self.agents.current_name();
-                let agent_display_name = self.agents.current()
+                let agent_display_name = self
+                    .agents
+                    .current()
                     .map(|a| a.display_name().to_string())
                     .unwrap_or_else(|| "None".to_string());
                 core::cmd_show(
@@ -437,9 +517,13 @@ impl<'a> Repl<'a> {
         let new_value = !settings.yolo_mode();
         settings.set("yolo_mode", if new_value { "true" } else { "false" })?;
         if new_value {
-            println!("🔥 YOLO mode \x1b[1;31mENABLED\x1b[0m - Commands will run without confirmation!");
+            println!(
+                "🔥 YOLO mode \x1b[1;31mENABLED\x1b[0m - Commands will run without confirmation!"
+            );
         } else {
-            println!("🛡️  YOLO mode \x1b[1;32mDISABLED\x1b[0m - Commands will ask for confirmation");
+            println!(
+                "🛡️  YOLO mode \x1b[1;32mDISABLED\x1b[0m - Commands will ask for confirmation"
+            );
         }
         Ok(())
     }
@@ -449,7 +533,7 @@ impl<'a> Repl<'a> {
     fn cmd_pin(&mut self, args: &str) {
         let parts: Vec<&str> = args.split_whitespace().collect();
         let current_agent = self.agents.current_name();
-        
+
         match parts.len() {
             0 => {
                 // No args - show usage
@@ -472,7 +556,7 @@ impl<'a> Repl<'a> {
             _ => {
                 // Two+ args - first could be agent name, rest is model
                 let first_arg = parts[0];
-                
+
                 // Check if first arg is a valid agent name
                 if self.agents.exists(first_arg) {
                     // Pin to specific agent
@@ -504,7 +588,7 @@ impl<'a> Repl<'a> {
     /// Supports: `/unpin` or `/unpin <agent>`
     fn cmd_unpin(&mut self, args: &str) {
         let current_agent = self.agents.current_name();
-        
+
         if args.is_empty() {
             // No args - unpin current agent
             context::unpin_model(
@@ -516,20 +600,15 @@ impl<'a> Repl<'a> {
         } else {
             // Unpin specific agent
             let target_agent = args.trim();
-            
+
             if !self.agents.exists(target_agent) {
                 println!("❌ Unknown agent: {}", target_agent);
                 println!("   Use /agents to see available agents");
                 return;
             }
-            
+
             let is_current = target_agent == current_agent;
-            context::unpin_model(
-                self.db,
-                &mut self.current_model,
-                target_agent,
-                is_current,
-            );
+            context::unpin_model(self.db, &mut self.current_model, target_agent, is_current);
         }
     }
 
@@ -548,16 +627,15 @@ impl<'a> Repl<'a> {
     async fn handle_prompt_with_bus(&mut self, prompt: &str) -> anyhow::Result<()> {
         debug!(prompt_len = prompt.len(), "handle_prompt_with_bus started");
 
-        let agent = self.agents.current()
+        let agent = self
+            .agents
+            .current()
             .ok_or_else(|| anyhow::anyhow!("No agent selected"))?;
         let agent_name = agent.name().to_string();
 
         // Get effective model (respecting agent pins)
-        let effective_model = context::get_effective_model(
-            self.db,
-            &self.current_model,
-            &agent_name,
-        );
+        let effective_model =
+            context::get_effective_model(self.db, &self.current_model, &agent_name);
 
         // Prepare history
         let history = if self.message_history.is_empty() {
@@ -583,8 +661,8 @@ impl<'a> Repl<'a> {
         let spinner_handle = spinner.start(format!("Thinking... [{}]", effective_model));
 
         // Create executor with message bus
-        let executor = AgentExecutor::new(self.db, &self.model_registry)
-            .with_bus(self.message_bus.sender());
+        let executor =
+            AgentExecutor::new(self.db, &self.model_registry).with_bus(self.message_bus.sender());
 
         // Subscribe and create ready signal to avoid race condition
         let mut receiver = self.message_bus.subscribe();
@@ -619,14 +697,16 @@ impl<'a> Repl<'a> {
         let _ = ready_rx.await;
 
         // NOW safe to execute - render task is waiting for messages
-        let result = executor.execute_with_bus(
-            agent,
-            &effective_model,
-            prompt,
-            history,
-            &self.tool_registry,
-            &self.mcp_manager,
-        ).await;
+        let result = executor
+            .execute_with_bus(
+                agent,
+                &effective_model,
+                prompt,
+                history,
+                &self.tool_registry,
+                &self.mcp_manager,
+            )
+            .await;
 
         // Give renderer a moment to finish processing, then abort if needed
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -653,21 +733,30 @@ impl<'a> Repl<'a> {
     #[allow(dead_code)]
     async fn handle_prompt_legacy(&mut self, prompt: &str) -> anyhow::Result<()> {
         debug!(prompt_len = prompt.len(), "handle_prompt_legacy started");
-        
-        let agent = self.agents.current()
+
+        let agent = self
+            .agents
+            .current()
             .ok_or_else(|| anyhow::anyhow!("No agent selected"))?;
         let display_name = agent.display_name().to_string();
         let agent_name = agent.name().to_string();
-        
+
         debug!(agent = %agent_name, display_name = %display_name, "Agent selected");
-        
+
         println!();
-        
+
         let executor = AgentExecutor::new(self.db, &self.model_registry);
-        let history = if self.message_history.is_empty() { None } else { Some(self.message_history.clone()) };
-        
-        debug!(history_messages = history.as_ref().map(|h| h.len()).unwrap_or(0), "Message history");
-        
+        let history = if self.message_history.is_empty() {
+            None
+        } else {
+            Some(self.message_history.clone())
+        };
+
+        debug!(
+            history_messages = history.as_ref().map(|h| h.len()).unwrap_or(0),
+            "Message history"
+        );
+
         // Get MCP tool count
         let mcp_tools = self.mcp_manager.list_all_tools().await;
         let mcp_tool_count: usize = mcp_tools.values().map(|v| v.len()).sum();
@@ -675,29 +764,29 @@ impl<'a> Repl<'a> {
             debug!(mcp_tool_count, "MCP tools available");
             println!("\x1b[2m[{} MCP tools available]\x1b[0m\n", mcp_tool_count);
         }
-        
+
         // Use pinned model if set (from database)
-        let effective_model = context::get_effective_model(
-            self.db,
-            &self.current_model,
-            &self.agents.current_name(),
-        );
-        
+        let effective_model =
+            context::get_effective_model(self.db, &self.current_model, &self.agents.current_name());
+
         info!(model = %effective_model, agent = %agent_name, "Starting request");
-        
+
         // Start spinner
         let spinner = Spinner::new();
         let mut spinner_handle = Some(spinner.start(format!("Thinking... [{}]", effective_model)));
-        
+
         debug!("Calling execute_stream");
-        match executor.execute_stream(
-            agent,
-            &effective_model,
-            prompt,
-            history,
-            &self.tool_registry,
-            &self.mcp_manager,
-        ).await {
+        match executor
+            .execute_stream(
+                agent,
+                &effective_model,
+                prompt,
+                history,
+                &self.tool_registry,
+                &self.mcp_manager,
+            )
+            .await
+        {
             Ok(mut stream) => {
                 debug!("execute_stream returned successfully, waiting for events");
                 let mut first_text = true;
@@ -705,15 +794,15 @@ impl<'a> Repl<'a> {
                 let mut event_count = 0u32;
                 let recv_timeout = Duration::from_secs(120); // 2 minute timeout
                 let mut md_renderer = StreamingMarkdownRenderer::new();
-                
+
                 // Track current tool call for nicer output formatting
                 let mut current_tool: Option<String> = None;
                 let mut tool_args_buffer = String::new();
-                
+
                 loop {
                     // Use timeout to detect if we're stuck
                     let recv_result = timeout(recv_timeout, stream.recv()).await;
-                    
+
                     let event_result = match recv_result {
                         Ok(Some(result)) => result,
                         Ok(None) => {
@@ -735,7 +824,7 @@ impl<'a> Repl<'a> {
                             break;
                         }
                     };
-                    
+
                     event_count += 1;
                     debug!(event_num = event_count, "Processing event");
                     match event_result {
@@ -783,26 +872,38 @@ impl<'a> Repl<'a> {
                                     if let Some(ref tool) = current_tool {
                                         debug!(tool = %tool, args_buffer = %tool_args_buffer, "ToolCallComplete - parsing args");
                                         // Try to parse args and show nicely
-                                        if let Ok(args) = serde_json::from_str::<serde_json::Value>(&tool_args_buffer) {
+                                        if let Ok(args) = serde_json::from_str::<serde_json::Value>(
+                                            &tool_args_buffer,
+                                        ) {
                                             debug!(parsed_args = %args, "Parsed tool args");
                                             match tool.as_str() {
                                                 "read_file" => {
-                                                    if let Some(path) = args.get("file_path").and_then(|v| v.as_str()) {
+                                                    if let Some(path) = args
+                                                        .get("file_path")
+                                                        .and_then(|v| v.as_str())
+                                                    {
                                                         print!("\x1b[36m{}\x1b[0m", path);
                                                     }
                                                 }
                                                 "list_files" => {
-                                                    if let Some(dir) = args.get("directory").and_then(|v| v.as_str()) {
+                                                    if let Some(dir) = args
+                                                        .get("directory")
+                                                        .and_then(|v| v.as_str())
+                                                    {
                                                         print!("\x1b[36m{}\x1b[0m", dir);
                                                     }
                                                 }
                                                 "grep" => {
-                                                    if let Some(pattern) = args.get("pattern").and_then(|v| v.as_str()) {
+                                                    if let Some(pattern) =
+                                                        args.get("pattern").and_then(|v| v.as_str())
+                                                    {
                                                         print!("\x1b[36m'{}'\x1b[0m", pattern);
                                                     }
                                                 }
                                                 "agent_run_shell_command" | "run_shell_command" => {
-                                                    if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
+                                                    if let Some(cmd) =
+                                                        args.get("command").and_then(|v| v.as_str())
+                                                    {
                                                         // Truncate long commands
                                                         let display_cmd = if cmd.len() > 60 {
                                                             format!("{}...", &cmd[..57])
@@ -816,7 +917,10 @@ impl<'a> Repl<'a> {
                                                     // For other tools, show compact args
                                                     let compact = args.to_string();
                                                     if compact.len() > 80 {
-                                                        print!("\x1b[2m{}...\x1b[0m", &compact[..77]);
+                                                        print!(
+                                                            "\x1b[2m{}...\x1b[0m",
+                                                            &compact[..77]
+                                                        );
                                                     } else {
                                                         print!("\x1b[2m{}\x1b[0m", compact);
                                                     }
@@ -835,7 +939,11 @@ impl<'a> Repl<'a> {
                                     }
                                     let _ = stdout().flush();
                                 }
-                                StreamEvent::ToolExecuted { tool_name: _, success, error } => {
+                                StreamEvent::ToolExecuted {
+                                    tool_name: _,
+                                    success,
+                                    error,
+                                } => {
                                     // Just end the line, show error if failed
                                     if success {
                                         println!();
@@ -864,7 +972,8 @@ impl<'a> Repl<'a> {
                                     print!("\x1b[2m{}\x1b[0m", text);
                                     let _ = stdout().flush();
                                 }
-                                StreamEvent::ResponseComplete { .. } | StreamEvent::OutputReady => {}
+                                StreamEvent::ResponseComplete { .. } | StreamEvent::OutputReady => {
+                                }
                                 StreamEvent::RunComplete { run_id, .. } => {
                                     debug!(run_id = %run_id, total_events = event_count, "Run completed");
                                     if let Some(handle) = spinner_handle.take() {

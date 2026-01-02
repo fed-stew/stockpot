@@ -4,8 +4,8 @@ use super::storage::{StoredTokens, TokenStorage, TokenStorageError};
 use crate::db::Database;
 use serdes_ai_models::chatgpt_oauth::ChatGptOAuthModel;
 use serdes_ai_providers::oauth::{
-    config::chatgpt_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow,
-    OAuthError, TokenResponse,
+    config::chatgpt_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow, OAuthError,
+    TokenResponse,
 };
 use thiserror::Error;
 
@@ -61,9 +61,11 @@ impl<'a> ChatGptAuth<'a> {
 
     /// Refresh tokens if needed.
     pub async fn refresh_if_needed(&self) -> Result<String, ChatGptAuthError> {
-        let tokens = self.storage.load(PROVIDER)?
+        let tokens = self
+            .storage
+            .load(PROVIDER)?
             .ok_or(ChatGptAuthError::NotAuthenticated)?;
-        
+
         // Refresh if expired or expiring within 5 minutes
         if tokens.expires_within(300) {
             if let Some(refresh_token) = &tokens.refresh_token {
@@ -77,7 +79,7 @@ impl<'a> ChatGptAuth<'a> {
                 return Err(ChatGptAuthError::NotAuthenticated);
             }
         }
-        
+
         Ok(tokens.access_token)
     }
 
@@ -91,29 +93,32 @@ impl<'a> ChatGptAuth<'a> {
 /// Run the ChatGPT OAuth flow.
 pub async fn run_chatgpt_auth(db: &Database) -> Result<(), ChatGptAuthError> {
     println!("🔐 Starting ChatGPT OAuth authentication...");
-    
+
     let config = chatgpt_oauth_config();
     let (auth_url, handle) = run_pkce_flow(&config).await?;
-    
+
     println!("📋 Open this URL in your browser:");
     println!("   {}", auth_url);
     println!();
-    println!("⏳ Waiting for authentication callback on port {}...", handle.port());
-    
+    println!(
+        "⏳ Waiting for authentication callback on port {}...",
+        handle.port()
+    );
+
     // Try to open browser
     if let Err(e) = webbrowser::open(&auth_url) {
         println!("⚠️  Could not open browser automatically: {}", e);
         println!("   Please open the URL manually.");
     }
-    
+
     let tokens = handle.wait_for_tokens().await?;
-    
+
     let auth = ChatGptAuth::new(db);
     auth.save_tokens(&tokens)?;
-    
+
     println!("✅ ChatGPT authentication successful!");
     println!("   You can now use chatgpt-* models.");
-    
+
     Ok(())
 }
 

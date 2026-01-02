@@ -85,8 +85,8 @@ impl ChatApp {
                                             cx.listener(move |this, _, _, cx| {
                                                 cx.stop_propagation();
                                                 let settings = Settings::new(&this.db);
-                                                if let Err(e) = settings
-                                                    .clear_agent_pinned_model(&agent_name)
+                                                if let Err(e) =
+                                                    settings.clear_agent_pinned_model(&agent_name)
                                                 {
                                                     tracing::warn!(
                                                         "Failed to clear pinned model for {}: {}",

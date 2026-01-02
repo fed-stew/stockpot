@@ -9,13 +9,11 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
-use serdes_ai_tools::{
-    Tool, ToolDefinition, ToolResult, ToolReturn, SchemaBuilder, RunContext,
-};
+use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
+use super::agent_tools::{InvokeAgentTool, ListAgentsTool};
 use super::file_ops::{self, FileError};
 use super::shell::{self, ShellError};
-use super::agent_tools::{InvokeAgentTool, ListAgentsTool};
 
 /// Arc-wrapped tool for shared ownership.
 pub type ArcTool = Arc<dyn Tool + Send + Sync>;
@@ -85,11 +83,9 @@ impl Tool for ListFilesTool {
         match file_ops::list_files(directory, recursive, max_depth) {
             Ok(result) => {
                 // Format as a readable summary with file tree
-                let mut output = format!(
-                    "DIRECTORY LISTING: {} (recursive={})",
-                    directory, recursive
-                );
-                
+                let mut output =
+                    format!("DIRECTORY LISTING: {} (recursive={})", directory, recursive);
+
                 for entry in &result.entries {
                     let indent = "  ".repeat(entry.depth);
                     let marker = if entry.is_dir { "/" } else { "" };
@@ -100,12 +96,12 @@ impl Tool for ListFilesTool {
                     };
                     output.push_str(&format!("\n{}{}{}{}", indent, entry.name, marker, size));
                 }
-                
+
                 output.push_str(&format!(
                     "\n\nSummary: {} files, {} directories, {} bytes total",
                     result.total_files, result.total_dirs, result.total_size
                 ));
-                
+
                 Ok(ToolReturn::text(output))
             }
             Err(e) => Ok(ToolReturn::error(format!("Failed to list files: {}", e))),
@@ -179,7 +175,7 @@ impl Tool for ReadFileTool {
         ) {
             Ok(result) => {
                 let mut output = result.content;
-                
+
                 // Add metadata as a comment if we're reading a partial file
                 if args.start_line.is_some() {
                     output = format!(
@@ -192,7 +188,7 @@ impl Tool for ReadFileTool {
                         output
                     );
                 }
-                
+
                 Ok(ToolReturn::text(output))
             }
             Err(FileError::NotFound(path)) => {
@@ -235,16 +231,8 @@ impl Tool for EditFileTool {
         )
         .with_parameters(
             SchemaBuilder::new()
-                .string(
-                    "file_path",
-                    "Path to the file to create or edit.",
-                    true,
-                )
-                .string(
-                    "content",
-                    "The full content to write to the file.",
-                    true,
-                )
+                .string("file_path", "Path to the file to create or edit.", true)
+                .string("content", "The full content to write to the file.", true)
                 .boolean(
                     "create_directories",
                     "Whether to create parent directories if they don't exist. Defaults to false.",
@@ -354,10 +342,7 @@ impl Tool for GrepTool {
                 );
 
                 for m in &result.matches {
-                    output.push_str(&format!(
-                        "\n{}:{}:{}",
-                        m.path, m.line_number, m.content
-                    ));
+                    output.push_str(&format!("\n{}:{}:{}", m.path, m.line_number, m.content));
                 }
 
                 Ok(ToolReturn::text(output))
@@ -393,11 +378,7 @@ impl Tool for RunShellCommandTool {
         )
         .with_parameters(
             SchemaBuilder::new()
-                .string(
-                    "command",
-                    "The shell command to execute.",
-                    true,
-                )
+                .string("command", "The shell command to execute.", true)
                 .string(
                     "working_directory",
                     "Working directory for command execution. If not specified, \
@@ -428,11 +409,11 @@ impl Tool for RunShellCommandTool {
 
         // Build the command runner with options
         let mut runner = shell::CommandRunner::new();
-        
+
         if let Some(dir) = &args.working_directory {
             runner = runner.working_dir(dir);
         }
-        
+
         if let Some(timeout) = args.timeout_seconds {
             runner = runner.timeout(timeout);
         }
@@ -440,35 +421,45 @@ impl Tool for RunShellCommandTool {
         match runner.run(&args.command) {
             Ok(result) => {
                 let mut output = String::new();
-                
+
                 // Include exit status
                 if result.success {
-                    output.push_str(&format!("Command completed successfully (exit code: {})\n", result.exit_code));
+                    output.push_str(&format!(
+                        "Command completed successfully (exit code: {})\n",
+                        result.exit_code
+                    ));
                 } else {
-                    output.push_str(&format!("Command failed (exit code: {})\n", result.exit_code));
+                    output.push_str(&format!(
+                        "Command failed (exit code: {})\n",
+                        result.exit_code
+                    ));
                 }
-                
+
                 // Include stdout if present
                 if !result.stdout.trim().is_empty() {
                     output.push_str("\n--- stdout ---\n");
                     output.push_str(&result.stdout);
                 }
-                
+
                 // Include stderr if present
                 if !result.stderr.trim().is_empty() {
                     output.push_str("\n--- stderr ---\n");
                     output.push_str(&result.stderr);
                 }
-                
+
                 Ok(ToolReturn::text(output))
             }
             Err(ShellError::NotFound(cmd)) => {
                 Ok(ToolReturn::error(format!("Command not found: {}", cmd)))
             }
-            Err(ShellError::Timeout(secs)) => {
-                Ok(ToolReturn::error(format!("Command timed out after {} seconds", secs)))
-            }
-            Err(e) => Ok(ToolReturn::error(format!("Command execution failed: {}", e))),
+            Err(ShellError::Timeout(secs)) => Ok(ToolReturn::error(format!(
+                "Command timed out after {} seconds",
+                secs
+            ))),
+            Err(e) => Ok(ToolReturn::error(format!(
+                "Command execution failed: {}",
+                e
+            ))),
         }
     }
 }
@@ -530,11 +521,11 @@ impl Tool for ShareReasoningTool {
         // Note: In a real implementation, this would send to a message bus
         // for the UI to display. For now, we just acknowledge.
         let mut output = format!("🧠 Reasoning shared:\n{}", args.reasoning);
-        
+
         if let Some(steps) = &args.next_steps {
             output.push_str(&format!("\n\n📋 Next steps:\n{}", steps));
         }
-        
+
         Ok(ToolReturn::text(output))
     }
 }
@@ -561,11 +552,7 @@ impl Tool for DeleteFileTool {
         )
         .with_parameters(
             SchemaBuilder::new()
-                .string(
-                    "file_path",
-                    "Path to the file to delete.",
-                    true,
-                )
+                .string("file_path", "Path to the file to delete.", true)
                 .build()
                 .expect("schema build failed"),
         )
@@ -583,20 +570,26 @@ impl Tool for DeleteFileTool {
         })?;
 
         let path = std::path::Path::new(&args.file_path);
-        
+
         if !path.exists() {
-            return Ok(ToolReturn::error(format!("File not found: {}", args.file_path)));
+            return Ok(ToolReturn::error(format!(
+                "File not found: {}",
+                args.file_path
+            )));
         }
-        
+
         if path.is_dir() {
             return Ok(ToolReturn::error(format!(
-                "Cannot delete directory with this tool: {}", 
+                "Cannot delete directory with this tool: {}",
                 args.file_path
             )));
         }
 
         match std::fs::remove_file(path) {
-            Ok(()) => Ok(ToolReturn::text(format!("Successfully deleted: {}", args.file_path))),
+            Ok(()) => Ok(ToolReturn::text(format!(
+                "Successfully deleted: {}",
+                args.file_path
+            ))),
             Err(e) => Ok(ToolReturn::error(format!("Failed to delete file: {}", e))),
         }
     }
@@ -607,7 +600,7 @@ impl Tool for DeleteFileTool {
 // ============================================================================
 
 /// Registry holding all available Stockpot tools.
-/// 
+///
 /// This provides a convenient way to create and access all tools
 /// for use with serdesAI agents.
 #[derive(Debug, Default)]
@@ -646,16 +639,13 @@ impl SpotToolRegistry {
 
     /// Get tool definitions for all tools.
     pub fn definitions(&self) -> Vec<ToolDefinition> {
-        self.all_tools()
-            .iter()
-            .map(|t| t.definition())
-            .collect()
+        self.all_tools().iter().map(|t| t.definition()).collect()
     }
 
     /// Get a subset of tools by name.
     pub fn tools_by_name(&self, names: &[&str]) -> Vec<ArcTool> {
         let mut tools: Vec<ArcTool> = Vec::new();
-        
+
         for name in names {
             match *name {
                 "list_files" => tools.push(Arc::new(self.list_files.clone())),
@@ -670,7 +660,7 @@ impl SpotToolRegistry {
                 _ => {} // Unknown tool, skip
             }
         }
-        
+
         tools
     }
 
@@ -722,11 +712,12 @@ mod tests {
         for tool in &tools {
             let name = tool.definition().name;
             assert!(
-                name == "list_files" 
-                || name == "read_file" 
-                || name == "grep"
-                || name == "share_your_reasoning",
-                "Unexpected tool in read_only: {}", name
+                name == "list_files"
+                    || name == "read_file"
+                    || name == "grep"
+                    || name == "share_your_reasoning",
+                "Unexpected tool in read_only: {}",
+                name
             );
         }
     }
@@ -745,13 +736,18 @@ mod tests {
     async fn test_list_files_tool() {
         let tool = ListFilesTool;
         let ctx = RunContext::minimal("test");
-        
+
         // Test with current directory
-        let result = tool.call(&ctx, serde_json::json!({
-            "directory": ".",
-            "recursive": false
-        })).await;
-        
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "directory": ".",
+                    "recursive": false
+                }),
+            )
+            .await;
+
         assert!(result.is_ok());
     }
 
@@ -759,11 +755,16 @@ mod tests {
     async fn test_read_file_tool_not_found() {
         let tool = ReadFileTool;
         let ctx = RunContext::minimal("test");
-        
-        let result = tool.call(&ctx, serde_json::json!({
-            "file_path": "/nonexistent/file.txt"
-        })).await;
-        
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "file_path": "/nonexistent/file.txt"
+                }),
+            )
+            .await;
+
         assert!(result.is_ok());
         let ret = result.unwrap();
         assert!(ret.as_text().unwrap().contains("not found"));
@@ -773,12 +774,17 @@ mod tests {
     async fn test_share_reasoning_tool() {
         let tool = ShareReasoningTool;
         let ctx = RunContext::minimal("test");
-        
-        let result = tool.call(&ctx, serde_json::json!({
-            "reasoning": "I need to analyze the code structure first.",
-            "next_steps": "1. List files\n2. Read main.rs"
-        })).await;
-        
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "reasoning": "I need to analyze the code structure first.",
+                    "next_steps": "1. List files\n2. Read main.rs"
+                }),
+            )
+            .await;
+
         assert!(result.is_ok());
         let ret = result.unwrap();
         let text = ret.as_text().unwrap();

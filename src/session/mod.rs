@@ -15,7 +15,7 @@
 //! use stockpot::session::SessionManager;
 //!
 //! let manager = SessionManager::new();
-//! 
+//!
 //! // Save a session
 //! manager.save("my-project", &messages, "stockpot", "gpt-4o")?;
 //!
@@ -40,13 +40,13 @@ use thiserror::Error;
 pub enum SessionError {
     #[error("Session not found: {0}")]
     NotFound(String),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
-    
+
     #[error("Invalid session name: {0}")]
     InvalidName(String),
 }
@@ -56,25 +56,25 @@ pub enum SessionError {
 pub struct SessionMeta {
     /// Session name.
     pub name: String,
-    
+
     /// When the session was created.
     pub created_at: DateTime<Utc>,
-    
+
     /// When the session was last updated.
     pub updated_at: DateTime<Utc>,
-    
+
     /// Number of messages in the session.
     pub message_count: usize,
-    
+
     /// Estimated token count.
     pub token_estimate: usize,
-    
+
     /// Agent used in the session.
     pub agent: String,
-    
+
     /// Model used in the session.
     pub model: String,
-    
+
     /// Optional description/summary.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -109,7 +109,7 @@ impl SessionMeta {
 pub struct SessionData {
     /// Session metadata.
     pub meta: SessionMeta,
-    
+
     /// Message history.
     pub messages: Vec<ModelRequest>,
 }
@@ -134,7 +134,7 @@ impl SessionData {
 pub struct SessionManager {
     /// Base directory for sessions.
     sessions_dir: PathBuf,
-    
+
     /// Maximum number of sessions to keep (0 = unlimited).
     max_sessions: usize,
 }
@@ -146,7 +146,7 @@ impl SessionManager {
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".stockpot")
             .join("sessions");
-        
+
         Self {
             sessions_dir,
             max_sessions: 50, // Keep last 50 sessions by default
@@ -181,16 +181,21 @@ impl SessionManager {
     /// Validate session name.
     fn validate_name(name: &str) -> Result<(), SessionError> {
         if name.is_empty() {
-            return Err(SessionError::InvalidName("Name cannot be empty".to_string()));
-        }
-        
-        // Only allow alphanumeric, dash, underscore
-        if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
             return Err(SessionError::InvalidName(
-                "Name can only contain letters, numbers, dashes, and underscores".to_string()
+                "Name cannot be empty".to_string(),
             ));
         }
-        
+
+        // Only allow alphanumeric, dash, underscore
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(SessionError::InvalidName(
+                "Name can only contain letters, numbers, dashes, and underscores".to_string(),
+            ));
+        }
+
         Ok(())
     }
 
@@ -204,9 +209,9 @@ impl SessionManager {
     ) -> Result<SessionMeta, SessionError> {
         Self::validate_name(name)?;
         self.ensure_dir()?;
-        
+
         let path = self.session_path(name);
-        
+
         // Load existing or create new
         let mut session = if path.exists() {
             let content = fs::read_to_string(&path)?;
@@ -214,48 +219,48 @@ impl SessionManager {
         } else {
             SessionData::new(name, agent, model)
         };
-        
+
         // Update with new messages
         session.update(messages.to_vec());
         session.meta.agent = agent.to_string();
         session.meta.model = model.to_string();
-        
+
         // Write to disk
         let content = serde_json::to_string_pretty(&session)?;
         fs::write(&path, content)?;
-        
+
         // Cleanup old sessions if needed
         self.cleanup()?;
-        
+
         Ok(session.meta)
     }
 
     /// Load a session.
     pub fn load(&self, name: &str) -> Result<SessionData, SessionError> {
         Self::validate_name(name)?;
-        
+
         let path = self.session_path(name);
-        
+
         if !path.exists() {
             return Err(SessionError::NotFound(name.to_string()));
         }
-        
+
         let content = fs::read_to_string(&path)?;
         let session: SessionData = serde_json::from_str(&content)?;
-        
+
         Ok(session)
     }
 
     /// List all sessions.
     pub fn list(&self) -> Result<Vec<SessionMeta>, SessionError> {
         self.ensure_dir()?;
-        
+
         let mut sessions = Vec::new();
-        
+
         for entry in fs::read_dir(&self.sessions_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.extension().map(|e| e == "json").unwrap_or(false) {
                 // Skip metadata files (we read from main file)
                 if let Some(stem) = path.file_stem() {
@@ -264,7 +269,7 @@ impl SessionManager {
                         continue;
                     }
                 }
-                
+
                 if let Ok(content) = fs::read_to_string(&path) {
                     if let Ok(session) = serde_json::from_str::<SessionData>(&content) {
                         sessions.push(session.meta);
@@ -272,25 +277,25 @@ impl SessionManager {
                 }
             }
         }
-        
+
         // Sort by updated_at descending (most recent first)
         sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        
+
         Ok(sessions)
     }
 
     /// Delete a session.
     pub fn delete(&self, name: &str) -> Result<(), SessionError> {
         Self::validate_name(name)?;
-        
+
         let path = self.session_path(name);
-        
+
         if !path.exists() {
             return Err(SessionError::NotFound(name.to_string()));
         }
-        
+
         fs::remove_file(path)?;
-        
+
         Ok(())
     }
 
@@ -303,11 +308,11 @@ impl SessionManager {
     pub fn generate_name(&self, prefix: &str) -> String {
         let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
         let base_name = format!("{}-{}", prefix, timestamp);
-        
+
         if !self.exists(&base_name) {
             return base_name;
         }
-        
+
         // Add suffix if collision
         for i in 1..100 {
             let name = format!("{}-{}", base_name, i);
@@ -315,7 +320,7 @@ impl SessionManager {
                 return name;
             }
         }
-        
+
         // Fallback with random suffix
         format!("{}-{}", base_name, rand_suffix())
     }
@@ -325,16 +330,16 @@ impl SessionManager {
         if self.max_sessions == 0 {
             return Ok(()); // Unlimited
         }
-        
+
         let sessions = self.list()?;
-        
+
         if sessions.len() > self.max_sessions {
             // Delete oldest sessions
             for session in sessions.iter().skip(self.max_sessions) {
                 let _ = self.delete(&session.name);
             }
         }
-        
+
         Ok(())
     }
 
@@ -351,17 +356,17 @@ impl Default for SessionManager {
 }
 
 /// Estimate token count for messages.
-/// 
+///
 /// Uses a simple heuristic: ~4 characters per token.
 fn estimate_tokens(messages: &[ModelRequest]) -> usize {
     let mut total_chars = 0;
-    
+
     for msg in messages {
         // Estimate based on content - this is a rough approximation
         // Real token counting would require the model's tokenizer
         total_chars += estimate_message_chars(msg);
     }
-    
+
     // Rough estimate: 4 chars per token
     total_chars / 4
 }
@@ -369,9 +374,7 @@ fn estimate_tokens(messages: &[ModelRequest]) -> usize {
 /// Estimate character count for a single message.
 fn estimate_message_chars(msg: &ModelRequest) -> usize {
     // ModelRequest is complex, let's serialize and count
-    serde_json::to_string(msg)
-        .map(|s| s.len())
-        .unwrap_or(100) // Default estimate
+    serde_json::to_string(msg).map(|s| s.len()).unwrap_or(100) // Default estimate
 }
 
 /// Generate a random suffix for names.
@@ -388,7 +391,7 @@ fn rand_suffix() -> String {
 pub fn format_relative_time(dt: DateTime<Utc>) -> String {
     let now = Utc::now();
     let diff = now.signed_duration_since(dt);
-    
+
     if diff.num_seconds() < 60 {
         "just now".to_string()
     } else if diff.num_minutes() < 60 {
@@ -415,7 +418,7 @@ mod tests {
         assert!(SessionManager::validate_name("my-session").is_ok());
         assert!(SessionManager::validate_name("session_123").is_ok());
         assert!(SessionManager::validate_name("Session2024").is_ok());
-        
+
         assert!(SessionManager::validate_name("").is_err());
         assert!(SessionManager::validate_name("my session").is_err());
         assert!(SessionManager::validate_name("../hack").is_err());
@@ -425,14 +428,16 @@ mod tests {
     fn test_session_manager_save_load() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::with_dir(temp_dir.path());
-        
+
         let messages = vec![];
-        
+
         // Save
-        let meta = manager.save("test-session", &messages, "stockpot", "gpt-4o").unwrap();
+        let meta = manager
+            .save("test-session", &messages, "stockpot", "gpt-4o")
+            .unwrap();
         assert_eq!(meta.name, "test-session");
         assert_eq!(meta.agent, "stockpot");
-        
+
         // Load
         let loaded = manager.load("test-session").unwrap();
         assert_eq!(loaded.meta.name, "test-session");
@@ -443,12 +448,12 @@ mod tests {
     fn test_session_manager_list() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::with_dir(temp_dir.path());
-        
+
         // Save multiple sessions
         manager.save("session-1", &[], "agent", "model").unwrap();
         manager.save("session-2", &[], "agent", "model").unwrap();
         manager.save("session-3", &[], "agent", "model").unwrap();
-        
+
         let sessions = manager.list().unwrap();
         assert_eq!(sessions.len(), 3);
     }
@@ -457,10 +462,10 @@ mod tests {
     fn test_session_manager_delete() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::with_dir(temp_dir.path());
-        
+
         manager.save("to-delete", &[], "agent", "model").unwrap();
         assert!(manager.exists("to-delete"));
-        
+
         manager.delete("to-delete").unwrap();
         assert!(!manager.exists("to-delete"));
     }
@@ -469,10 +474,10 @@ mod tests {
     fn test_generate_name() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::with_dir(temp_dir.path());
-        
+
         let name1 = manager.generate_name("chat");
         let name2 = manager.generate_name("chat");
-        
+
         assert!(name1.starts_with("chat-"));
         assert!(name2.starts_with("chat-"));
     }
@@ -481,7 +486,7 @@ mod tests {
     fn test_format_relative_time() {
         let now = Utc::now();
         assert_eq!(format_relative_time(now), "just now");
-        
+
         let hour_ago = now - chrono::Duration::hours(1);
         assert!(format_relative_time(hour_ago).contains("hour"));
     }

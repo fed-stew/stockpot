@@ -63,30 +63,30 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     // Parse args first to check debug flag
     let args = Args::parse();
-    
+
     // Determine log level from args or env
     let default_filter = if args.verbose {
         "trace"
     } else if args.debug {
         "debug"
     } else {
-        "warn"  // Quiet by default for normal use
+        "warn" // Quiet by default for normal use
     };
-    
+
     // Initialize tracing with stderr output (so it doesn't interfere with REPL)
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_filter));
-    
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
+
     tracing_subscriber::registry()
         .with(filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
                 .with_thread_ids(false)
-                .with_writer(std::io::stderr)
+                .with_writer(std::io::stderr),
         )
         .init();
-    
+
     if args.debug || args.verbose {
         tracing::info!("Debug logging enabled");
     }
@@ -104,7 +104,8 @@ async fn main() -> anyhow::Result<()> {
     if args.bridge {
         cli::bridge::run_bridge_mode().await?;
     } else if let Some(prompt) = args.prompt {
-        cli::runner::run_single_prompt(&db, &prompt, args.agent.as_deref(), args.model.as_deref()).await?;
+        cli::runner::run_single_prompt(&db, &prompt, args.agent.as_deref(), args.model.as_deref())
+            .await?;
     } else {
         cli::runner::run_interactive(&db, args.agent.as_deref(), args.model.as_deref()).await?;
     }

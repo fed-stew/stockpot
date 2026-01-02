@@ -18,7 +18,7 @@ impl XdgDirs {
     /// Get XDG directories, respecting environment variables.
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        
+
         Self {
             config: std::env::var("XDG_CONFIG_HOME")
                 .map(PathBuf::from)

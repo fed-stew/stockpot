@@ -149,7 +149,7 @@ impl UnifiedDiff {
 
         // Apply hunks in reverse order to preserve line numbers
         let mut lines: Vec<String> = original.lines().map(|s| s.to_string()).collect();
-        
+
         for hunk in self.hunks.iter().rev() {
             lines = apply_hunk_to_lines(lines, hunk)?;
         }
@@ -160,42 +160,39 @@ impl UnifiedDiff {
 
 /// Parse a file path from a --- or +++ line.
 fn parse_file_path(line: &str, prefix: &str) -> String {
-    let path = line
-        .strip_prefix(prefix)
-        .unwrap_or(line)
-        .trim();
-    
+    let path = line.strip_prefix(prefix).unwrap_or(line).trim();
+
     // Handle "a/path" or "b/path" prefixes
     let path = if path.starts_with("a/") || path.starts_with("b/") {
         &path[2..]
     } else {
         path
     };
-    
+
     // Handle tabs (git format: path<tab>timestamp)
     let path = path.split('\t').next().unwrap_or(path);
-    
+
     path.to_string()
 }
 
 /// Parse a hunk from the diff lines.
 fn parse_hunk(lines: &mut std::iter::Peekable<Lines>) -> Result<Hunk, DiffError> {
-    let header = lines.next().ok_or_else(|| {
-        DiffError::HunkParseError("Expected hunk header".to_string())
-    })?;
+    let header = lines
+        .next()
+        .ok_or_else(|| DiffError::HunkParseError("Expected hunk header".to_string()))?;
 
     // Parse @@ -old_start,old_count +new_start,new_count @@
     let (old_start, old_count, new_start, new_count) = parse_hunk_header(header)?;
 
     let mut hunk_lines = Vec::new();
-    
+
     while let Some(line) = lines.peek() {
         if line.starts_with("@@") || line.starts_with("---") || line.starts_with("+++") {
             break;
         }
-        
+
         let line = lines.next().unwrap();
-        
+
         if line.is_empty() {
             // Empty line is treated as context
             hunk_lines.push(DiffLine::Context(String::new()));
@@ -233,7 +230,10 @@ fn parse_hunk_header(header: &str) -> Result<(usize, usize, usize, usize), DiffE
 
     let parts: Vec<&str> = header.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err(DiffError::HunkParseError(format!("Invalid header: {}", header)));
+        return Err(DiffError::HunkParseError(format!(
+            "Invalid header: {}",
+            header
+        )));
     }
 
     let (old_start, old_count) = parse_range(parts[0].strip_prefix('-').unwrap_or(parts[0]))?;
@@ -245,13 +245,13 @@ fn parse_hunk_header(header: &str) -> Result<(usize, usize, usize, usize), DiffE
 /// Parse a range like "1,3" or "1".
 fn parse_range(range: &str) -> Result<(usize, usize), DiffError> {
     let parts: Vec<&str> = range.split(',').collect();
-    let start = parts[0].parse::<usize>().map_err(|_| {
-        DiffError::HunkParseError(format!("Invalid range: {}", range))
-    })?;
+    let start = parts[0]
+        .parse::<usize>()
+        .map_err(|_| DiffError::HunkParseError(format!("Invalid range: {}", range)))?;
     let count = if parts.len() > 1 {
-        parts[1].parse::<usize>().map_err(|_| {
-            DiffError::HunkParseError(format!("Invalid range: {}", range))
-        })?
+        parts[1]
+            .parse::<usize>()
+            .map_err(|_| DiffError::HunkParseError(format!("Invalid range: {}", range)))?
     } else {
         1
     };
@@ -261,8 +261,12 @@ fn parse_range(range: &str) -> Result<(usize, usize), DiffError> {
 /// Apply a single hunk to the lines.
 fn apply_hunk_to_lines(lines: Vec<String>, hunk: &Hunk) -> Result<Vec<String>, DiffError> {
     // Calculate where to start (0-based index)
-    let start_idx = if hunk.old_start == 0 { 0 } else { hunk.old_start - 1 };
-    
+    let start_idx = if hunk.old_start == 0 {
+        0
+    } else {
+        hunk.old_start - 1
+    };
+
     // Verify context lines match (with some flexibility)
     let mut old_idx = start_idx;
     for diff_line in &hunk.lines {
@@ -271,11 +275,16 @@ fn apply_hunk_to_lines(lines: Vec<String>, hunk: &Hunk) -> Result<Vec<String>, D
                 if old_idx < lines.len() {
                     let actual = &lines[old_idx];
                     // Allow whitespace differences
-                    if actual.trim() != expected.trim() && !expected.is_empty() && !actual.is_empty() {
+                    if actual.trim() != expected.trim()
+                        && !expected.is_empty()
+                        && !actual.is_empty()
+                    {
                         // Just warn, don't fail - diffs can be fuzzy
                         tracing::warn!(
                             "Context mismatch at line {}: expected '{}', got '{}'",
-                            old_idx + 1, expected, actual
+                            old_idx + 1,
+                            expected,
+                            actual
                         );
                     }
                 }
@@ -287,10 +296,10 @@ fn apply_hunk_to_lines(lines: Vec<String>, hunk: &Hunk) -> Result<Vec<String>, D
 
     // Build new lines
     let mut new_lines = Vec::new();
-    
+
     // Add lines before the hunk
     new_lines.extend(lines.iter().take(start_idx).cloned());
-    
+
     // Apply the hunk
     for diff_line in &hunk.lines {
         match diff_line {
@@ -305,14 +314,16 @@ fn apply_hunk_to_lines(lines: Vec<String>, hunk: &Hunk) -> Result<Vec<String>, D
             }
         }
     }
-    
+
     // Add lines after the hunk
-    let skip_count = hunk.lines.iter().filter(|l| {
-        matches!(l, DiffLine::Context(_) | DiffLine::Remove(_))
-    }).count();
-    
+    let skip_count = hunk
+        .lines
+        .iter()
+        .filter(|l| matches!(l, DiffLine::Context(_) | DiffLine::Remove(_)))
+        .count();
+
     new_lines.extend(lines.iter().skip(start_idx + skip_count).cloned());
-    
+
     Ok(new_lines)
 }
 
@@ -398,7 +409,7 @@ mod tests {
 
         let parsed = UnifiedDiff::parse(diff).unwrap();
         assert!(parsed.is_delete);
-        
+
         let result = apply_unified_diff("line 1\nline 2\nline 3", diff).unwrap();
         assert_eq!(result, "");
     }

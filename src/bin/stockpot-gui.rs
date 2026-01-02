@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use gpui::{prelude::*, px, size, App, Application, Bounds, SharedString, WindowBounds, WindowOptions};
+use gpui::{
+    prelude::*, px, size, App, Application, Bounds, SharedString, WindowBounds, WindowOptions,
+};
 
 use stockpot::gui::{register_keybindings, ChatApp, GlobalLanguageRegistry};
 use zed_theme::{ActiveTheme as _, LoadThemes};
@@ -23,10 +25,8 @@ fn main() {
         ));
         language_registry.set_theme(cx.theme().clone());
 
-        let fs: Arc<dyn zed_fs::Fs> = Arc::new(zed_fs::RealFs::new(
-            None,
-            cx.background_executor().clone(),
-        ));
+        let fs: Arc<dyn zed_fs::Fs> =
+            Arc::new(zed_fs::RealFs::new(None, cx.background_executor().clone()));
         let node_runtime = zed_node_runtime::NodeRuntime::unavailable();
 
         zed_languages::init(language_registry.clone(), fs, node_runtime, cx);

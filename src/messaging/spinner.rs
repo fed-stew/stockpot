@@ -132,42 +132,46 @@ impl Spinner {
         let tokens = Arc::new(AtomicUsize::new(0));
         let max_tokens = Arc::new(AtomicUsize::new(0));
         let is_paused = Arc::new(AtomicBool::new(false));
-        
+
         let tokens_clone = tokens.clone();
         let max_tokens_clone = max_tokens.clone();
         let is_paused_clone = is_paused.clone();
-        
+
         let task = tokio::spawn(async move {
             let mut frame_idx = 0;
             let mut stdout = stdout();
-            
+
             // Hide cursor
             let _ = stdout.execute(Hide);
-            
+
             loop {
                 // Check for stop signal
                 if *stop_rx.borrow() {
                     break;
                 }
-                
+
                 // Skip rendering if paused
                 if is_paused_clone.load(Ordering::Relaxed) {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 }
-                
+
                 // Get current token count
                 let current_tokens = tokens_clone.load(Ordering::Relaxed);
                 let max = max_tokens_clone.load(Ordering::Relaxed);
-                
+
                 // Build the status line
                 let frame = config.frames[frame_idx % config.frames.len()];
                 let token_info = if config.show_tokens && max > 0 {
-                    format!(" [{}/{}]", format_tokens(current_tokens), format_tokens(max))
+                    format!(
+                        " [{}/{}]",
+                        format_tokens(current_tokens),
+                        format_tokens(max)
+                    )
                 } else {
                     String::new()
                 };
-                
+
                 // Render
                 let _ = stdout.execute(MoveToColumn(0));
                 let _ = stdout.execute(Clear(ClearType::CurrentLine));
@@ -175,19 +179,19 @@ impl Spinner {
                 let _ = stdout.execute(Print(format!("{} {}{}", frame, message, token_info)));
                 let _ = stdout.execute(ResetColor);
                 let _ = stdout.flush();
-                
+
                 frame_idx += 1;
-                
+
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_millis(config.interval_ms)) => {}
                     _ = stop_rx.changed() => { break; }
                 }
             }
-            
+
             // Show cursor
             let _ = stdout.execute(Show);
         });
-        
+
         SpinnerHandle {
             stop_tx,
             task: Some(task),
@@ -238,13 +242,13 @@ mod tests {
     async fn test_spinner_lifecycle() {
         let spinner = Spinner::new();
         let handle = spinner.start("Testing...");
-        
+
         // Let it spin briefly
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         // Update tokens
         handle.set_tokens(1000, 128000);
-        
+
         // Stop it
         handle.stop().await;
     }

@@ -3,28 +3,28 @@
 //! Handles starting, stopping, and managing MCP server connections.
 
 use super::config::{McpConfig, McpServerEntry};
-use serdes_ai_mcp::{McpClient, McpToolset, McpError};
+use serdes_ai_mcp::{McpClient, McpError, McpToolset};
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Error type for MCP manager operations.
 #[derive(Debug, Error)]
 pub enum McpManagerError {
     #[error("Config error: {0}")]
     Config(#[from] super::config::McpConfigError),
-    
+
     #[error("MCP error: {0}")]
     Mcp(#[from] McpError),
-    
+
     #[error("Server not found: {0}")]
     ServerNotFound(String),
-    
+
     #[error("Server already running: {0}")]
     AlreadyRunning(String),
-    
+
     #[error("Server not running: {0}")]
     NotRunning(String),
 }
@@ -52,7 +52,7 @@ impl McpServerHandle {
 }
 
 /// Manager for MCP server connections.
-/// 
+///
 /// Handles loading configuration, starting/stopping servers,
 /// and providing toolsets for agent integration.
 pub struct McpManager {
@@ -90,9 +90,11 @@ impl McpManager {
 
     /// Start a specific MCP server by name.
     pub async fn start_server(&self, name: &str) -> Result<(), McpManagerError> {
-        let entry = self.config.get_server(name)
+        let entry = self
+            .config
+            .get_server(name)
             .ok_or_else(|| McpManagerError::ServerNotFound(name.to_string()))?;
-        
+
         // Check if already running
         {
             let servers = self.servers.read().await;
@@ -100,16 +102,16 @@ impl McpManager {
                 return Err(McpManagerError::AlreadyRunning(name.to_string()));
             }
         }
-        
+
         info!("Starting MCP server: {}", name);
-        
+
         // Start the server
         let handle = self.connect_server(name, entry).await?;
-        
+
         // Store the handle
         let mut servers = self.servers.write().await;
         servers.insert(name.to_string(), handle);
-        
+
         info!("MCP server started: {}", name);
         Ok(())
     }
@@ -117,7 +119,7 @@ impl McpManager {
     /// Stop a specific MCP server.
     pub async fn stop_server(&self, name: &str) -> Result<(), McpManagerError> {
         let mut servers = self.servers.write().await;
-        
+
         if let Some(handle) = servers.remove(name) {
             info!("Stopping MCP server: {}", name);
             if let Err(e) = handle.client.close().await {
@@ -131,18 +133,19 @@ impl McpManager {
 
     /// Start all enabled servers.
     pub async fn start_all(&self) -> Result<(), McpManagerError> {
-        let enabled: Vec<(String, McpServerEntry)> = self.config
+        let enabled: Vec<(String, McpServerEntry)> = self
+            .config
             .enabled_servers()
             .map(|(name, entry)| (name.clone(), entry.clone()))
             .collect();
-        
+
         for (name, _) in enabled {
             if let Err(e) = self.start_server(&name).await {
                 error!("Failed to start MCP server {}: {}", name, e);
                 // Continue with other servers
             }
         }
-        
+
         Ok(())
     }
 
@@ -152,13 +155,13 @@ impl McpManager {
             let servers = self.servers.read().await;
             servers.keys().cloned().collect()
         };
-        
+
         for name in names {
             if let Err(e) = self.stop_server(&name).await {
                 warn!("Error stopping MCP server {}: {}", name, e);
             }
         }
-        
+
         Ok(())
     }
 
@@ -175,7 +178,7 @@ impl McpManager {
     }
 
     /// Get toolsets from all running servers.
-    /// 
+    ///
     /// Returns a vector of toolsets that can be used with the agent.
     pub async fn toolsets(&self) -> Vec<McpToolset<()>> {
         // Note: We can't easily return references to the toolsets
@@ -198,19 +201,24 @@ impl McpManager {
         args: serde_json::Value,
     ) -> Result<serdes_ai_mcp::CallToolResult, McpManagerError> {
         let servers = self.servers.read().await;
-        let handle = servers.get(server_name)
+        let handle = servers
+            .get(server_name)
             .ok_or_else(|| McpManagerError::NotRunning(server_name.to_string()))?;
-        
+
         let result = handle.client.call_tool(tool_name, args).await?;
         Ok(result)
     }
 
     /// List tools from a specific server.
-    pub async fn list_tools(&self, server_name: &str) -> Result<Vec<serdes_ai_mcp::McpTool>, McpManagerError> {
+    pub async fn list_tools(
+        &self,
+        server_name: &str,
+    ) -> Result<Vec<serdes_ai_mcp::McpTool>, McpManagerError> {
         let servers = self.servers.read().await;
-        let handle = servers.get(server_name)
+        let handle = servers
+            .get(server_name)
             .ok_or_else(|| McpManagerError::NotRunning(server_name.to_string()))?;
-        
+
         let tools = handle.client.list_tools().await?;
         Ok(tools)
     }
@@ -219,7 +227,7 @@ impl McpManager {
     pub async fn list_all_tools(&self) -> HashMap<String, Vec<serdes_ai_mcp::McpTool>> {
         let servers = self.servers.read().await;
         let mut all_tools = HashMap::new();
-        
+
         for (name, handle) in servers.iter() {
             match handle.client.list_tools().await {
                 Ok(tools) => {
@@ -230,7 +238,7 @@ impl McpManager {
                 }
             }
         }
-        
+
         all_tools
     }
 
@@ -242,17 +250,16 @@ impl McpManager {
     ) -> Result<McpServerHandle, McpManagerError> {
         // Build args with env vars
         let args: Vec<&str> = entry.args.iter().map(|s| s.as_str()).collect();
-        
+
         // Create the client
         let client = McpClient::stdio(&entry.command, &args).await?;
-        
+
         // Initialize the connection
         client.initialize().await?;
-        
+
         // Create the toolset
-        let toolset = McpToolset::new(McpClient::stdio(&entry.command, &args).await?)
-            .with_id(name);
-        
+        let toolset = McpToolset::new(McpClient::stdio(&entry.command, &args).await?).with_id(name);
+
         Ok(McpServerHandle {
             name: name.to_string(),
             client: Arc::new(client),

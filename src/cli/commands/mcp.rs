@@ -65,8 +65,15 @@ fn list_servers(manager: &McpManager) {
         let status = if entry.enabled { "✓" } else { "○" };
         let status_color = if entry.enabled { "32" } else { "90" };
 
-        println!("  \x1b[{}m{}\x1b[0m \x1b[1;36m{}\x1b[0m", status_color, status, name);
-        println!("    \x1b[2m{} {}\x1b[0m", entry.command, entry.args.join(" "));
+        println!(
+            "  \x1b[{}m{}\x1b[0m \x1b[1;36m{}\x1b[0m",
+            status_color, status, name
+        );
+        println!(
+            "    \x1b[2m{} {}\x1b[0m",
+            entry.command,
+            entry.args.join(" ")
+        );
 
         if let Some(ref desc) = entry.description {
             println!("    \x1b[2;3m{}\x1b[0m", desc);
@@ -74,7 +81,14 @@ fn list_servers(manager: &McpManager) {
 
         if !entry.env.is_empty() {
             let env_keys: Vec<_> = entry.env.keys().collect();
-            println!("    \x1b[2menv: {}\x1b[0m", env_keys.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+            println!(
+                "    \x1b[2menv: {}\x1b[0m",
+                env_keys
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
     }
     println!();
@@ -218,7 +232,11 @@ async fn do_restart(manager: &McpManager, name: &str) {
 }
 
 async fn start_all(manager: &McpManager) {
-    let enabled: Vec<_> = manager.config().enabled_servers().map(|(n, _)| n.clone()).collect();
+    let enabled: Vec<_> = manager
+        .config()
+        .enabled_servers()
+        .map(|(n, _)| n.clone())
+        .collect();
 
     if enabled.is_empty() {
         println!("No enabled servers to start.");
@@ -266,12 +284,20 @@ async fn list_tools(manager: &McpManager) {
     let all_tools = manager.list_all_tools().await;
 
     for (server_name, tools) in all_tools {
-        println!("  \x1b[1;36m{}\x1b[0m ({} tools):", server_name, tools.len());
+        println!(
+            "  \x1b[1;36m{}\x1b[0m ({} tools):",
+            server_name,
+            tools.len()
+        );
         for tool in tools {
             let desc = tool.description.as_deref().unwrap_or("");
             println!("    • \x1b[1m{}\x1b[0m", tool.name);
             if !desc.is_empty() {
-                let short = if desc.len() > 60 { format!("{}...", &desc[..57]) } else { desc.to_string() };
+                let short = if desc.len() > 60 {
+                    format!("{}...", &desc[..57])
+                } else {
+                    desc.to_string()
+                };
                 println!("      \x1b[2m{}\x1b[0m", short);
             }
         }
@@ -297,7 +323,10 @@ fn add_server_interactive() {
     // Check if exists
     let config = McpConfig::load_or_default();
     if config.has_server(&name) {
-        println!("❌ Server '{}' already exists. Use /mcp remove first.", name);
+        println!(
+            "❌ Server '{}' already exists. Use /mcp remove first.",
+            name
+        );
         return;
     }
 
@@ -435,7 +464,11 @@ fn toggle_server(name: &str, enable: bool) {
         entry.enabled = enable;
         match config.save_default() {
             Ok(()) => {
-                let status = if enable { "✓ Enabled" } else { "○ Disabled" };
+                let status = if enable {
+                    "✓ Enabled"
+                } else {
+                    "○ Disabled"
+                };
                 println!("{} server: {}", status, name);
             }
             Err(e) => println!("❌ Failed to save: {}", e),

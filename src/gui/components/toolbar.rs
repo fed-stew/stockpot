@@ -16,3 +16,9 @@ impl Toolbar {
         }
     }
 }
+
+impl Default for Toolbar {
+    fn default() -> Self {
+        Self::new()
+    }
+}

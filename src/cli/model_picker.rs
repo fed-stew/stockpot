@@ -287,8 +287,10 @@ mod tests {
         let settings = ModelSettings::default();
         assert!(settings.is_empty());
 
-        let mut settings = ModelSettings::default();
-        settings.temperature = Some(0.5);
+        let settings = ModelSettings {
+            temperature: Some(0.5),
+            ..Default::default()
+        };
         assert!(!settings.is_empty());
     }
 }

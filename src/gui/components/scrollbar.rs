@@ -69,7 +69,11 @@ fn set_scroll_ratio(handle: &ScrollHandle, ratio: f32) {
 /// Create a visual scrollbar that tracks a `ScrollHandle`.
 ///
 /// `drag_state` must be stable across frames (store it in your view state and clone the `Rc`).
-pub fn scrollbar(handle: ScrollHandle, drag_state: Rc<ScrollbarDragState>, _theme: Theme) -> impl IntoElement {
+pub fn scrollbar(
+    handle: ScrollHandle,
+    drag_state: Rc<ScrollbarDragState>,
+    _theme: Theme,
+) -> impl IntoElement {
     let track_color: Hsla = rgba(0x00000044).into();
     let thumb_color: Hsla = rgba(0xffffff77).into();
     let thumb_drag_color: Hsla = rgba(0xffffffaa).into();
@@ -155,8 +159,8 @@ pub fn scrollbar(handle: ScrollHandle, drag_state: Rc<ScrollbarDragState>, _them
                 let scroll_delta = (mouse_delta_y / thumb_range) * max_offset.height;
 
                 let start_offset_y = drag_state.drag_start_offset_y.get();
-                let new_offset_y = (start_offset_y - scroll_delta)
-                    .clamp(-max_offset.height, Pixels::ZERO);
+                let new_offset_y =
+                    (start_offset_y - scroll_delta).clamp(-max_offset.height, Pixels::ZERO);
 
                 let current_offset = handle_for_move.offset();
                 handle_for_move.set_offset(point(current_offset.x, new_offset_y));
@@ -205,7 +209,8 @@ pub fn scrollbar(handle: ScrollHandle, drag_state: Rc<ScrollbarDragState>, _them
                     }
 
                     let track_height = bounds.size.height;
-                    let Some(thumb_height) = thumb_height(&handle_for_canvas_paint, track_height) else {
+                    let Some(thumb_height) = thumb_height(&handle_for_canvas_paint, track_height)
+                    else {
                         return;
                     };
 
@@ -235,7 +240,11 @@ pub fn scrollbar(handle: ScrollHandle, drag_state: Rc<ScrollbarDragState>, _them
                         },
                     };
 
-                    let color = if dragging { thumb_drag_color } else { thumb_color };
+                    let color = if dragging {
+                        thumb_drag_color
+                    } else {
+                        thumb_color
+                    };
                     window.paint_quad(PaintQuad {
                         bounds: thumb_bounds,
                         corner_radii: px(3.).into(),

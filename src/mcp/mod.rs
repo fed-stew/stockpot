@@ -46,7 +46,7 @@ mod config;
 mod manager;
 
 pub use config::{McpConfig, McpServerEntry};
-pub use manager::{McpManager, McpServerHandle, McpManagerError};
+pub use manager::{McpManager, McpManagerError, McpServerHandle};
 
 // Re-export serdesAI MCP types for convenience
-pub use serdes_ai_mcp::{McpClient, McpToolset, McpServerConfig, McpTransportConfig};
+pub use serdes_ai_mcp::{McpClient, McpServerConfig, McpToolset, McpTransportConfig};

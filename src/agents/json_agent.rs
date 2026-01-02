@@ -101,7 +101,7 @@ impl JsonAgent {
         } else {
             AgentCapabilities::default()
         };
-        
+
         Self { def, capabilities }
     }
 
@@ -109,15 +109,17 @@ impl JsonAgent {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, JsonAgentError> {
         let content = fs::read_to_string(path)?;
         let def: JsonAgentDef = serde_json::from_str(&content)?;
-        
+
         // Validate
         if def.name.is_empty() {
             return Err(JsonAgentError::Invalid("name is required".to_string()));
         }
         if def.system_prompt.is_empty() {
-            return Err(JsonAgentError::Invalid("system_prompt is required".to_string()));
+            return Err(JsonAgentError::Invalid(
+                "system_prompt is required".to_string(),
+            ));
         }
-        
+
         Ok(Self::new(def))
     }
 }
@@ -132,7 +134,10 @@ impl SpotAgent for JsonAgent {
     }
 
     fn description(&self) -> &str {
-        self.def.description.as_deref().unwrap_or("Custom JSON agent")
+        self.def
+            .description
+            .as_deref()
+            .unwrap_or("Custom JSON agent")
     }
 
     fn system_prompt(&self) -> String {

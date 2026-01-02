@@ -2,4 +2,4 @@
 
 mod conversation;
 
-pub use conversation::{Conversation, ChatMessage, MessageRole, ToolCallState};
+pub use conversation::{ChatMessage, Conversation, MessageRole, ToolCallState};

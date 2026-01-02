@@ -286,11 +286,8 @@ mod tests {
         let mut messages = Vec::new();
         for _ in 0..7 {
             // 7 events expected
-            if let Ok(msg) = tokio::time::timeout(
-                std::time::Duration::from_millis(100),
-                receiver.recv(),
-            )
-            .await
+            if let Ok(msg) =
+                tokio::time::timeout(std::time::Duration::from_millis(100), receiver.recv()).await
             {
                 messages.push(msg.unwrap());
             }

@@ -1,11 +1,11 @@
 //! Built-in agents.
 
-mod stockpot;
-mod planning;
 mod explore;
+mod planning;
 mod reviewers;
+mod stockpot;
 
-pub use stockpot::StockpotAgent;
-pub use planning::PlanningAgent;
 pub use explore::ExploreAgent;
+pub use planning::PlanningAgent;
 pub use reviewers::CodeReviewerAgent;
+pub use stockpot::StockpotAgent;

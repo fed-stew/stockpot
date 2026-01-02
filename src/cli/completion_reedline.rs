@@ -4,10 +4,9 @@
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
-    ColumnarMenu, Completer, Emacs, Highlighter, KeyCode, KeyModifiers,
-    MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch,
-    PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu,
-    Span, StyledText, Suggestion,
+    ColumnarMenu, Completer, Emacs, Highlighter, KeyCode, KeyModifiers, MenuBuilder, Prompt,
+    PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline, ReedlineEvent,
+    ReedlineMenu, Span, StyledText, Suggestion,
 };
 use std::borrow::Cow;
 
@@ -57,8 +56,19 @@ pub const COMMANDS: &[(&str, &str)] = &[
 
 /// MCP subcommands
 pub const MCP_COMMANDS: &[&str] = &[
-    "add", "disable", "enable", "help", "list", "remove", "restart",
-    "start", "start-all", "status", "stop", "stop-all", "tools",
+    "add",
+    "disable",
+    "enable",
+    "help",
+    "list",
+    "remove",
+    "restart",
+    "start",
+    "start-all",
+    "status",
+    "stop",
+    "stop-all",
+    "tools",
 ];
 
 /// Completer for Stockpot commands
@@ -126,7 +136,8 @@ impl Completer for SpotCompleter {
         if input.starts_with("/model ") || input.starts_with("/m ") {
             let prefix = input.split_whitespace().nth(1).unwrap_or("").to_lowercase();
             let start = input.find(' ').map(|i| i + 1).unwrap_or(pos);
-            return self.models
+            return self
+                .models
                 .iter()
                 .filter(|m| prefix.is_empty() || m.to_lowercase().starts_with(&prefix))
                 .take(12)
@@ -146,12 +157,13 @@ impl Completer for SpotCompleter {
         // 2. /pin <agent> <Tab> → show models only
         if input.starts_with("/pin ") {
             let parts: Vec<&str> = input.split_whitespace().collect();
-            
+
             match parts.len() {
                 1 => {
                     // Just "/pin " - show only agents
                     let start = 5; // After "/pin "
-                    return self.agents
+                    return self
+                        .agents
                         .iter()
                         .map(|agent| Suggestion {
                             value: agent.clone(),
@@ -166,12 +178,13 @@ impl Completer for SpotCompleter {
                 2 => {
                     let first_arg = parts[1];
                     let is_valid_agent = self.agents.iter().any(|a| a == first_arg);
-                    
+
                     // Check if input ends with space AND first_arg is a valid agent
                     if input.ends_with(' ') && is_valid_agent {
                         // "/pin <valid-agent> " - show models
                         let start = input.len();
-                        return self.models
+                        return self
+                            .models
                             .iter()
                             .take(12)
                             .map(|m| Suggestion {
@@ -187,7 +200,8 @@ impl Completer for SpotCompleter {
                         // "/pin xxx" - filter agents only by prefix
                         let prefix = first_arg.to_lowercase();
                         let start = input.rfind(' ').map(|i| i + 1).unwrap_or(5);
-                        return self.agents
+                        return self
+                            .agents
                             .iter()
                             .filter(|a| a.to_lowercase().starts_with(&prefix))
                             .map(|agent| Suggestion {
@@ -207,8 +221,9 @@ impl Completer for SpotCompleter {
                     if self.agents.iter().any(|a| a == first_arg) {
                         let prefix = parts.get(2).map(|s| s.to_lowercase()).unwrap_or_default();
                         let start = input.rfind(' ').map(|i| i + 1).unwrap_or(pos);
-                        
-                        return self.models
+
+                        return self
+                            .models
                             .iter()
                             .filter(|m| prefix.is_empty() || m.to_lowercase().starts_with(&prefix))
                             .take(12)
@@ -230,7 +245,8 @@ impl Completer for SpotCompleter {
         if input.starts_with("/unpin ") {
             let prefix = input.split_whitespace().nth(1).unwrap_or("").to_lowercase();
             let start = input.find(' ').map(|i| i + 1).unwrap_or(pos);
-            return self.agents
+            return self
+                .agents
                 .iter()
                 .filter(|a| prefix.is_empty() || a.to_lowercase().starts_with(&prefix))
                 .take(10)
@@ -249,7 +265,8 @@ impl Completer for SpotCompleter {
         if input.starts_with("/agent ") || input.starts_with("/a ") {
             let prefix = input.split_whitespace().nth(1).unwrap_or("").to_lowercase();
             let start = input.find(' ').map(|i| i + 1).unwrap_or(pos);
-            return self.agents
+            return self
+                .agents
                 .iter()
                 .filter(|a| prefix.is_empty() || a.to_lowercase().starts_with(&prefix))
                 .take(10)
@@ -265,10 +282,14 @@ impl Completer for SpotCompleter {
         }
 
         // Session completion
-        if input.starts_with("/load ") || input.starts_with("/resume ") || input.starts_with("/delete-session ") {
+        if input.starts_with("/load ")
+            || input.starts_with("/resume ")
+            || input.starts_with("/delete-session ")
+        {
             let prefix = input.split_whitespace().nth(1).unwrap_or("").to_lowercase();
             let start = input.find(' ').map(|i| i + 1).unwrap_or(pos);
-            return self.sessions
+            return self
+                .sessions
                 .iter()
                 .filter(|s| prefix.is_empty() || s.to_lowercase().starts_with(&prefix))
                 .take(10)
@@ -303,10 +324,13 @@ impl Completer for SpotCompleter {
 
             // MCP server name completion
             let parts: Vec<&str> = after_mcp.split_whitespace().collect();
-            if !parts.is_empty() && ["start", "stop", "remove", "restart", "enable", "disable"].contains(&parts[0]) {
+            if !parts.is_empty()
+                && ["start", "stop", "remove", "restart", "enable", "disable"].contains(&parts[0])
+            {
                 let prefix = parts.get(1).copied().unwrap_or("").to_lowercase();
                 let start = input.rfind(' ').map(|i| i + 1).unwrap_or(pos);
-                return self.mcp_servers
+                return self
+                    .mcp_servers
                     .iter()
                     .filter(|s| prefix.is_empty() || s.to_lowercase().starts_with(&prefix))
                     .map(|s| Suggestion {
@@ -426,12 +450,8 @@ pub fn create_reedline(completer: SpotCompleter) -> Reedline {
             .with_columns(1)
             .with_column_padding(2)
             .with_text_style(Style::new().fg(Color::Default))
-            .with_selected_text_style(
-                Style::new()
-                    .fg(Color::Black)
-                    .on(Color::Cyan)
-            )
-            .with_description_text_style(Style::new().fg(Color::DarkGray))
+            .with_selected_text_style(Style::new().fg(Color::Black).on(Color::Cyan))
+            .with_description_text_style(Style::new().fg(Color::DarkGray)),
     );
 
     let mut keybindings = reedline::default_emacs_keybindings();
@@ -648,7 +668,11 @@ pub fn try_complete_input(input: &str, ctx: &CompletionContext) -> Option<String
     if trimmed.starts_with("/model ") || trimmed.starts_with("/m ") {
         let prefix = trimmed.split_whitespace().nth(1).unwrap_or("");
         if let Some(model) = pick_model_completion(&ctx.models, prefix) {
-            let cmd = if trimmed.starts_with("/m ") { "/m" } else { "/model" };
+            let cmd = if trimmed.starts_with("/m ") {
+                "/m"
+            } else {
+                "/model"
+            };
             return Some(format!("{} {}", cmd, model));
         }
         return None;
@@ -706,7 +730,11 @@ pub fn try_complete_input(input: &str, ctx: &CompletionContext) -> Option<String
     if trimmed.starts_with("/agent ") || trimmed.starts_with("/a ") {
         let prefix = trimmed.split_whitespace().nth(1).unwrap_or("");
         if let Some(agent) = pick_agent_completion(&ctx.agents, prefix) {
-            let cmd = if trimmed.starts_with("/a ") { "/a" } else { "/agent" };
+            let cmd = if trimmed.starts_with("/a ") {
+                "/a"
+            } else {
+                "/agent"
+            };
             return Some(format!("{} {}", cmd, agent));
         }
         return None;

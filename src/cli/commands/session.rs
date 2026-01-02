@@ -17,17 +17,20 @@ pub fn save(
     name: &str,
 ) -> Option<String> {
     let agent_name = agents.current_name();
-    
+
     let session_name = if name.is_empty() {
         session_manager.generate_name(&agent_name)
     } else {
         name.to_string()
     };
-    
+
     match session_manager.save(&session_name, messages, &agent_name, model) {
         Ok(meta) => {
             println!("💾 Session saved: \x1b[1m{}\x1b[0m", session_name);
-            println!("   {} messages, ~{} tokens", meta.message_count, meta.token_estimate);
+            println!(
+                "   {} messages, ~{} tokens",
+                meta.message_count, meta.token_estimate
+            );
             Some(session_name)
         }
         Err(e) => {
@@ -54,10 +57,12 @@ pub fn load(
                     println!("\n\x1b[1m📚 Available Sessions:\x1b[0m\n");
                     for (i, session) in sessions.iter().take(10).enumerate() {
                         println!("  {}. \x1b[1m{}\x1b[0m", i + 1, session.name);
-                        println!("     {} messages, {} - {}", 
+                        println!(
+                            "     {} messages, {} - {}",
                             session.message_count,
                             session.agent,
-                            format_relative_time(session.updated_at));
+                            format_relative_time(session.updated_at)
+                        );
                     }
                     println!("\n\x1b[2mUse /load <name> to load a session\x1b[0m\n");
                 }
@@ -66,21 +71,20 @@ pub fn load(
         }
         return None;
     }
-    
+
     match session_manager.load(name) {
         Ok(session) => {
             // Switch agent if different
-            if agents.current_name() != session.meta.agent
-                && agents.exists(&session.meta.agent) {
-                    let _ = agents.switch(&session.meta.agent);
-                }
-            
+            if agents.current_name() != session.meta.agent && agents.exists(&session.meta.agent) {
+                let _ = agents.switch(&session.meta.agent);
+            }
+
             println!("📥 Loaded session: \x1b[1m{}\x1b[0m", name);
-            println!("   {} messages, agent: {}, model: {}", 
-                session.meta.message_count,
-                session.meta.agent,
-                session.meta.model);
-            
+            println!(
+                "   {} messages, agent: {}, model: {}",
+                session.meta.message_count, session.meta.agent, session.meta.model
+            );
+
             Some((name.to_string(), session))
         }
         Err(e) => {
@@ -106,11 +110,13 @@ pub fn list(session_manager: &SessionManager, current_session: Option<&str>) {
                         "  "
                     };
                     println!("{}\x1b[1m{}\x1b[0m", current_marker, session.name);
-                    println!("    {} msgs, ~{} tokens | {} | {}",
+                    println!(
+                        "    {} msgs, ~{} tokens | {} | {}",
                         session.message_count,
                         session.token_estimate,
                         session.agent,
-                        format_relative_time(session.updated_at));
+                        format_relative_time(session.updated_at)
+                    );
                 }
                 println!();
             }
@@ -196,7 +202,10 @@ pub fn cmd_compact(messages: &mut Vec<ModelRequest>, args: &str) {
     println!("🗜️  Compacting (keeping last {} messages)...", keep);
     let (before, after) = compact_truncate(messages, keep);
     let after_tokens = crate::tokens::estimate_tokens(messages);
-    println!("✅ Compacted: {} → {} messages (~{} tokens)", before, after, after_tokens);
+    println!(
+        "✅ Compacted: {} → {} messages (~{} tokens)",
+        before, after, after_tokens
+    );
 }
 
 /// Compact message history using truncation strategy.
@@ -359,7 +368,10 @@ pub fn auto_save(
     } else if messages.len() >= 2 {
         // Create auto-session after first exchange
         let name = format!("auto-{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
-        if session_manager.save(&name, messages, agent_name, model).is_ok() {
+        if session_manager
+            .save(&name, messages, agent_name, model)
+            .is_ok()
+        {
             Some(name)
         } else {
             None

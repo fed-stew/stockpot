@@ -51,9 +51,9 @@ impl ModelSettings {
         let mut settings = Self::new();
 
         // Query all settings for this model
-        let mut stmt = db.conn().prepare(
-            "SELECT key, value FROM settings WHERE key LIKE ?"
-        )?;
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT key, value FROM settings WHERE key LIKE ?")?;
 
         let pattern = format!("{}%", prefix);
         let rows = stmt.query_map([&pattern], |row| {
@@ -100,7 +100,10 @@ impl ModelSettings {
             }
             "reasoning_effort" => {
                 let effort = value.to_lowercase();
-                if !matches!(effort.as_str(), "minimal" | "low" | "medium" | "high" | "xhigh") {
+                if !matches!(
+                    effort.as_str(),
+                    "minimal" | "low" | "medium" | "high" | "xhigh"
+                ) {
                     return Err(ModelSettingsError::InvalidValue(
                         "reasoning_effort must be minimal, low, medium, high, or xhigh".to_string(),
                     ));

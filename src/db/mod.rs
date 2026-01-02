@@ -31,10 +31,10 @@ impl Database {
         }
 
         let conn = Connection::open(&path)?;
-        
+
         // Enable foreign keys
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-        
+
         Ok(Self { conn, path })
     }
 
@@ -43,7 +43,7 @@ impl Database {
         let data_dir = dirs::data_dir()
             .or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
             .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
-        
+
         Ok(data_dir.join("stockpot").join("spot.db"))
     }
 

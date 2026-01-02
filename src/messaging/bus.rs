@@ -81,12 +81,16 @@ impl MessageBus {
 
     /// Get a sender.
     pub fn sender(&self) -> MessageSender {
-        MessageSender { tx: self.tx.clone() }
+        MessageSender {
+            tx: self.tx.clone(),
+        }
     }
 
     /// Subscribe to messages.
     pub fn subscribe(&self) -> MessageReceiver {
-        MessageReceiver { rx: self.tx.subscribe() }
+        MessageReceiver {
+            rx: self.tx.subscribe(),
+        }
     }
 }
 

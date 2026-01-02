@@ -13,10 +13,10 @@ use thiserror::Error;
 pub enum McpConfigError {
     #[error("Failed to read config file: {0}")]
     ReadError(#[from] std::io::Error),
-    
+
     #[error("Failed to parse config file: {0}")]
     ParseError(#[from] serde_json::Error),
-    
+
     #[error("Config file not found: {0}")]
     NotFound(PathBuf),
 }
@@ -26,19 +26,19 @@ pub enum McpConfigError {
 pub struct McpServerEntry {
     /// Command to run the MCP server.
     pub command: String,
-    
+
     /// Arguments to pass to the command.
     #[serde(default)]
     pub args: Vec<String>,
-    
+
     /// Environment variables to set.
     #[serde(default)]
     pub env: HashMap<String, String>,
-    
+
     /// Whether this server is enabled.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    
+
     /// Optional description of the server.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -79,16 +79,17 @@ impl McpServerEntry {
     }
 
     /// Expand environment variables in the config.
-    /// 
+    ///
     /// Replaces `${VAR_NAME}` patterns with actual environment values.
     pub fn expand_env_vars(&mut self) {
         // Expand in args
         for arg in &mut self.args {
             *arg = expand_env_var(arg);
         }
-        
+
         // Expand in env values
-        let expanded: HashMap<String, String> = self.env
+        let expanded: HashMap<String, String> = self
+            .env
             .iter()
             .map(|(k, v)| (k.clone(), expand_env_var(v)))
             .collect();
@@ -97,11 +98,11 @@ impl McpServerEntry {
 }
 
 /// Expand environment variables in a string.
-/// 
+///
 /// Supports `${VAR_NAME}` syntax.
 fn expand_env_var(s: &str) -> String {
     let mut result = s.to_string();
-    
+
     // Simple regex-free expansion for ${VAR} pattern
     while let Some(start) = result.find("${") {
         if let Some(end) = result[start..].find('}') {
@@ -117,7 +118,7 @@ fn expand_env_var(s: &str) -> String {
             break;
         }
     }
-    
+
     result
 }
 
@@ -136,7 +137,7 @@ impl McpConfig {
     }
 
     /// Load configuration from the default path.
-    /// 
+    ///
     /// Default path: `~/.stockpot/mcp_servers.json`
     pub fn load_default() -> Result<Self, McpConfigError> {
         let path = Self::default_config_path();
@@ -148,15 +149,15 @@ impl McpConfig {
         if !path.exists() {
             return Err(McpConfigError::NotFound(path.to_path_buf()));
         }
-        
+
         let content = fs::read_to_string(path)?;
         let mut config: McpConfig = serde_json::from_str(&content)?;
-        
+
         // Expand environment variables in all entries
         for entry in config.servers.values_mut() {
             entry.expand_env_vars();
         }
-        
+
         Ok(config)
     }
 
@@ -177,7 +178,7 @@ impl McpConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         let content = serde_json::to_string_pretty(self)?;
         fs::write(path, content)?;
         Ok(())
@@ -219,7 +220,7 @@ impl McpConfig {
     /// Create a sample configuration.
     pub fn sample() -> Self {
         let mut config = Self::new();
-        
+
         // Filesystem server
         config.add_server(
             "filesystem",
@@ -231,7 +232,7 @@ impl McpConfig {
                 ])
                 .with_description("Access to filesystem operations".to_string()),
         );
-        
+
         // GitHub server (disabled by default, needs token)
         let mut github = McpServerEntry::new("npx")
             .with_args(vec![
@@ -242,7 +243,7 @@ impl McpConfig {
             .with_description("GitHub API access".to_string());
         github.enabled = false;
         config.add_server("github", github);
-        
+
         config
     }
 }
@@ -256,7 +257,7 @@ mod tests {
         let entry = McpServerEntry::new("npx")
             .with_args(vec!["-y".to_string(), "server".to_string()])
             .with_env("KEY", "value");
-        
+
         assert_eq!(entry.command, "npx");
         assert_eq!(entry.args.len(), 2);
         assert_eq!(entry.env.get("KEY"), Some(&"value".to_string()));
@@ -266,13 +267,13 @@ mod tests {
     #[test]
     fn test_expand_env_var() {
         std::env::set_var("TEST_VAR", "test_value");
-        
+
         let result = expand_env_var("prefix_${TEST_VAR}_suffix");
         assert_eq!(result, "prefix_test_value_suffix");
-        
+
         let result = expand_env_var("no_var_here");
         assert_eq!(result, "no_var_here");
-        
+
         let result = expand_env_var("${NONEXISTENT_VAR}");
         assert_eq!(result, "");
     }
@@ -280,10 +281,10 @@ mod tests {
     #[test]
     fn test_config_serialization() {
         let config = McpConfig::sample();
-        
+
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: McpConfig = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.servers.len(), config.servers.len());
         assert!(parsed.has_server("filesystem"));
         assert!(parsed.has_server("github"));
@@ -293,7 +294,7 @@ mod tests {
     fn test_enabled_servers() {
         let config = McpConfig::sample();
         let enabled: Vec<_> = config.enabled_servers().collect();
-        
+
         // Only filesystem should be enabled in sample
         assert_eq!(enabled.len(), 1);
         assert_eq!(enabled[0].0, "filesystem");

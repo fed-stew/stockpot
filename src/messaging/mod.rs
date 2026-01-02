@@ -67,14 +67,14 @@
 //! - Terminal rendering with syntax highlighting
 //! - Animated spinner for activity indication
 
-mod types;
 mod bus;
 mod event_bridge;
 mod renderer;
 mod spinner;
+mod types;
 
-pub use types::*;
-pub use event_bridge::EventBridge;
 pub use bus::{MessageBus, MessageReceiver, MessageSender};
-pub use renderer::{TerminalRenderer, RenderStyle};
-pub use spinner::{Spinner, SpinnerHandle, SpinnerConfig};
+pub use event_bridge::EventBridge;
+pub use renderer::{RenderStyle, TerminalRenderer};
+pub use spinner::{Spinner, SpinnerConfig, SpinnerHandle};
+pub use types::*;

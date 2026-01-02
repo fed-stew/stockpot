@@ -45,18 +45,21 @@ pub struct ModelInfo {
 /// Fetch all providers from models.dev
 pub async fn fetch_providers() -> Result<HashMap<String, ProviderInfo>> {
     println!("\x1b[2mFetching providers from models.dev...\x1b[0m");
-    
+
     let client = reqwest::Client::new();
     let response = client
         .get(MODELS_API_URL)
         .header("User-Agent", "stockpot/0.1")
         .send()
         .await?;
-    
+
     if !response.status().is_success() {
-        return Err(anyhow!("Failed to fetch providers: HTTP {}", response.status()));
+        return Err(anyhow!(
+            "Failed to fetch providers: HTTP {}",
+            response.status()
+        ));
     }
-    
+
     let providers: HashMap<String, ProviderInfo> = response.json().await?;
     Ok(providers)
 }
@@ -66,36 +69,43 @@ pub fn select_provider(providers: &HashMap<String, ProviderInfo>) -> Result<Opti
     // Sort providers by name for display
     let mut provider_list: Vec<_> = providers.values().collect();
     provider_list.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     println!("\n\x1b[1m📦 Available Providers:\x1b[0m\n");
-    
+
     for (i, provider) in provider_list.iter().enumerate() {
         let model_count = provider.models.len();
         println!(
             "  \x1b[1;33m{:>3}\x1b[0m. {} \x1b[2m({} models)\x1b[0m",
             i + 1,
-            if provider.name.is_empty() { &provider.id } else { &provider.name },
+            if provider.name.is_empty() {
+                &provider.id
+            } else {
+                &provider.name
+            },
             model_count
         );
     }
-    
+
     println!("\n  \x1b[2m  0. Cancel\x1b[0m");
-    print!("\n\x1b[1mSelect provider (1-{}):\x1b[0m ", provider_list.len());
+    print!(
+        "\n\x1b[1mSelect provider (1-{}):\x1b[0m ",
+        provider_list.len()
+    );
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim();
-    
+
     if input == "0" || input.is_empty() {
         return Ok(None);
     }
-    
+
     let index: usize = input.parse().map_err(|_| anyhow!("Invalid selection"))?;
     if index == 0 || index > provider_list.len() {
         return Err(anyhow!("Invalid selection"));
     }
-    
+
     Ok(Some(provider_list[index - 1]))
 }
 
@@ -105,50 +115,61 @@ pub fn select_model(provider: &ProviderInfo) -> Result<Option<&ModelInfo>> {
         println!("\x1b[1;33m⚠️  No models available for this provider\x1b[0m");
         return Ok(None);
     }
-    
+
     // Sort models by id
     let mut model_list: Vec<_> = provider.models.values().collect();
     model_list.sort_by(|a, b| a.id.cmp(&b.id));
-    
-    println!("\n\x1b[1m🤖 Models for {}:\x1b[0m\n", 
-        if provider.name.is_empty() { &provider.id } else { &provider.name });
-    
+
+    println!(
+        "\n\x1b[1m🤖 Models for {}:\x1b[0m\n",
+        if provider.name.is_empty() {
+            &provider.id
+        } else {
+            &provider.name
+        }
+    );
+
     for (i, model) in model_list.iter().enumerate() {
         let name = model.name.as_deref().unwrap_or(&model.id);
-        let ctx = model.context_length
+        let ctx = model
+            .context_length
             .map(|c| format!("{}k ctx", c / 1000))
             .unwrap_or_default();
         let price = match (model.input_price, model.output_price) {
             (Some(i), Some(o)) => format!("${:.2}/${:.2} per 1M", i, o),
             _ => String::new(),
         };
-        
+
         println!(
             "  \x1b[1;36m{:>3}\x1b[0m. {} \x1b[2m{}{}\x1b[0m",
             i + 1,
             name,
             ctx,
-            if !price.is_empty() { format!(" | {}", price) } else { String::new() }
+            if !price.is_empty() {
+                format!(" | {}", price)
+            } else {
+                String::new()
+            }
         );
     }
-    
+
     println!("\n  \x1b[2m  0. Back\x1b[0m");
     print!("\n\x1b[1mSelect model (1-{}):\x1b[0m ", model_list.len());
     io::stdout().flush()?;
-    
+
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     let input = input.trim();
-    
+
     if input == "0" || input.is_empty() {
         return Ok(None);
     }
-    
+
     let index: usize = input.parse().map_err(|_| anyhow!("Invalid selection"))?;
     if index == 0 || index > model_list.len() {
         return Err(anyhow!("Invalid selection"));
     }
-    
+
     Ok(Some(model_list[index - 1]))
 }
 
@@ -182,10 +203,7 @@ pub fn prompt_api_key(db: &Database, provider: &ProviderInfo) -> Result<Option<S
     // Also check environment variable
     else if let Ok(existing) = std::env::var(env_var) {
         if !existing.is_empty() {
-            println!(
-                "\x1b[32m✓ {} is set in your environment\x1b[0m",
-                env_var
-            );
+            println!("\x1b[32m✓ {} is set in your environment\x1b[0m", env_var);
             print!("\nUse existing key and save to stockpot? [Y/n]: ");
             io::stdout().flush()?;
 
@@ -335,12 +353,7 @@ pub async fn run_add_model(db: &Database) -> Result<()> {
         supports_thinking: false,
         supports_vision: false,
         supports_tools: true,
-        description: Some(
-            model
-                .name
-                .clone()
-                .unwrap_or_else(|| model.id.clone()),
-        ),
+        description: Some(model.name.clone().unwrap_or_else(|| model.id.clone())),
         custom_endpoint: Some(CustomEndpoint {
             url: api_url,
             api_key: Some(format!("${}", env_var)),
@@ -379,10 +392,7 @@ pub fn list_custom_models(db: &Database) -> Result<()> {
 
     for name in &available {
         if let Some(config) = registry.get(name) {
-            let desc = config
-                .description
-                .as_deref()
-                .unwrap_or("No description");
+            let desc = config.description.as_deref().unwrap_or("No description");
             println!("  • \x1b[1;36m{}\x1b[0m", name);
             println!("    \x1b[2m{}\x1b[0m", desc);
         }

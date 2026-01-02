@@ -1,18 +1,18 @@
 //! Claude Code OAuth authentication.
 
 use super::storage::{StoredTokens, TokenStorage, TokenStorageError};
-use tracing::{debug, info, warn, error};
 use crate::db::Database;
 use crate::models::{ModelConfig, ModelType};
+use serde::Deserialize;
 use serdes_ai_models::claude_code_oauth::ClaudeCodeOAuthModel;
 use serdes_ai_providers::oauth::{
     config::claude_code_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow,
     OAuthError, TokenResponse,
 };
-use thiserror::Error;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use thiserror::Error;
+use tracing::{debug, error, info, warn};
 
 const PROVIDER: &str = "claude-code";
 
@@ -67,20 +67,19 @@ impl<'a> ClaudeCodeAuth<'a> {
     /// Refresh tokens if needed.
     pub async fn refresh_if_needed(&self) -> Result<String, ClaudeCodeAuthError> {
         debug!("Checking Claude Code token status");
-        
-        let tokens = self.storage.load(PROVIDER)?
-            .ok_or_else(|| {
-                warn!("No Claude Code tokens found in storage");
-                ClaudeCodeAuthError::NotAuthenticated
-            })?;
-        
+
+        let tokens = self.storage.load(PROVIDER)?.ok_or_else(|| {
+            warn!("No Claude Code tokens found in storage");
+            ClaudeCodeAuthError::NotAuthenticated
+        })?;
+
         debug!(
             has_refresh_token = tokens.refresh_token.is_some(),
             is_expired = tokens.is_expired(),
             expires_within_5min = tokens.expires_within(300),
             "Token status"
         );
-        
+
         // Refresh if expired or expiring within 5 minutes
         if tokens.expires_within(300) {
             if let Some(refresh_token) = &tokens.refresh_token {
@@ -104,7 +103,7 @@ impl<'a> ClaudeCodeAuth<'a> {
                 return Err(ClaudeCodeAuthError::NotAuthenticated);
             }
         }
-        
+
         debug!("Using existing valid token");
         Ok(tokens.access_token)
     }
@@ -146,20 +145,23 @@ async fn fetch_claude_models(access_token: &str) -> Result<Vec<String>, ClaudeCo
         .send()
         .await
         .map_err(|e| ClaudeCodeAuthError::OAuth(OAuthError::TokenExchange(e.to_string())))?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         error!("Failed to fetch models: {} - {}", status, text);
         return Err(ClaudeCodeAuthError::OAuth(OAuthError::TokenExchange(
-            format!("Failed to fetch models: {}", status)
+            format!("Failed to fetch models: {}", status),
         )));
     }
-    
-    let models_response: ModelsResponse = response.json().await
+
+    let models_response: ModelsResponse = response
+        .json()
+        .await
         .map_err(|e| ClaudeCodeAuthError::OAuth(OAuthError::TokenExchange(e.to_string())))?;
-    
-    let model_names: Vec<String> = models_response.data
+
+    let model_names: Vec<String> = models_response
+        .data
         .into_iter()
         .filter_map(|m| {
             // Use id as the model name
@@ -172,7 +174,7 @@ async fn fetch_claude_models(access_token: &str) -> Result<Vec<String>, ClaudeCo
             }
         })
         .collect();
-    
+
     info!("Fetched {} Claude models from API", model_names.len());
     Ok(model_names)
 }
@@ -181,11 +183,11 @@ async fn fetch_claude_models(access_token: &str) -> Result<Vec<String>, ClaudeCo
 fn filter_latest_models(models: Vec<String>) -> Vec<String> {
     // Log all models received
     info!("Received {} models from API: {:?}", models.len(), models);
-    
+
     // Map: family -> (model_name, version_tuple)
     // version_tuple = (major, minor, date)
     let mut latest: HashMap<String, (String, (u32, u32, u32))> = HashMap::new();
-    
+
     for model in &models {
         // Determine family
         let family = if model.contains("haiku") {
@@ -197,80 +199,92 @@ fn filter_latest_models(models: Vec<String>) -> Vec<String> {
         } else {
             continue; // Skip non-Claude models
         };
-        
+
         // Extract all numbers from the model name
         let numbers: Vec<u32> = model
             .split(|c: char| !c.is_ascii_digit())
             .filter(|s| !s.is_empty())
             .filter_map(|s| s.parse().ok())
             .collect();
-        
+
         // Parse version: expect [major, minor?, date]
         // Examples:
         //   claude-opus-4-5-20251101 -> [4, 5, 20251101]
         //   claude-3-5-sonnet-20241022 -> [3, 5, 20241022]
         //   claude-3-haiku-20240307 -> [3, 20240307]
-        
+
         let (major, minor, date) = match numbers.as_slice() {
-            [m, n, d] if *d > 20000000 => (*m, *n, *d),  // major, minor, date
-            [m, d] if *d > 20000000 => (*m, 0, *d),      // major, date (no minor)
-            [m, n, d, ..] => (*m, *n, *d),               // Take first 3
+            [m, n, d] if *d > 20000000 => (*m, *n, *d), // major, minor, date
+            [m, d] if *d > 20000000 => (*m, 0, *d),     // major, date (no minor)
+            [m, n, d, ..] => (*m, *n, *d),              // Take first 3
             _ => continue,
         };
-        
-        debug!("  Parsed {}: family={}, version=({}, {}, {})", model, family, major, minor, date);
-        
+
+        debug!(
+            "  Parsed {}: family={}, version=({}, {}, {})",
+            model, family, major, minor, date
+        );
+
         // Check if this is better than current best
-        let dominated = latest.get(family).is_some_and(|(_, (cur_m, cur_n, cur_d))| {
-            // Compare by: major, then minor, then date
-            (major, minor, date) <= (*cur_m, *cur_n, *cur_d)
-        });
-        
+        let dominated = latest
+            .get(family)
+            .is_some_and(|(_, (cur_m, cur_n, cur_d))| {
+                // Compare by: major, then minor, then date
+                (major, minor, date) <= (*cur_m, *cur_n, *cur_d)
+            });
+
         if !dominated {
             latest.insert(family.to_string(), (model.clone(), (major, minor, date)));
         }
     }
-    
+
     let filtered: Vec<String> = latest.into_values().map(|(name, _)| name).collect();
-    info!("Filtered to {} latest models: {:?}", filtered.len(), filtered);
+    info!(
+        "Filtered to {} latest models: {:?}",
+        filtered.len(),
+        filtered
+    );
     filtered
 }
 
 /// Save Claude models to config file
 fn save_claude_models(models: &[String]) -> Result<(), std::io::Error> {
-    let configs: Vec<ModelConfig> = models.iter().map(|model_name| {
-        // Create prefixed name like "claude-code-claude-sonnet-4-20250514"
-        let prefixed = format!("claude-code-{}", model_name);
-        
-        // Determine if it supports thinking (opus and sonnet 4+ do)
-        let supports_thinking = model_name.contains("opus") || 
-            (model_name.contains("sonnet") && (model_name.contains("-4") || model_name.contains("4-")));
-        
-        ModelConfig {
-            name: prefixed,
-            model_type: ModelType::ClaudeCode,
-            model_id: Some(model_name.clone()),  // The actual API model ID
-            context_length: 200_000,
-            supports_thinking,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some(format!("Claude Code OAuth: {}", model_name)),
-            custom_endpoint: None,
-            azure_deployment: None,
-            azure_api_version: None,
-            round_robin_models: Vec::new(),
-        }
-    }).collect();
-    
+    let configs: Vec<ModelConfig> = models
+        .iter()
+        .map(|model_name| {
+            // Create prefixed name like "claude-code-claude-sonnet-4-20250514"
+            let prefixed = format!("claude-code-{}", model_name);
+
+            // Determine if it supports thinking (opus and sonnet 4+ do)
+            let supports_thinking = model_name.contains("opus")
+                || (model_name.contains("sonnet")
+                    && (model_name.contains("-4") || model_name.contains("4-")));
+
+            ModelConfig {
+                name: prefixed,
+                model_type: ModelType::ClaudeCode,
+                model_id: Some(model_name.clone()), // The actual API model ID
+                context_length: 200_000,
+                supports_thinking,
+                supports_vision: true,
+                supports_tools: true,
+                description: Some(format!("Claude Code OAuth: {}", model_name)),
+                custom_endpoint: None,
+                azure_deployment: None,
+                azure_api_version: None,
+                round_robin_models: Vec::new(),
+            }
+        })
+        .collect();
+
     let path = claude_models_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    
-    let json = serde_json::to_string_pretty(&configs)
-        .map_err(std::io::Error::other)?;
+
+    let json = serde_json::to_string_pretty(&configs).map_err(std::io::Error::other)?;
     std::fs::write(&path, json)?;
-    
+
     info!("Saved {} Claude Code models to {:?}", configs.len(), path);
     Ok(())
 }
@@ -286,28 +300,31 @@ fn claude_models_path() -> PathBuf {
 /// Run the Claude Code OAuth flow.
 pub async fn run_claude_code_auth(db: &Database) -> Result<(), ClaudeCodeAuthError> {
     println!("🔐 Starting Claude Code OAuth authentication...");
-    
+
     let config = claude_code_oauth_config();
     let (auth_url, handle) = run_pkce_flow(&config).await?;
-    
+
     println!("📋 Open this URL in your browser:");
     println!("   {}", auth_url);
     println!();
-    println!("⏳ Waiting for authentication callback on port {}...", handle.port());
-    
+    println!(
+        "⏳ Waiting for authentication callback on port {}...",
+        handle.port()
+    );
+
     // Try to open browser
     if let Err(e) = webbrowser::open(&auth_url) {
         println!("⚠️  Could not open browser automatically: {}", e);
         println!("   Please open the URL manually.");
     }
-    
+
     let tokens = handle.wait_for_tokens().await?;
-    
+
     let auth = ClaudeCodeAuth::new(db);
     auth.save_tokens(&tokens)?;
-    
+
     println!("✅ Authentication successful!");
-    
+
     // Fetch and save available models
     println!("📥 Fetching available Claude models...");
     match fetch_claude_models(&tokens.access_token).await {
@@ -334,11 +351,11 @@ pub async fn run_claude_code_auth(db: &Database) -> Result<(), ClaudeCodeAuthErr
             println!("   You can try /claude-code-auth again later.");
         }
     }
-    
+
     println!();
     println!("🎉 Claude Code authentication complete!");
     println!("   Use /model to select a claude-code-* model.");
-    
+
     Ok(())
 }
 
@@ -346,7 +363,7 @@ pub async fn run_claude_code_auth(db: &Database) -> Result<(), ClaudeCodeAuthErr
 /// These are the base patterns without dates.
 const KNOWN_MODEL_PATTERNS: &[&str] = &[
     "claude-3-opus",
-    "claude-3-sonnet", 
+    "claude-3-sonnet",
     "claude-3-haiku",
     "claude-3-5-sonnet",
     "claude-3-5-haiku",
@@ -376,16 +393,16 @@ pub async fn get_claude_code_model(
     model_name: &str,
 ) -> Result<ClaudeCodeOAuthModel, ClaudeCodeAuthError> {
     debug!(model_name = %model_name, "get_claude_code_model called");
-    
+
     let auth = ClaudeCodeAuth::new(db);
     let access_token = auth.refresh_if_needed().await?;
-    
+
     // Strip the claude-code- prefix if present
     let actual_model_name = model_name
         .strip_prefix("claude-code-")
         .or_else(|| model_name.strip_prefix("claude_code_"))
         .unwrap_or(model_name);
-    
+
     // Validate the model name
     if !validate_model_name(actual_model_name) {
         warn!(
@@ -395,13 +412,13 @@ pub async fn get_claude_code_model(
         warn!("Known patterns: {:?}", KNOWN_MODEL_PATTERNS);
         warn!("Example valid names: claude-sonnet-4-20250514, claude-3-5-sonnet-20241022");
     }
-    
+
     info!(
         requested_model = %model_name,
         actual_model = %actual_model_name,
         token_len = access_token.len(),
         "Creating Claude Code OAuth model"
     );
-    
+
     Ok(ClaudeCodeOAuthModel::new(actual_model_name, access_token))
 }

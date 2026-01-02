@@ -3,29 +3,29 @@
 //! This module provides the execution layer for SpotAgents, using
 //! serdesAI's agent loop with proper tool calling and streaming support.
 
-use crate::agents::{SpotAgent, AgentManager};
+use crate::agents::{AgentManager, SpotAgent};
 use crate::auth;
 use crate::config::Settings;
 use crate::db::Database;
 use crate::mcp::McpManager;
 use crate::messaging::{EventBridge, MessageSender};
 use crate::models::{resolve_api_key, ModelRegistry, ModelType};
-use crate::tools::registry::SpotToolRegistry;
-use crate::tools::agent_tools::InvokeAgentTool;
 use crate::session::SessionManager;
+use crate::tools::agent_tools::InvokeAgentTool;
+use crate::tools::registry::SpotToolRegistry;
 use tracing::{debug, error, info, warn};
 
 use serdes_ai_agent::{agent, RunOptions};
+use serdes_ai_core::messages::ToolCallArgs;
 use serdes_ai_core::{
     ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, ModelSettings, TextPart,
     ToolCallPart, ToolReturnPart,
 };
-use serdes_ai_core::messages::ToolCallArgs;
 use serdes_ai_models::{
-    infer_model, Model, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse,
-    openai::OpenAIChatModel,
+    infer_model, openai::OpenAIChatModel, Model, ModelError, ModelProfile, ModelRequestParameters,
+    StreamedResponse,
 };
-use serdes_ai_tools::{Tool, ToolDefinition, ToolReturn, ToolError, RunContext};
+use serdes_ai_tools::{RunContext, Tool, ToolDefinition, ToolError, ToolReturn};
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -37,7 +37,7 @@ use tokio::sync::{mpsc, Mutex};
 pub use serdes_ai_agent::AgentStreamEvent as StreamEvent;
 
 /// Wrapper to make Arc<dyn Model> implement Model.
-/// 
+///
 /// This allows us to use dynamically dispatched models with serdesAI's
 /// agent builder, which requires a concrete Model type.
 struct ArcModel(Arc<dyn Model>);
@@ -84,7 +84,7 @@ impl Model for ArcModel {
 }
 
 /// Wrapper that adapts an `Arc<dyn Tool>` to work as a `ToolExecutor<()>`.
-/// 
+///
 /// This bridges our Tool implementations (which use `call()`) to
 /// serdesAI's executor interface (which uses `execute()`).
 struct ToolExecutorAdapter {
@@ -204,9 +204,8 @@ impl serdes_ai_agent::ToolExecutor<()> for InvokeAgentExecutor {
             session_id: Option<String>,
         }
 
-        let args: Args = serde_json::from_value(args.clone()).map_err(|e| {
-            ToolError::execution_failed(format!("Invalid arguments: {}", e))
-        })?;
+        let args: Args = serde_json::from_value(args.clone())
+            .map_err(|e| ToolError::execution_failed(format!("Invalid arguments: {}", e)))?;
 
         debug!(agent = %args.agent_name, "Invoking sub-agent");
 
@@ -301,7 +300,7 @@ impl serdes_ai_agent::ToolExecutor<()> for InvokeAgentExecutor {
                 let final_session_id = session_id.clone().unwrap_or_else(|| {
                     session_manager.generate_name(&agent_name)
                 });
-                
+
                 // Only save if we have messages (non-streaming mode returns them)
                 if !result.messages.is_empty() {
                     if let Err(e) = session_manager.save(
@@ -364,11 +363,13 @@ impl serdes_ai_agent::ToolExecutor<()> for ListAgentsExecutor {
         let agents: Vec<_> = agent_manager
             .list()
             .iter()
-            .map(|info| serde_json::json!({
-                "name": info.name,
-                "display_name": info.display_name,
-                "description": info.description
-            }))
+            .map(|info| {
+                serde_json::json!({
+                    "name": info.name,
+                    "display_name": info.display_name,
+                    "description": info.description
+                })
+            })
             .collect();
 
         Ok(ToolReturn::json(serde_json::json!({
@@ -395,7 +396,11 @@ pub struct AgentExecutor<'a> {
 impl<'a> AgentExecutor<'a> {
     /// Create a new executor with database access (for OAuth tokens) and model registry.
     pub fn new(db: &'a Database, registry: &'a ModelRegistry) -> Self {
-        Self { db, registry, bus: None }
+        Self {
+            db,
+            registry,
+            bus: None,
+        }
     }
 
     /// Add message bus for event publishing.
@@ -408,14 +413,14 @@ impl<'a> AgentExecutor<'a> {
     }
 
     /// Filter tool names based on settings.
-    /// 
+    ///
     /// Filters out:
     /// - `share_your_reasoning` unless `show_reasoning` is enabled
     /// - `invoke_agent` and `list_agents` (these use custom executors)
     fn filter_tools<'b>(&self, tool_names: Vec<&'b str>) -> Vec<&'b str> {
         let settings = Settings::new(self.db);
         let show_reasoning = settings.get_bool("show_reasoning").unwrap_or(false);
-        
+
         tool_names
             .into_iter()
             .filter(|name| {
@@ -455,31 +460,28 @@ impl<'a> AgentExecutor<'a> {
         // Get the model (handles OAuth models and custom endpoints)
         let model = get_model(self.db, model_name, self.registry).await?;
         let wrapped_model = ArcModel(model);
-        
+
         // Get original tool list (before filtering) to check for special tools
         let original_tools = spot_agent.available_tools();
         let wants_invoke = self.wants_invoke_agent(&original_tools);
         let wants_list = self.wants_list_agents(&original_tools);
-        
+
         // Get the tools this agent should have access to (filtered by settings)
         let tool_names = self.filter_tools(original_tools);
         let tools = tool_registry.tools_by_name(&tool_names);
-        
+
         // Build the serdesAI agent
         let mut builder = agent(wrapped_model)
             .system_prompt(spot_agent.system_prompt())
             .temperature(0.7)
             .max_tokens(4096);
-        
+
         // Register built-in tools with real executors
         for tool in tools {
             let def = tool.definition();
-            builder = builder.tool_with_executor(
-                def,
-                ToolExecutorAdapter::new(Arc::clone(&tool)),
-            );
+            builder = builder.tool_with_executor(def, ToolExecutorAdapter::new(Arc::clone(&tool)));
         }
-        
+
         // Add invoke_agent with custom executor (has database access)
         if wants_invoke {
             let invoke_executor = if let Some(ref bus) = self.bus {
@@ -487,12 +489,10 @@ impl<'a> AgentExecutor<'a> {
             } else {
                 InvokeAgentExecutor::new_legacy(self.db, model_name)
             };
-            builder = builder.tool_with_executor(
-                InvokeAgentExecutor::definition(),
-                invoke_executor,
-            );
+            builder =
+                builder.tool_with_executor(InvokeAgentExecutor::definition(), invoke_executor);
         }
-        
+
         // Add list_agents with custom executor
         if wants_list {
             builder = builder.tool_with_executor(
@@ -500,28 +500,27 @@ impl<'a> AgentExecutor<'a> {
                 ListAgentsExecutor::new(self.db),
             );
         }
-        
+
         // Add MCP tools
         let mcp_tools = self.collect_mcp_tools(_mcp_manager).await;
         for (def, tool) in mcp_tools {
-            builder = builder.tool_with_executor(
-                def,
-                ToolExecutorAdapter::new(tool),
-            );
+            builder = builder.tool_with_executor(def, ToolExecutorAdapter::new(tool));
         }
-        
+
         let serdes_agent = builder.build();
-        
+
         // Set up run options with message history if provided
         let options = match message_history {
             Some(history) => RunOptions::new().message_history(history),
             None => RunOptions::new(),
         };
-        
+
         // Run the agent
-        let result = serdes_agent.run_with_options(prompt, (), options).await
+        let result = serdes_agent
+            .run_with_options(prompt, (), options)
+            .await
             .map_err(|e| ExecutorError::Execution(e.to_string()))?;
-        
+
         Ok(ExecutorResult {
             output: result.output.clone(),
             messages: result.messages,
@@ -552,16 +551,14 @@ impl<'a> AgentExecutor<'a> {
         ))?;
 
         // Create event bridge for this agent
-        let mut bridge = EventBridge::new(
-            bus.clone(),
-            spot_agent.name(),
-            spot_agent.display_name(),
-        );
+        let mut bridge =
+            EventBridge::new(bus.clone(), spot_agent.name(), spot_agent.display_name());
 
         bridge.agent_started();
 
         // Track tool returns during streaming so we can reconstruct message history.
-        let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> = Arc::new(Mutex::new(Vec::new()));
+        let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> =
+            Arc::new(Mutex::new(Vec::new()));
 
         // Start with any provided history, then add the current user prompt.
         let mut messages = message_history.clone().unwrap_or_default();
@@ -664,7 +661,10 @@ impl<'a> AgentExecutor<'a> {
                             }
 
                             for tc in completed_tool_calls.drain(..) {
-                                let mut part = ToolCallPart::new(tc.tool_name, ToolCallArgs::from(tc.args_buffer));
+                                let mut part = ToolCallPart::new(
+                                    tc.tool_name,
+                                    ToolCallArgs::from(tc.args_buffer),
+                                );
                                 if let Some(id) = tc.tool_call_id {
                                     part = part.with_tool_call_id(id);
                                 }
@@ -676,9 +676,9 @@ impl<'a> AgentExecutor<'a> {
                                     .with_model_name(model_name.to_string());
 
                                 let mut response_req = ModelRequest::new();
-                                response_req.parts.push(ModelRequestPart::ModelResponse(Box::new(
-                                    response,
-                                )));
+                                response_req
+                                    .parts
+                                    .push(ModelRequestPart::ModelResponse(Box::new(response)));
                                 messages.push(response_req);
                             }
 
@@ -701,7 +701,8 @@ impl<'a> AgentExecutor<'a> {
                     // those cases we synthesize an error ToolReturnPart from the ToolExecuted event.
                     if let Some((tool_name, success, error)) = tool_executed_info {
                         if expected_tool_returns > 0 {
-                            let tool_call_id = pending_tool_calls.pop_front().and_then(|(_, id)| id);
+                            let tool_call_id =
+                                pending_tool_calls.pop_front().and_then(|(_, id)| id);
 
                             let mut part = {
                                 let next_part = {
@@ -715,7 +716,8 @@ impl<'a> AgentExecutor<'a> {
                                 } else {
                                     let msg = error.unwrap_or_else(|| {
                                         if success {
-                                            "Tool executed but no tool return was recorded".to_string()
+                                            "Tool executed but no tool return was recorded"
+                                                .to_string()
                                         } else {
                                             "Tool failed".to_string()
                                         }
@@ -835,22 +837,20 @@ impl<'a> AgentExecutor<'a> {
         let original_tools = spot_agent.available_tools();
         let wants_invoke = self.wants_invoke_agent(&original_tools);
         let wants_list = self.wants_list_agents(&original_tools);
-        
+
         // Get the tools this agent should have access to (filtered by settings)
         let tool_names = self.filter_tools(original_tools);
         let tools = tool_registry.tools_by_name(&tool_names);
-        
+
         // Collect tool definitions and Arc references
         // We need to move these into the spawned task
-        let mut tool_data: Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> = tools
-            .into_iter()
-            .map(|t| (t.definition(), t))
-            .collect();
-        
+        let mut tool_data: Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> =
+            tools.into_iter().map(|t| (t.definition(), t)).collect();
+
         // Collect MCP tools from running servers
         let mcp_tool_calls = self.collect_mcp_tools(mcp_manager).await;
         tool_data.extend(mcp_tool_calls);
-        
+
         // Prepare data for the spawned task
         let system_prompt = spot_agent.system_prompt();
         let prompt = prompt.to_string();
@@ -859,22 +859,22 @@ impl<'a> AgentExecutor<'a> {
         let bus = self.bus.clone(); // Clone bus for sub-agent visibility
         let tool_return_recorder = tool_return_recorder.clone();
         let (tx, rx) = mpsc::channel(32);
-        
+
         debug!(tool_count = tool_data.len(), "Spawning streaming task");
-        
+
         // Spawn a task that owns the agent and sends events through the channel
         tokio::spawn(async move {
             debug!("Streaming task started");
-            
+
             let wrapped_model = ArcModel(model);
-            
+
             // Build the serdesAI agent
             debug!("Building serdesAI agent");
             let mut builder = agent(wrapped_model)
                 .system_prompt(system_prompt)
                 .temperature(0.7)
                 .max_tokens(4096);
-            
+
             match tool_return_recorder {
                 Some(recorder) => {
                     // Register tools with recording executors
@@ -882,7 +882,10 @@ impl<'a> AgentExecutor<'a> {
                         debug!(tool_name = %def.name, "Registering tool");
                         builder = builder.tool_with_executor(
                             def,
-                            RecordingToolExecutor::new(ToolExecutorAdapter::new(tool), recorder.clone()),
+                            RecordingToolExecutor::new(
+                                ToolExecutorAdapter::new(tool),
+                                recorder.clone(),
+                            ),
                         );
                     }
 
@@ -904,7 +907,9 @@ impl<'a> AgentExecutor<'a> {
                         builder = builder.tool_with_executor(
                             ListAgentsExecutor::definition(),
                             RecordingToolExecutor::new(
-                                ListAgentsExecutor { db_path: db_path.clone() },
+                                ListAgentsExecutor {
+                                    db_path: db_path.clone(),
+                                },
                                 recorder.clone(),
                             ),
                         );
@@ -914,12 +919,9 @@ impl<'a> AgentExecutor<'a> {
                     // Register tools with real executors
                     for (def, tool) in tool_data {
                         debug!(tool_name = %def.name, "Registering tool");
-                        builder = builder.tool_with_executor(
-                            def,
-                            ToolExecutorAdapter::new(tool),
-                        );
+                        builder = builder.tool_with_executor(def, ToolExecutorAdapter::new(tool));
                     }
-                    
+
                     // Add invoke_agent with custom executor (has database access)
                     if wants_invoke {
                         let invoke_executor = InvokeAgentExecutor {
@@ -927,42 +929,45 @@ impl<'a> AgentExecutor<'a> {
                             current_model: model_name_owned.clone(),
                             bus: bus.clone(), // Pass bus for sub-agent visibility
                         };
-                        builder = builder.tool_with_executor(
-                            InvokeAgentExecutor::definition(),
-                            invoke_executor,
-                        );
+                        builder = builder
+                            .tool_with_executor(InvokeAgentExecutor::definition(), invoke_executor);
                     }
-                    
+
                     // Add list_agents with custom executor
                     if wants_list {
                         builder = builder.tool_with_executor(
                             ListAgentsExecutor::definition(),
-                            ListAgentsExecutor { db_path: db_path.clone() },
+                            ListAgentsExecutor {
+                                db_path: db_path.clone(),
+                            },
                         );
                     }
                 }
             }
-            
+
             let serdes_agent = builder.build();
             debug!("Agent built successfully");
-            
+
             // Set up run options
             let history_len = message_history.as_ref().map(|h| h.len()).unwrap_or(0);
             debug!(history_messages = history_len, "Setting up run options");
-            
+
             let options = match message_history {
                 Some(history) => RunOptions::new().message_history(history),
                 None => RunOptions::new(),
             };
-            
+
             // Use real streaming from serdesAI
             debug!(prompt_len = prompt.len(), "Calling run_stream_with_options");
-            
-            match serdes_agent.run_stream_with_options(prompt, (), options).await {
+
+            match serdes_agent
+                .run_stream_with_options(prompt, (), options)
+                .await
+            {
                 Ok(mut stream) => {
                     debug!("Stream started, forwarding events");
                     let mut event_count = 0u32;
-                    
+
                     // Forward all events from the stream
                     while let Some(event_result) = stream.next().await {
                         event_count += 1;
@@ -977,7 +982,7 @@ impl<'a> AgentExecutor<'a> {
                             Err(e) => {
                                 let error_str = e.to_string();
                                 error!(error = %error_str, "Stream error");
-                                
+
                                 // Log common error patterns
                                 if error_str.contains("status: 400") {
                                     error!("HTTP 400 Bad Request - likely invalid model name");
@@ -986,10 +991,12 @@ impl<'a> AgentExecutor<'a> {
                                 } else if error_str.contains("status: 404") {
                                     error!("HTTP 404 Not Found - model name may be invalid");
                                 }
-                                
-                                let _ = tx.send(Ok(StreamEvent::Error { 
-                                    message: error_str.clone() 
-                                })).await;
+
+                                let _ = tx
+                                    .send(Ok(StreamEvent::Error {
+                                        message: error_str.clone(),
+                                    }))
+                                    .await;
                                 let _ = tx.send(Err(ExecutorError::Execution(error_str))).await;
                                 break;
                             }
@@ -1000,10 +1007,12 @@ impl<'a> AgentExecutor<'a> {
                 Err(e) => {
                     let error_str = e.to_string();
                     error!(error = %error_str, "Failed to start stream");
-                    
+
                     // Check for common error patterns
                     if error_str.contains("status: 400") {
-                        error!("HTTP 400 Bad Request - likely invalid model name or request format");
+                        error!(
+                            "HTTP 400 Bad Request - likely invalid model name or request format"
+                        );
                     } else if error_str.contains("status: 401") {
                         error!("HTTP 401 Unauthorized - token may be expired or invalid");
                     } else if error_str.contains("status: 403") {
@@ -1015,27 +1024,27 @@ impl<'a> AgentExecutor<'a> {
                     } else if error_str.contains("status: 5") {
                         error!("HTTP 5xx Server Error - API issue");
                     }
-                    
+
                     // Log the full error body if present
                     if error_str.contains("body:") {
                         error!("API Error Body: {}", error_str);
                     }
-                    
+
                     // Send error event
-                    let _ = tx.send(Ok(StreamEvent::Error { 
-                        message: error_str.clone() 
-                    })).await;
+                    let _ = tx
+                        .send(Ok(StreamEvent::Error {
+                            message: error_str.clone(),
+                        }))
+                        .await;
                     let _ = tx.send(Err(ExecutorError::Execution(error_str))).await;
                 }
             }
             debug!("Streaming task exiting");
         });
-        
+
         Ok(ExecutorStreamReceiver { rx })
     }
 }
-
-
 
 /// Result from agent execution.
 #[derive(Debug, Clone)]
@@ -1049,7 +1058,7 @@ pub struct ExecutorResult {
 }
 
 /// Receiver for streaming events from agent execution.
-/// 
+///
 /// This wraps an mpsc receiver and provides a convenient interface
 /// for consuming streaming events.
 pub struct ExecutorStreamReceiver {
@@ -1058,7 +1067,7 @@ pub struct ExecutorStreamReceiver {
 
 impl ExecutorStreamReceiver {
     /// Receive the next event from the stream.
-    /// 
+    ///
     /// Returns `None` when the stream is complete.
     pub async fn recv(&mut self) -> Option<Result<StreamEvent, ExecutorError>> {
         self.rx.recv().await
@@ -1084,7 +1093,7 @@ pub async fn get_model(
             has_custom_endpoint = config.custom_endpoint.is_some(),
             "Found model in registry"
         );
-        
+
         // Handle custom endpoint models (e.g., from models.dev)
         if let Some(endpoint) = &config.custom_endpoint {
             debug!(
@@ -1157,12 +1166,10 @@ pub async fn get_model(
     // Legacy: Check for OAuth models by prefix (backward compatibility)
     if model_name.starts_with("chatgpt-") || model_name.starts_with("chatgpt_") {
         debug!("Detected ChatGPT OAuth model by prefix");
-        let model = auth::get_chatgpt_model(db, model_name)
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Failed to get ChatGPT model");
-                ExecutorError::Auth(e.to_string())
-            })?;
+        let model = auth::get_chatgpt_model(db, model_name).await.map_err(|e| {
+            error!(error = %e, "Failed to get ChatGPT model");
+            ExecutorError::Auth(e.to_string())
+        })?;
         info!(model_id = %model.identifier(), "ChatGPT OAuth model ready");
         return Ok(Arc::new(model));
     }
@@ -1251,35 +1258,36 @@ impl<'a> AgentExecutor<'a> {
         mcp_manager: &McpManager,
     ) -> Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> {
         let mut tools = Vec::new();
-        
+
         // Get all tools from running MCP servers
         let all_mcp_tools = mcp_manager.list_all_tools().await;
-        
+
         for (server_name, server_tools) in all_mcp_tools {
             for mcp_tool in server_tools {
                 // Create a tool definition from MCP tool
                 let def = ToolDefinition::new(
                     mcp_tool.name.clone(),
                     mcp_tool.description.clone().unwrap_or_default(),
-                ).with_parameters(mcp_tool.input_schema.clone());
-                
+                )
+                .with_parameters(mcp_tool.input_schema.clone());
+
                 // Create an MCP tool executor
                 let executor = McpToolExecutor {
                     server_name: server_name.clone(),
                     tool_name: mcp_tool.name.clone(),
                     mcp_manager_ptr: mcp_manager as *const McpManager,
                 };
-                
+
                 tools.push((def, Arc::new(executor) as Arc<dyn Tool + Send + Sync>));
             }
         }
-        
+
         tools
     }
 }
 
 /// Tool executor that calls MCP server tools.
-/// 
+///
 /// Note: We use a raw pointer to McpManager because we can't easily
 /// share Arc across async boundaries here. The pointer is valid for
 /// the duration of the executor run.
@@ -1303,19 +1311,19 @@ impl Tool for McpToolExecutor {
         )
     }
 
-    async fn call(
-        &self,
-        _ctx: &RunContext<()>,
-        args: JsonValue,
-    ) -> Result<ToolReturn, ToolError> {
+    async fn call(&self, _ctx: &RunContext<()>, args: JsonValue) -> Result<ToolReturn, ToolError> {
         // Safety: The McpManager outlives this executor
         let manager = unsafe { &*self.mcp_manager_ptr };
-        
-        match manager.call_tool(&self.server_name, &self.tool_name, args).await {
+
+        match manager
+            .call_tool(&self.server_name, &self.tool_name, args)
+            .await
+        {
             Ok(result) => {
                 // Convert MCP result to ToolReturn
                 if result.is_error {
-                    let error_msg = result.content
+                    let error_msg = result
+                        .content
                         .first()
                         .map(|c| match c {
                             serdes_ai_mcp::ToolResultContent::Text { text } => text.clone(),
@@ -1324,7 +1332,8 @@ impl Tool for McpToolExecutor {
                         .unwrap_or_else(|| "Unknown error".to_string());
                     Ok(ToolReturn::error(error_msg))
                 } else {
-                    let text = result.content
+                    let text = result
+                        .content
                         .into_iter()
                         .filter_map(|c| match c {
                             serdes_ai_mcp::ToolResultContent::Text { text } => Some(text),
@@ -1335,12 +1344,10 @@ impl Tool for McpToolExecutor {
                     Ok(ToolReturn::text(text))
                 }
             }
-            Err(e) => {
-                Err(ToolError::ExecutionFailed {
-                    message: e.to_string(),
-                    retryable: false,
-                })
-            }
+            Err(e) => Err(ToolError::ExecutionFailed {
+                message: e.to_string(),
+                retryable: false,
+            }),
         }
     }
 }

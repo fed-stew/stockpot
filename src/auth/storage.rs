@@ -68,7 +68,7 @@ impl<'a> TokenStorage<'a> {
         extra_data: Option<&str>,
     ) -> Result<(), TokenStorageError> {
         let expires_at = expires_in.map(|secs| Utc::now().timestamp() + secs as i64);
-        
+
         self.db.conn().execute(
             "INSERT INTO oauth_tokens (provider, access_token, refresh_token, expires_at, account_id, extra_data, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, unixepoch())
@@ -88,7 +88,7 @@ impl<'a> TokenStorage<'a> {
                 extra_data,
             ],
         )?;
-        
+
         Ok(())
     }
 
@@ -120,10 +120,9 @@ impl<'a> TokenStorage<'a> {
 
     /// Delete tokens for a provider.
     pub fn delete(&self, provider: &str) -> Result<(), TokenStorageError> {
-        self.db.conn().execute(
-            "DELETE FROM oauth_tokens WHERE provider = ?",
-            [provider],
-        )?;
+        self.db
+            .conn()
+            .execute("DELETE FROM oauth_tokens WHERE provider = ?", [provider])?;
         Ok(())
     }
 
@@ -134,10 +133,11 @@ impl<'a> TokenStorage<'a> {
 
     /// List all authenticated providers.
     pub fn list_providers(&self) -> Result<Vec<String>, TokenStorageError> {
-        let mut stmt = self.db.conn().prepare(
-            "SELECT provider FROM oauth_tokens ORDER BY provider"
-        )?;
-        
+        let mut stmt = self
+            .db
+            .conn()
+            .prepare("SELECT provider FROM oauth_tokens ORDER BY provider")?;
+
         let rows = stmt.query_map([], |row| row.get(0))?;
         let mut providers = Vec::new();
         for row in rows {

@@ -10,7 +10,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             applied_at INTEGER DEFAULT (unixepoch())
-        );"
+        );",
     )?;
 
     let migrations = [
@@ -33,10 +33,7 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
         if !applied {
             tracing::info!("Running migration: {}", name);
             conn.execute_batch(sql)?;
-            conn.execute(
-                "INSERT INTO migrations (name) VALUES (?)",
-                [name],
-            )?;
+            conn.execute("INSERT INTO migrations (name) VALUES (?)", [name])?;
         }
     }
 

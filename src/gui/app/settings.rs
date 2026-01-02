@@ -105,37 +105,43 @@ impl ChatApp {
                                 .border_b_1()
                                 .border_color(theme.border)
                                 .bg(theme.panel_background)
-                                .children([
-                                    SettingsTab::PinnedAgents,
-                                    SettingsTab::Models,
-                                    SettingsTab::General,
-                                ]
-                                .into_iter()
-                                .map(|t| {
-                                    let is_selected = t == tab;
-                                    div()
-                                        .id(SharedString::from(format!("settings-tab-{:?}", t)))
-                                        .px(px(12.))
-                                        .py(px(7.))
-                                        .rounded(px(999.))
-                                        .bg(if is_selected { theme.accent } else { theme.tool_card })
-                                        .text_color(if is_selected {
-                                            rgb(0xffffff)
-                                        } else {
-                                            theme.text
-                                        })
-                                        .text_size(px(12.))
-                                        .cursor_pointer()
-                                        .hover(|s| s.opacity(0.9))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _, _, cx| {
-                                                this.settings_tab = t;
-                                                cx.notify();
-                                            }),
-                                        )
-                                        .child(t.label())
-                                })),
+                                .children(
+                                    [
+                                        SettingsTab::PinnedAgents,
+                                        SettingsTab::Models,
+                                        SettingsTab::General,
+                                    ]
+                                    .into_iter()
+                                    .map(|t| {
+                                        let is_selected = t == tab;
+                                        div()
+                                            .id(SharedString::from(format!("settings-tab-{:?}", t)))
+                                            .px(px(12.))
+                                            .py(px(7.))
+                                            .rounded(px(999.))
+                                            .bg(if is_selected {
+                                                theme.accent
+                                            } else {
+                                                theme.tool_card
+                                            })
+                                            .text_color(if is_selected {
+                                                rgb(0xffffff)
+                                            } else {
+                                                theme.text
+                                            })
+                                            .text_size(px(12.))
+                                            .cursor_pointer()
+                                            .hover(|s| s.opacity(0.9))
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(move |this, _, _, cx| {
+                                                    this.settings_tab = t;
+                                                    cx.notify();
+                                                }),
+                                            )
+                                            .child(t.label())
+                                    }),
+                                ),
                         )
                         .child(
                             // Content
@@ -175,8 +181,6 @@ impl ChatApp {
                                     self.settings_scrollbar_drag.clone(),
                                     theme.clone(),
                                 )),
-
-
                         ),
                 )
         })
@@ -196,14 +200,12 @@ impl ChatApp {
 
         let bounds_tracker = gpui::canvas(
             move |bounds, _window, cx| {
-                let should_update =
-                    view.read(cx).default_model_dropdown_bounds != Some(bounds);
+                let should_update = view.read(cx).default_model_dropdown_bounds != Some(bounds);
                 if should_update {
                     view.update(cx, |this, _| {
                         this.default_model_dropdown_bounds = Some(bounds);
                     });
                 }
-                ()
             },
             |_, _, _, _| {},
         )
@@ -297,7 +299,8 @@ impl ChatApp {
                                         .id("default-model-dropdown-list")
                                         .w(bounds.size.width.max(px(280.)))
                                         .max_h(px(300.))
-                                        .overflow_y_scroll().scrollbar_width(px(8.))
+                                        .overflow_y_scroll()
+                                        .scrollbar_width(px(8.))
                                         .rounded(px(8.))
                                         .bg(theme.panel_background)
                                         .border_1()
@@ -370,7 +373,8 @@ impl ChatApp {
                     .id("settings-agents-scroll")
                     .mt(px(6.))
                     .max_h(px(420.))
-                    .overflow_y_scroll().scrollbar_width(px(8.))
+                    .overflow_y_scroll()
+                    .scrollbar_width(px(8.))
                     .flex()
                     .flex_col()
                     .gap(px(4.))
@@ -379,10 +383,9 @@ impl ChatApp {
                         let pinned = pins.get(&info.name).cloned();
                         let subtitle = match pinned {
                             Some(p) => format!("Pinned: {}", Self::truncate_model_name(&p)),
-                            None => format!(
-                                "Default: {}",
-                                Self::truncate_model_name(&default_model)
-                            ),
+                            None => {
+                                format!("Default: {}", Self::truncate_model_name(&default_model))
+                            }
                         };
 
                         let agent_name = info.name.clone();
@@ -391,8 +394,16 @@ impl ChatApp {
                             .px(px(12.))
                             .py(px(10.))
                             .rounded(px(8.))
-                            .bg(if is_selected { theme.accent } else { theme.tool_card })
-                            .text_color(if is_selected { rgb(0xffffff) } else { theme.text })
+                            .bg(if is_selected {
+                                theme.accent
+                            } else {
+                                theme.tool_card
+                            })
+                            .text_color(if is_selected {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text
+                            })
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.9))
                             .on_mouse_up(
@@ -446,31 +457,41 @@ impl ChatApp {
                     .id("settings-pin-models-scroll")
                     .mt(px(6.))
                     .max_h(px(420.))
-                    .overflow_y_scroll().scrollbar_width(px(8.))
+                    .overflow_y_scroll()
+                    .scrollbar_width(px(8.))
                     .flex()
                     .flex_col()
                     .gap(px(4.))
                     .child({
                         let is_selected = pinned_for_selected.is_none();
                         let agent_name = selected_agent.clone();
-                        let default_label =
-                            format!("Use Default ({})", Self::truncate_model_name(&default_model));
+                        let default_label = format!(
+                            "Use Default ({})",
+                            Self::truncate_model_name(&default_model)
+                        );
 
                         div()
                             .id("pin-model-default")
                             .px(px(12.))
                             .py(px(10.))
                             .rounded(px(8.))
-                            .bg(if is_selected { theme.accent } else { theme.tool_card })
-                            .text_color(if is_selected { rgb(0xffffff) } else { theme.text })
+                            .bg(if is_selected {
+                                theme.accent
+                            } else {
+                                theme.tool_card
+                            })
+                            .text_color(if is_selected {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text
+                            })
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.9))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, _, cx| {
                                     let settings = Settings::new(&this.db);
-                                    if let Err(e) = settings.clear_agent_pinned_model(&agent_name)
-                                    {
+                                    if let Err(e) = settings.clear_agent_pinned_model(&agent_name) {
                                         tracing::warn!(
                                             "Failed to clear pinned model for {}: {}",
                                             agent_name,
@@ -492,7 +513,11 @@ impl ChatApp {
                             .px(px(12.))
                             .py(px(10.))
                             .rounded(px(8.))
-                            .bg(if pinned { theme.accent } else { theme.tool_card })
+                            .bg(if pinned {
+                                theme.accent
+                            } else {
+                                theme.tool_card
+                            })
                             .text_color(if pinned { rgb(0xffffff) } else { theme.text })
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.9))
@@ -500,8 +525,8 @@ impl ChatApp {
                                 MouseButton::Left,
                                 cx.listener(move |this, _, _, cx| {
                                     let settings = Settings::new(&this.db);
-                                    if let Err(e) = settings
-                                        .set_agent_pinned_model(&agent_name, &model_name)
+                                    if let Err(e) =
+                                        settings.set_agent_pinned_model(&agent_name, &model_name)
                                     {
                                         tracing::warn!(
                                             "Failed to pin model for {}: {}",
@@ -516,17 +541,13 @@ impl ChatApp {
                     })),
             );
 
-        div()
-            .flex()
-            .flex_col()
-            .child(default_model_section)
-            .child(
-                div()
-                    .flex()
-                    .gap(px(18.))
-                    .child(div().w(px(360.)).child(left_panel))
-                    .child(div().flex_1().child(right_panel)),
-            )
+        div().flex().flex_col().child(default_model_section).child(
+            div()
+                .flex()
+                .gap(px(18.))
+                .child(div().w(px(360.)).child(left_panel))
+                .child(div().flex_1().child(right_panel)),
+        )
     }
 
     fn render_settings_models(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -678,8 +699,16 @@ impl ChatApp {
                                     .px(px(12.))
                                     .py(px(10.))
                                     .rounded(px(8.))
-                                    .bg(if is_selected { theme.accent } else { theme.tool_card })
-                                    .text_color(if is_selected { rgb(0xffffff) } else { theme.text })
+                                    .bg(if is_selected {
+                                        theme.accent
+                                    } else {
+                                        theme.tool_card
+                                    })
+                                    .text_color(if is_selected {
+                                        rgb(0xffffff)
+                                    } else {
+                                        theme.text
+                                    })
                                     .cursor_pointer()
                                     .hover(|s| s.opacity(0.9))
                                     .flex()
@@ -734,8 +763,7 @@ impl ChatApp {
                                             })
                                             .cursor_pointer()
                                             .hover(|s| {
-                                                s.text_color(rgb(0xff6b6b))
-                                                    .bg(rgba(0xff6b6b22))
+                                                s.text_color(rgb(0xff6b6b)).bg(rgba(0xff6b6b22))
                                             })
                                             .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                                 cx.stop_propagation();
@@ -744,10 +772,7 @@ impl ChatApp {
                                                 MouseButton::Left,
                                                 cx.listener(move |this, _, _, cx| {
                                                     cx.stop_propagation();
-                                                    this.delete_model(
-                                                        &model_name_for_delete,
-                                                        cx,
-                                                    );
+                                                    this.delete_model(&model_name_for_delete, cx);
                                                 }),
                                             )
                                             .child("×"),
@@ -762,97 +787,85 @@ impl ChatApp {
         let theme = self.theme.clone();
         let user_mode = self.user_mode;
 
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(18.))
-            .child(
-                // User Mode
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(theme.text)
-                            .child("User Mode"),
-                    )
-                    .children(
-                        [UserMode::Normal, UserMode::Expert, UserMode::Developer]
-                            .iter()
-                            .map(|mode| {
-                                let is_selected = *mode == user_mode;
-                                let mode_clone = *mode;
-                                let mode_label = match mode {
-                                    UserMode::Normal => "Normal",
-                                    UserMode::Expert => "Expert",
-                                    UserMode::Developer => "Developer",
-                                };
+        div().flex().flex_col().gap(px(18.)).child(
+            // User Mode
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .text_size(px(13.))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(theme.text)
+                        .child("User Mode"),
+                )
+                .children(
+                    [UserMode::Normal, UserMode::Expert, UserMode::Developer]
+                        .iter()
+                        .map(|mode| {
+                            let is_selected = *mode == user_mode;
+                            let mode_clone = *mode;
+                            let mode_label = match mode {
+                                UserMode::Normal => "Normal",
+                                UserMode::Expert => "Expert",
+                                UserMode::Developer => "Developer",
+                            };
 
-                                div()
-                                    .id(SharedString::from(format!("mode-{:?}", mode)))
-                                    .px(px(12.))
-                                    .py(px(10.))
-                                    .rounded(px(8.))
-                                    .bg(if is_selected {
-                                        theme.accent
-                                    } else {
-                                        theme.tool_card
-                                    })
-                                    .text_color(if is_selected {
-                                        rgb(0xffffff)
-                                    } else {
-                                        theme.text
-                                    })
-                                    .text_size(px(13.))
-                                    .cursor_pointer()
-                                    .hover(|s| s.opacity(0.9))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |this, _, _, cx| {
-                                            this.user_mode = mode_clone;
-                                            let settings = Settings::new(&this.db);
-                                            if let Err(e) = settings.set_user_mode(mode_clone) {
-                                                tracing::warn!(
-                                                    "Failed to save user_mode: {}",
-                                                    e
-                                                );
+                            div()
+                                .id(SharedString::from(format!("mode-{:?}", mode)))
+                                .px(px(12.))
+                                .py(px(10.))
+                                .rounded(px(8.))
+                                .bg(if is_selected {
+                                    theme.accent
+                                } else {
+                                    theme.tool_card
+                                })
+                                .text_color(if is_selected {
+                                    rgb(0xffffff)
+                                } else {
+                                    theme.text
+                                })
+                                .text_size(px(13.))
+                                .cursor_pointer()
+                                .hover(|s| s.opacity(0.9))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.user_mode = mode_clone;
+                                        let settings = Settings::new(&this.db);
+                                        if let Err(e) = settings.set_user_mode(mode_clone) {
+                                            tracing::warn!("Failed to save user_mode: {}", e);
+                                        }
+
+                                        this.available_agents = this
+                                            .agents
+                                            .list_filtered(mode_clone)
+                                            .into_iter()
+                                            .map(|info| {
+                                                (info.name.clone(), info.display_name.clone())
+                                            })
+                                            .collect();
+
+                                        let should_switch = !this
+                                            .available_agents
+                                            .iter()
+                                            .any(|(name, _)| name == &this.current_agent);
+                                        if should_switch {
+                                            if let Some((name, _)) = this.available_agents.first() {
+                                                let name = name.clone();
+                                                this.set_current_agent(&name);
                                             }
+                                        }
 
-                                            this.available_agents = this
-                                                .agents
-                                                .list_filtered(mode_clone)
-                                                .into_iter()
-                                                .map(|info| {
-                                                    (
-                                                        info.name.clone(),
-                                                        info.display_name.clone(),
-                                                    )
-                                                })
-                                                .collect();
-
-                                            let should_switch = !this
-                                                .available_agents
-                                                .iter()
-                                                .any(|(name, _)| name == &this.current_agent);
-                                            if should_switch {
-                                                if let Some((name, _)) =
-                                                    this.available_agents.first()
-                                                {
-                                                    let name = name.clone();
-                                                    this.set_current_agent(&name);
-                                                }
-                                            }
-
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child(mode_label)
-                            }),
-                    ),
-            )
+                                        cx.notify();
+                                    }),
+                                )
+                                .child(mode_label)
+                        }),
+                ),
+        )
     }
 
     fn render_oauth_status(
@@ -927,7 +940,11 @@ impl ChatApp {
                             this.start_oauth_flow(provider, cx);
                         }),
                     )
-                    .child(if is_authenticated { "Reconnect" } else { "Connect" }),
+                    .child(if is_authenticated {
+                        "Reconnect"
+                    } else {
+                        "Connect"
+                    }),
             )
     }
 
@@ -1356,9 +1373,7 @@ impl ChatApp {
                                                 if let Some(input) =
                                                     &this.add_model_api_key_input_entity
                                                 {
-                                                    input.update(cx, |input, cx| {
-                                                        input.clear(cx)
-                                                    });
+                                                    input.update(cx, |input, cx| input.clear(cx));
                                                 }
                                                 this.add_model_error = None;
                                                 cx.notify();
@@ -1508,7 +1523,11 @@ impl ChatApp {
                             } else {
                                 theme.panel_background
                             })
-                            .text_color(if is_selected { rgb(0xffffff) } else { theme.text })
+                            .text_color(if is_selected {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text
+                            })
                             .hover(move |s| {
                                 if is_selected {
                                     s
@@ -1527,7 +1546,8 @@ impl ChatApp {
                                         .iter()
                                         .find(|p| p.id == provider_id)
                                     {
-                                        this.add_model_models = p.models.values().cloned().collect();
+                                        this.add_model_models =
+                                            p.models.values().cloned().collect();
                                         this.add_model_models.sort_by(|a, b| a.id.cmp(&b.id));
                                     }
                                     if let Some(input) = &this.add_model_api_key_input_entity {
@@ -1582,7 +1602,10 @@ impl ChatApp {
                 .into_any_element();
         };
 
-        let provider = self.add_model_providers.iter().find(|p| &p.id == provider_id);
+        let provider = self
+            .add_model_providers
+            .iter()
+            .find(|p| &p.id == provider_id);
         let env_var = provider
             .and_then(|p| p.env.first())
             .map(|s| s.as_str())
@@ -1639,15 +1662,10 @@ impl ChatApp {
                         div()
                             .flex()
                             .gap(px(8.))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_h(px(44.))
-                                    .when_some(
-                                        self.add_model_api_key_input_entity.clone(),
-                                        |d, input| d.child(input),
-                                    ),
-                            )
+                            .child(div().flex_1().min_h(px(44.)).when_some(
+                                self.add_model_api_key_input_entity.clone(),
+                                |d, input| d.child(input),
+                            ))
                             .child(
                                 div()
                                     .id("paste-api-key")
@@ -1662,18 +1680,14 @@ impl ChatApp {
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(|this, _, _, cx| {
-                                            if let Some(text) = cx
-                                                .read_from_clipboard()
-                                                .and_then(|i| i.text())
+                                            if let Some(text) =
+                                                cx.read_from_clipboard().and_then(|i| i.text())
                                             {
                                                 if let Some(input) =
                                                     &this.add_model_api_key_input_entity
                                                 {
                                                     input.update(cx, |input, cx| {
-                                                        input.set_content(
-                                                            text.to_string(),
-                                                            cx,
-                                                        );
+                                                        input.set_content(text.to_string(), cx);
                                                     });
                                                 }
                                                 cx.notify();
@@ -1682,7 +1696,7 @@ impl ChatApp {
                                     )
                                     .child("Paste"),
                             ),
-                    )
+                    ),
             )
             .child(
                 div()
@@ -1801,8 +1815,6 @@ impl ChatApp {
                         self.add_model_models_scrollbar_drag.clone(),
                         theme.clone(),
                     )),
-
-
             )
             .into_any_element()
     }

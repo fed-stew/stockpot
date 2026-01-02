@@ -5,9 +5,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    actions, div, prelude::*, px, rgb, App, AsyncApp, Context, Entity,
-    ExternalPaths, FocusHandle, Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString,
-    Styled, WeakEntity, Window,
+    actions, div, prelude::*, px, rgb, App, AsyncApp, Context, Entity, ExternalPaths, FocusHandle,
+    Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Styled, WeakEntity, Window,
 };
 
 use super::components::{ScrollbarDragState, TextInput, ZedMarkdownText};
@@ -36,10 +35,10 @@ actions!(
 );
 
 mod agent_dropdown;
-mod model_dropdown;
 mod error;
 mod input;
 mod messages;
+mod model_dropdown;
 mod settings;
 mod toolbar;
 
@@ -63,8 +62,8 @@ pub struct ChatApp {
     is_generating: bool,
     /// Message bus for agent communication
     message_bus: MessageBus,
-    /// Database connection (wrapped for async use)
-    db: Arc<Database>,
+    /// Database connection (UI-thread only)
+    db: Rc<Database>,
     /// Agent manager
     agents: Arc<AgentManager>,
     /// Model registry
@@ -144,7 +143,7 @@ impl ChatApp {
         let theme = Theme::dark();
 
         // Initialize database
-        let db = Arc::new(Database::open().expect("Failed to open database"));
+        let db = Rc::new(Database::open().expect("Failed to open database"));
 
         // Load settings
         let settings = Settings::new(&db);
@@ -243,11 +242,13 @@ impl ChatApp {
     /// Start MCP servers
     fn start_mcp_servers(&self, cx: &mut Context<Self>) {
         let mcp = self.mcp_manager.clone();
-        cx.spawn(async move |_this: WeakEntity<ChatApp>, _cx: &mut AsyncApp| {
-            if let Err(e) = mcp.start_all().await {
-                eprintln!("Failed to start MCP servers: {}", e);
-            }
-        })
+        cx.spawn(
+            async move |_this: WeakEntity<ChatApp>, _cx: &mut AsyncApp| {
+                if let Err(e) = mcp.start_all().await {
+                    eprintln!("Failed to start MCP servers: {}", e);
+                }
+            },
+        )
         .detach();
     }
 
@@ -410,7 +411,8 @@ impl ChatApp {
                     app.is_generating = false;
                     app.error_message = Some("No agent selected".to_string());
                     cx.notify();
-                }).ok();
+                })
+                .ok();
                 return;
             };
 
@@ -427,7 +429,14 @@ impl ChatApp {
 
             // Execute the agent
             let result = executor
-                .execute_with_bus(agent, &effective_model, &prompt, history, &tool_registry, &mcp_manager)
+                .execute_with_bus(
+                    agent,
+                    &effective_model,
+                    &prompt,
+                    history,
+                    &tool_registry,
+                    &mcp_manager,
+                )
                 .await;
 
             // Update state based on result
@@ -575,7 +584,11 @@ impl ChatApp {
         use crate::models::ModelRegistry;
 
         if self.current_model == model_name {
-            if let Some(other) = self.available_models.iter().find(|m| m.as_str() != model_name) {
+            if let Some(other) = self
+                .available_models
+                .iter()
+                .find(|m| m.as_str() != model_name)
+            {
                 self.current_model = other.clone();
                 let settings = crate::config::Settings::new(&self.db);
                 let _ = settings.set("model", &self.current_model);
@@ -612,8 +625,8 @@ impl ChatApp {
             this.update(cx, |app, cx| {
                 match result {
                     Ok(_) => {
-                        let registry = crate::models::ModelRegistry::load_from_db(&app.db)
-                            .unwrap_or_default();
+                        let registry =
+                            crate::models::ModelRegistry::load_from_db(&app.db).unwrap_or_default();
                         app.available_models = registry.list_available(&app.db);
                         app.model_registry = std::sync::Arc::new(registry);
                     }
@@ -651,7 +664,11 @@ impl ChatApp {
         } else {
             format!(
                 "I'm sharing these files with you:\n{}",
-                file_paths.iter().map(|p| format!("- {}", p)).collect::<Vec<_>>().join("\n")
+                file_paths
+                    .iter()
+                    .map(|p| format!("- {}", p))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             )
         };
 
@@ -666,7 +683,12 @@ impl ChatApp {
     }
 
     /// Handle new conversation
-    fn new_conversation(&mut self, _: &NewConversation, _window: &mut Window, cx: &mut Context<Self>) {
+    fn new_conversation(
+        &mut self,
+        _: &NewConversation,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.conversation.clear();
         self.message_history.clear();
         self.message_texts.clear();
@@ -854,8 +876,16 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("delete", super::components::Delete, Some("TextInput")),
         KeyBinding::new("left", super::components::Left, Some("TextInput")),
         KeyBinding::new("right", super::components::Right, Some("TextInput")),
-        KeyBinding::new("shift-left", super::components::SelectLeft, Some("TextInput")),
-        KeyBinding::new("shift-right", super::components::SelectRight, Some("TextInput")),
+        KeyBinding::new(
+            "shift-left",
+            super::components::SelectLeft,
+            Some("TextInput"),
+        ),
+        KeyBinding::new(
+            "shift-right",
+            super::components::SelectRight,
+            Some("TextInput"),
+        ),
         KeyBinding::new("cmd-a", super::components::SelectAll, Some("TextInput")),
         KeyBinding::new("cmd-v", super::components::Paste, Some("TextInput")),
         KeyBinding::new("cmd-c", super::components::Copy, Some("TextInput")),

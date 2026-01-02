@@ -41,10 +41,13 @@ pub fn cmd_show(
 
     println!("\n\x1b[1m📊 Current Status\x1b[0m\n");
     println!("  Agent:       \x1b[36m{}\x1b[0m", agent_display_name);
-    
+
     // Check for pinned model
     if let Some(pinned) = settings.get_agent_pinned_model(agent_name) {
-        println!("  Model:       \x1b[33m{}\x1b[0m \x1b[2m(pinned)\x1b[0m", pinned);
+        println!(
+            "  Model:       \x1b[33m{}\x1b[0m \x1b[2m(pinned)\x1b[0m",
+            pinned
+        );
     } else {
         println!("  Model:       \x1b[33m{}\x1b[0m", current_model);
     }
@@ -66,7 +69,10 @@ pub fn cmd_show(
         // Rough token estimate
         let est_tokens = message_count * 500;
         let usage_pct = (est_tokens as f64 / config.context_length as f64) * 100.0;
-        println!("  Usage:       ~{:.1}% ({} est. tokens)", usage_pct, est_tokens);
+        println!(
+            "  Usage:       ~{:.1}% ({} est. tokens)",
+            usage_pct, est_tokens
+        );
     }
 
     // Model-specific settings
@@ -99,7 +105,11 @@ pub fn cmd_version() {
 pub fn cmd_agents(agents: &[AgentInfo], current_name: &str, show_visibility: bool) {
     println!("\n📋 \x1b[1mAvailable Agents:\x1b[0m\n");
     for agent in agents {
-        let marker = if agent.name == current_name { "→ " } else { "  " };
+        let marker = if agent.name == current_name {
+            "→ "
+        } else {
+            "  "
+        };
         let visibility_badge = if show_visibility {
             let label = match agent.visibility {
                 AgentVisibility::Main => "Main",

@@ -11,7 +11,7 @@ pub async fn run_single_prompt(
     model: Option<&str>,
 ) -> anyhow::Result<()> {
     let mut repl = Repl::new(db);
-    
+
     if let Some(agent_name) = agent {
         repl = repl.with_agent(agent_name);
     }
@@ -21,7 +21,7 @@ pub async fn run_single_prompt(
 
     // Handle the prompt directly
     repl.handle_prompt(prompt).await?;
-    
+
     Ok(())
 }
 
@@ -35,7 +35,7 @@ pub async fn run_interactive(
     print_banner();
 
     let mut repl = Repl::new(db);
-    
+
     if let Some(agent_name) = agent {
         repl = repl.with_agent(agent_name);
     }
@@ -53,7 +53,10 @@ fn print_banner() {
     println!();
     println!("  \x1b[1;33m╔═╗\x1b[2;36mᵗᵒᶜᵏ\x1b[1;33m╔═╗╔═╗╔╦╗\x1b[0m");
     println!("  \x1b[1;33m╚═╗    ╠═╝║ ║ ║ \x1b[0m");
-    println!("  \x1b[1;33m╚═╝    ╩  ╚═╝ ╩ \x1b[0m  \x1b[2mv{}\x1b[0m", env!("CARGO_PKG_VERSION"));
+    println!(
+        "  \x1b[1;33m╚═╝    ╩  ╚═╝ ╩ \x1b[0m  \x1b[2mv{}\x1b[0m",
+        env!("CARGO_PKG_VERSION")
+    );
     println!();
     println!("  \x1b[2m🍲 AI-powered coding assistant\x1b[0m");
     println!("  \x1b[2mType \x1b[0m\x1b[1;36m/help\x1b[0m\x1b[2m for commands, or start chatting!\x1b[0m");

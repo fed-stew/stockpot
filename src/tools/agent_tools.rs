@@ -20,7 +20,7 @@ use tracing::{debug, warn};
 // ============================================================================
 
 /// Tool for invoking another agent with a prompt.
-/// 
+///
 /// This allows agents to delegate specialized tasks to other agents.
 /// For example, the main stockpot agent might delegate code review
 /// to a language-specific reviewer agent.
@@ -53,11 +53,7 @@ impl Tool for InvokeAgentTool {
                     "The name of the agent to invoke (e.g., 'python-reviewer', 'planner')",
                     true,
                 )
-                .string(
-                    "prompt",
-                    "The prompt/task to send to the agent",
-                    true,
-                )
+                .string("prompt", "The prompt/task to send to the agent", true)
                 .string(
                     "session_id",
                     "Optional session ID for conversation continuity",
@@ -91,7 +87,7 @@ impl Tool for InvokeAgentTool {
 // ============================================================================
 
 /// Tool for listing available agents.
-/// 
+///
 /// Returns information about all registered agents that can be invoked.
 #[derive(Debug, Clone, Default)]
 pub struct ListAgentsTool;
@@ -104,11 +100,7 @@ impl Tool for ListAgentsTool {
             "List all available agents. Use this to discover what specialized agents \
              are available for delegation.",
         )
-        .with_parameters(
-            SchemaBuilder::new()
-                .build()
-                .expect("schema build failed"),
-        )
+        .with_parameters(SchemaBuilder::new().build().expect("schema build failed"))
     }
 
     async fn call(&self, _ctx: &RunContext, args: JsonValue) -> ToolResult {
@@ -117,15 +109,18 @@ impl Tool for ListAgentsTool {
         // Create a temporary manager to list agents
         let manager = AgentManager::new();
         let agents = manager.list();
-        
-        let agent_list: Vec<_> = agents.iter().map(|a| {
-            serde_json::json!({
-                "name": a.name,
-                "display_name": a.display_name,
-                "description": a.description
+
+        let agent_list: Vec<_> = agents
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "name": a.name,
+                    "display_name": a.display_name,
+                    "description": a.description
+                })
             })
-        }).collect();
-        
+            .collect();
+
         Ok(ToolReturn::json(serde_json::json!({
             "agents": agent_list,
             "count": agent_list.len()
@@ -138,7 +133,7 @@ impl Tool for ListAgentsTool {
 // ============================================================================
 
 /// Tool for sharing agent reasoning with the user.
-/// 
+///
 /// This helps users understand the agent's thought process.
 #[derive(Debug, Clone, Default)]
 pub struct ShareReasoningTool;
@@ -167,11 +162,7 @@ impl Tool for ShareReasoningTool {
                     "Your current thought process and analysis",
                     true,
                 )
-                .string(
-                    "next_steps",
-                    "What you plan to do next",
-                    false,
-                )
+                .string("next_steps", "What you plan to do next", false)
                 .build()
                 .expect("schema build failed"),
         )
@@ -186,11 +177,11 @@ impl Tool for ShareReasoningTool {
         })?;
 
         let mut output = format!("💭 **Reasoning:**\n{}\n", args.reasoning);
-        
+
         if let Some(steps) = args.next_steps {
             output.push_str(&format!("\n📋 **Next Steps:**\n{}", steps));
         }
-        
+
         Ok(ToolReturn::text(output))
     }
 }

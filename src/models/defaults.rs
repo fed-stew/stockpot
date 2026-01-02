@@ -159,7 +159,11 @@ mod tests {
     fn test_default_models_have_names() {
         for model in default_models() {
             assert!(!model.name.is_empty());
-            assert!(model.name.contains(':'), "Model name should have provider prefix: {}", model.name);
+            assert!(
+                model.name.contains(':'),
+                "Model name should have provider prefix: {}",
+                model.name
+            );
         }
     }
 

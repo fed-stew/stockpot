@@ -1,7 +1,7 @@
 //! Shell command execution.
 
-use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -67,7 +67,7 @@ impl CommandRunner {
 
         let mut cmd = Command::new(shell);
         cmd.arg(shell_arg).arg(command);
-        
+
         if let Some(dir) = &self.working_dir {
             cmd.current_dir(dir);
         }
@@ -76,10 +76,7 @@ impl CommandRunner {
             cmd.env(key, value);
         }
 
-        let output = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()?;
+        let output = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output()?;
 
         let exit_code = output.status.code().unwrap_or(-1);
 
@@ -92,7 +89,11 @@ impl CommandRunner {
     }
 
     /// Run a command with streaming output (callback for each line).
-    pub fn run_streaming<F>(&self, command: &str, mut on_line: F) -> Result<CommandResult, ShellError>
+    pub fn run_streaming<F>(
+        &self,
+        command: &str,
+        mut on_line: F,
+    ) -> Result<CommandResult, ShellError>
     where
         F: FnMut(&str, bool), // (line, is_stderr)
     {
@@ -101,7 +102,7 @@ impl CommandRunner {
 
         let mut cmd = Command::new(shell);
         cmd.arg(shell_arg).arg(command);
-        
+
         if let Some(dir) = &self.working_dir {
             cmd.current_dir(dir);
         }
@@ -110,10 +111,7 @@ impl CommandRunner {
             cmd.env(key, value);
         }
 
-        let mut child = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();

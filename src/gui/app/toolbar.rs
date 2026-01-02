@@ -8,8 +8,16 @@ impl ChatApp {
         let agent_display = self.current_agent_display();
         let (effective_model, _is_pinned) = self.current_effective_model();
         let model_display = Self::truncate_model_name(&effective_model);
-        let agent_chevron = if self.show_agent_dropdown { "▴" } else { "▾" };
-        let model_chevron = if self.show_model_dropdown { "▴" } else { "▾" };
+        let agent_chevron = if self.show_agent_dropdown {
+            "▴"
+        } else {
+            "▾"
+        };
+        let model_chevron = if self.show_model_dropdown {
+            "▴"
+        } else {
+            "▾"
+        };
 
         let view = cx.entity().clone();
 
@@ -17,14 +25,12 @@ impl ChatApp {
             let view = view.clone();
             gpui::canvas(
                 move |bounds, _window, cx| {
-                    let should_update =
-                        view.read(cx).agent_dropdown_bounds != Some(bounds);
+                    let should_update = view.read(cx).agent_dropdown_bounds != Some(bounds);
                     if should_update {
                         view.update(cx, |this, _| {
                             this.agent_dropdown_bounds = Some(bounds);
                         });
                     }
-                    ()
                 },
                 |_, _, _, _| {},
             )
@@ -38,14 +44,12 @@ impl ChatApp {
             let view = view.clone();
             gpui::canvas(
                 move |bounds, _window, cx| {
-                    let should_update =
-                        view.read(cx).model_dropdown_bounds != Some(bounds);
+                    let should_update = view.read(cx).model_dropdown_bounds != Some(bounds);
                     if should_update {
                         view.update(cx, |this, _| {
                             this.model_dropdown_bounds = Some(bounds);
                         });
                     }
-                    ()
                 },
                 |_, _, _, _| {},
             )
