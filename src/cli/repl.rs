@@ -594,11 +594,7 @@ impl<'a> Repl<'a> {
 
         match result {
             Ok(exec_result) => {
-                // Note: In streaming mode, messages may be empty
-                // The main agent still tracks history via the legacy path if needed
-                if !exec_result.messages.is_empty() {
-                    self.message_history = exec_result.messages;
-                }
+                self.message_history = exec_result.messages;
                 println!(); // Add spacing after response
                 self.auto_save_session();
             }

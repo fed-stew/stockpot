@@ -16,7 +16,11 @@ use crate::session::SessionManager;
 use tracing::{debug, error, info, warn};
 
 use serdes_ai_agent::{agent, RunOptions};
-use serdes_ai_core::{ModelRequest, ModelResponse, ModelSettings};
+use serdes_ai_core::{
+    ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, ModelSettings, TextPart,
+    ToolCallPart, ToolReturnPart,
+};
+use serdes_ai_core::messages::ToolCallArgs;
 use serdes_ai_models::{
     infer_model, Model, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse,
     openai::OpenAIChatModel,
@@ -27,7 +31,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 // Re-export stream event for consumers
 pub use serdes_ai_agent::AgentStreamEvent as StreamEvent;
@@ -103,6 +107,53 @@ impl serdes_ai_agent::ToolExecutor<()> for ToolExecutorAdapter {
         // Convert serdes_ai_agent::RunContext to serdes_ai_tools::RunContext
         let tool_ctx = RunContext::minimal(&ctx.model_name);
         self.tool.call(&tool_ctx, args).await
+    }
+}
+
+/// Wraps a tool executor and records tool returns during streaming.
+///
+/// `serdes_ai_agent::AgentStreamEvent` does not include tool return payloads, but we
+/// need them for accurate `message_history` reconstruction.
+struct RecordingToolExecutor<E> {
+    inner: E,
+    recorder: Arc<Mutex<Vec<ToolReturnPart>>>,
+}
+
+impl<E> RecordingToolExecutor<E> {
+    fn new(inner: E, recorder: Arc<Mutex<Vec<ToolReturnPart>>>) -> Self {
+        Self { inner, recorder }
+    }
+}
+
+#[async_trait]
+impl<E> serdes_ai_agent::ToolExecutor<()> for RecordingToolExecutor<E>
+where
+    E: serdes_ai_agent::ToolExecutor<()> + Send + Sync,
+{
+    async fn execute(
+        &self,
+        args: JsonValue,
+        ctx: &serdes_ai_agent::RunContext<()>,
+    ) -> Result<ToolReturn, ToolError> {
+        let result = self.inner.execute(args, ctx).await;
+
+        // Best-effort tool name/id capture; used to reconstruct `ToolReturnPart`s.
+        let tool_name = ctx
+            .tool_name
+            .clone()
+            .unwrap_or_else(|| "unknown_tool".to_string());
+
+        let mut part = match &result {
+            Ok(ret) => ToolReturnPart::new(&tool_name, ret.content.clone()),
+            Err(e) => ToolReturnPart::error(&tool_name, format!("Tool error: {}", e)),
+        };
+
+        if let Some(tool_call_id) = ctx.tool_call_id.clone() {
+            part = part.with_tool_call_id(tool_call_id);
+        }
+
+        self.recorder.lock().await.push(part);
+        result
     }
 }
 
@@ -509,34 +560,149 @@ impl<'a> AgentExecutor<'a> {
 
         bridge.agent_started();
 
+        // Track tool returns during streaming so we can reconstruct message history.
+        let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> = Arc::new(Mutex::new(Vec::new()));
+
+        // Start with any provided history, then add the current user prompt.
+        let mut messages = message_history.clone().unwrap_or_default();
+        let mut user_req = ModelRequest::new();
+        user_req.add_user_prompt(prompt.to_string());
+        messages.push(user_req);
+
         // Use internal streaming execution
         let mut stream = self
-            .execute_stream(
+            .execute_stream_internal(
                 spot_agent,
                 model_name,
                 prompt,
                 message_history,
                 tool_registry,
                 mcp_manager,
+                Some(Arc::clone(&tool_return_recorder)),
             )
             .await?;
+
+        struct RawToolCall {
+            tool_name: String,
+            tool_call_id: Option<String>,
+            args_buffer: String,
+        }
 
         // Accumulate text for the final output (since RunComplete only has run_id)
         let mut accumulated_text = String::new();
         let mut final_run_id: Option<String> = None;
 
+        // Track per-response state so we can rebuild `ModelResponse` parts.
+        let mut current_response_text = String::new();
+        let mut completed_tool_calls: Vec<RawToolCall> = Vec::new();
+        let mut in_progress_tool_call: Option<RawToolCall> = None;
+
+        // Track tool return parts emitted by tool executors.
+        let mut expected_tool_returns: usize = 0;
+        let mut tool_return_index: usize = 0;
+        let mut pending_tool_returns: Vec<ToolReturnPart> = Vec::new();
+
         // Process all events through the bridge
         while let Some(event_result) = stream.recv().await {
             match event_result {
                 Ok(event) => {
-                    // Capture text deltas for final output
-                    if let StreamEvent::TextDelta { ref text } = event {
-                        accumulated_text.push_str(text);
+                    let tool_executed = matches!(&event, StreamEvent::ToolExecuted { .. });
+
+                    match &event {
+                        StreamEvent::RequestStart { .. } => {
+                            current_response_text.clear();
+                            completed_tool_calls.clear();
+                            in_progress_tool_call = None;
+                        }
+                        StreamEvent::TextDelta { text } => {
+                            accumulated_text.push_str(text);
+                            current_response_text.push_str(text);
+                        }
+                        StreamEvent::ToolCallStart {
+                            tool_name,
+                            tool_call_id,
+                        } => {
+                            if let Some(tc) = in_progress_tool_call.take() {
+                                completed_tool_calls.push(tc);
+                            }
+                            in_progress_tool_call = Some(RawToolCall {
+                                tool_name: tool_name.clone(),
+                                tool_call_id: tool_call_id.clone(),
+                                args_buffer: String::new(),
+                            });
+                        }
+                        StreamEvent::ToolCallDelta { delta } => {
+                            if let Some(tc) = in_progress_tool_call.as_mut() {
+                                tc.args_buffer.push_str(delta);
+                            }
+                        }
+                        StreamEvent::ResponseComplete { .. } => {
+                            if let Some(tc) = in_progress_tool_call.take() {
+                                completed_tool_calls.push(tc);
+                            }
+
+                            let tool_calls_this_response = completed_tool_calls.len();
+
+                            let mut response_parts: Vec<ModelResponsePart> = Vec::new();
+
+                            if !current_response_text.is_empty() {
+                                response_parts.push(ModelResponsePart::Text(TextPart::new(
+                                    current_response_text.clone(),
+                                )));
+                            }
+
+                            for tc in completed_tool_calls.drain(..) {
+                                let mut part = ToolCallPart::new(tc.tool_name, ToolCallArgs::from(tc.args_buffer));
+                                if let Some(id) = tc.tool_call_id {
+                                    part = part.with_tool_call_id(id);
+                                }
+                                response_parts.push(ModelResponsePart::ToolCall(part));
+                            }
+
+                            if !response_parts.is_empty() {
+                                let response = ModelResponse::with_parts(response_parts)
+                                    .with_model_name(model_name.to_string());
+
+                                let mut response_req = ModelRequest::new();
+                                response_req.parts.push(ModelRequestPart::ModelResponse(Box::new(
+                                    response,
+                                )));
+                                messages.push(response_req);
+                            }
+
+                            // If tool calls were present, tool execution events follow and we can
+                            // append tool returns once they complete.
+                            expected_tool_returns = tool_calls_this_response;
+                            pending_tool_returns.clear();
+                            current_response_text.clear();
+                        }
+                        StreamEvent::RunComplete { run_id } => {
+                            final_run_id = Some(run_id.clone());
+                        }
+                        _ => {}
                     }
 
-                    // Capture run_id from RunComplete
-                    if let StreamEvent::RunComplete { ref run_id } = event {
-                        final_run_id = Some(run_id.clone());
+                    // Tool return payloads aren't present in stream events, so we stitch them
+                    // in from the recorder (in the same order ToolExecuted events arrive).
+                    if tool_executed && expected_tool_returns > 0 {
+                        let next_part = {
+                            let recorded = tool_return_recorder.lock().await;
+                            recorded.get(tool_return_index).cloned()
+                        };
+
+                        if let Some(part) = next_part {
+                            pending_tool_returns.push(part);
+                            tool_return_index += 1;
+                        }
+
+                        if pending_tool_returns.len() == expected_tool_returns {
+                            let mut tool_req = ModelRequest::new();
+                            for part in pending_tool_returns.drain(..) {
+                                tool_req.parts.push(ModelRequestPart::ToolReturn(part));
+                            }
+                            messages.push(tool_req);
+                            expected_tool_returns = 0;
+                        }
                     }
 
                     bridge.process(event);
@@ -548,6 +714,15 @@ impl<'a> AgentExecutor<'a> {
             }
         }
 
+        // Flush any tool returns we managed to capture, even if the stream ended unexpectedly.
+        if !pending_tool_returns.is_empty() {
+            let mut tool_req = ModelRequest::new();
+            for part in pending_tool_returns {
+                tool_req.parts.push(ModelRequestPart::ToolReturn(part));
+            }
+            messages.push(tool_req);
+        }
+
         // Get the run_id (from RunComplete event)
         let run_id = final_run_id.ok_or_else(|| {
             ExecutorError::Execution("Stream ended without RunComplete event".into())
@@ -555,11 +730,9 @@ impl<'a> AgentExecutor<'a> {
 
         bridge.agent_completed(&run_id);
 
-        // Note: In streaming mode, we don't have access to the full message history.
-        // For sub-agent invocation, this is acceptable - the main agent tracks its own history.
         Ok(ExecutorResult {
             output: accumulated_text,
-            messages: Vec::new(), // Not available in streaming mode
+            messages,
             run_id,
         })
     }
@@ -594,6 +767,28 @@ impl<'a> AgentExecutor<'a> {
         tool_registry: &SpotToolRegistry,
         mcp_manager: &McpManager,
     ) -> Result<ExecutorStreamReceiver, ExecutorError> {
+        self.execute_stream_internal(
+            spot_agent,
+            model_name,
+            prompt,
+            message_history,
+            tool_registry,
+            mcp_manager,
+            None,
+        )
+        .await
+    }
+
+    async fn execute_stream_internal(
+        &self,
+        spot_agent: &dyn SpotAgent,
+        model_name: &str,
+        prompt: &str,
+        message_history: Option<Vec<ModelRequest>>,
+        tool_registry: &SpotToolRegistry,
+        mcp_manager: &McpManager,
+        tool_return_recorder: Option<Arc<Mutex<Vec<ToolReturnPart>>>>,
+    ) -> Result<ExecutorStreamReceiver, ExecutorError> {
         // Get the model (handles OAuth models and custom endpoints)
         let model = get_model(self.db, model_name, self.registry).await?;
 
@@ -623,6 +818,7 @@ impl<'a> AgentExecutor<'a> {
         let model_name_owned = model_name.to_string();
         let db_path = self.db.path().to_path_buf();
         let bus = self.bus.clone(); // Clone bus for sub-agent visibility
+        let tool_return_recorder = tool_return_recorder.clone();
         let (tx, rx) = mpsc::channel(32);
         
         debug!(tool_count = tool_data.len(), "Spawning streaming task");
@@ -640,34 +836,72 @@ impl<'a> AgentExecutor<'a> {
                 .temperature(0.7)
                 .max_tokens(4096);
             
-            // Register tools with real executors
-            for (def, tool) in tool_data {
-                debug!(tool_name = %def.name, "Registering tool");
-                builder = builder.tool_with_executor(
-                    def,
-                    ToolExecutorAdapter::new(tool),
-                );
-            }
-            
-            // Add invoke_agent with custom executor (has database access)
-            if wants_invoke {
-                let invoke_executor = InvokeAgentExecutor {
-                    db_path: db_path.clone(),
-                    current_model: model_name_owned.clone(),
-                    bus: bus.clone(), // Pass bus for sub-agent visibility
-                };
-                builder = builder.tool_with_executor(
-                    InvokeAgentExecutor::definition(),
-                    invoke_executor,
-                );
-            }
-            
-            // Add list_agents with custom executor
-            if wants_list {
-                builder = builder.tool_with_executor(
-                    ListAgentsExecutor::definition(),
-                    ListAgentsExecutor { db_path: db_path.clone() },
-                );
+            match tool_return_recorder {
+                Some(recorder) => {
+                    // Register tools with recording executors
+                    for (def, tool) in tool_data {
+                        debug!(tool_name = %def.name, "Registering tool");
+                        builder = builder.tool_with_executor(
+                            def,
+                            RecordingToolExecutor::new(ToolExecutorAdapter::new(tool), recorder.clone()),
+                        );
+                    }
+
+                    // Add invoke_agent with custom executor (has database access)
+                    if wants_invoke {
+                        let invoke_executor = InvokeAgentExecutor {
+                            db_path: db_path.clone(),
+                            current_model: model_name_owned.clone(),
+                            bus: bus.clone(), // Pass bus for sub-agent visibility
+                        };
+                        builder = builder.tool_with_executor(
+                            InvokeAgentExecutor::definition(),
+                            RecordingToolExecutor::new(invoke_executor, recorder.clone()),
+                        );
+                    }
+
+                    // Add list_agents with custom executor
+                    if wants_list {
+                        builder = builder.tool_with_executor(
+                            ListAgentsExecutor::definition(),
+                            RecordingToolExecutor::new(
+                                ListAgentsExecutor { db_path: db_path.clone() },
+                                recorder.clone(),
+                            ),
+                        );
+                    }
+                }
+                None => {
+                    // Register tools with real executors
+                    for (def, tool) in tool_data {
+                        debug!(tool_name = %def.name, "Registering tool");
+                        builder = builder.tool_with_executor(
+                            def,
+                            ToolExecutorAdapter::new(tool),
+                        );
+                    }
+                    
+                    // Add invoke_agent with custom executor (has database access)
+                    if wants_invoke {
+                        let invoke_executor = InvokeAgentExecutor {
+                            db_path: db_path.clone(),
+                            current_model: model_name_owned.clone(),
+                            bus: bus.clone(), // Pass bus for sub-agent visibility
+                        };
+                        builder = builder.tool_with_executor(
+                            InvokeAgentExecutor::definition(),
+                            invoke_executor,
+                        );
+                    }
+                    
+                    // Add list_agents with custom executor
+                    if wants_list {
+                        builder = builder.tool_with_executor(
+                            ListAgentsExecutor::definition(),
+                            ListAgentsExecutor { db_path: db_path.clone() },
+                        );
+                    }
+                }
             }
             
             let serdes_agent = builder.build();

@@ -2,11 +2,13 @@
 
 mod migrations;
 mod schema;
+mod session_repository;
 
 use rusqlite::Connection;
 use std::path::PathBuf;
 
 pub use schema::*;
+pub use session_repository::SessionRepository;
 
 /// Database connection wrapper.
 pub struct Database {
@@ -48,6 +50,10 @@ impl Database {
     /// Run database migrations.
     pub fn migrate(&self) -> anyhow::Result<()> {
         migrations::run_migrations(&self.conn)?;
+
+        // Clear active session state on startup so we always start fresh.
+        self.conn.execute("DELETE FROM active_sessions", [])?;
+
         Ok(())
     }
 
