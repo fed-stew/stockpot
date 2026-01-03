@@ -22,18 +22,26 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             cmake \
+            clang \
+            libxcb1 \
             libxcb1-dev \
             libxcb-render0-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
+            libxkbcommon0 \
             libxkbcommon-dev \
+            libxkbcommon-x11-0 \
             libxkbcommon-x11-dev \
             libwayland-dev \
+            libvulkan1 \
             libvulkan-dev \
             libssl-dev \
             pkg-config \
+            libasound2 \
             libasound2-dev \
+            libfontconfig1 \
             libfontconfig1-dev \
+            libfreetype6 \
             libfreetype6-dev
 
       - name: Install Rust toolchain
@@ -57,18 +65,26 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             cmake \
+            clang \
+            libxcb1 \
             libxcb1-dev \
             libxcb-render0-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
+            libxkbcommon0 \
             libxkbcommon-dev \
+            libxkbcommon-x11-0 \
             libxkbcommon-x11-dev \
             libwayland-dev \
+            libvulkan1 \
             libvulkan-dev \
             libssl-dev \
             pkg-config \
+            libasound2 \
             libasound2-dev \
+            libfontconfig1 \
             libfontconfig1-dev \
+            libfreetype6 \
             libfreetype6-dev
 
       - name: Install Rust toolchain
@@ -92,18 +108,26 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             cmake \
+            clang \
+            libxcb1 \
             libxcb1-dev \
             libxcb-render0-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
+            libxkbcommon0 \
             libxkbcommon-dev \
+            libxkbcommon-x11-0 \
             libxkbcommon-x11-dev \
             libwayland-dev \
+            libvulkan1 \
             libvulkan-dev \
             libssl-dev \
             pkg-config \
+            libasound2 \
             libasound2-dev \
+            libfontconfig1 \
             libfontconfig1-dev \
+            libfreetype6 \
             libfreetype6-dev
 
       - name: Install Rust toolchain
