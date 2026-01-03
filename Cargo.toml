@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.9.5"
+version = "0.9.6"
 edition = "2021"
 description = "AI-powered coding assistant with GUI, CLI, and TUI modes"
 license = "MIT"
@@ -53,9 +53,8 @@ serde_json = "1.0"
 # Image processing
 image = "0.25"
 
-# PDF processing (rendering + text extraction)
-# Note: default-features=false avoids font-kit fontconfig issues on some systems
-mupdf = { version = "0.5", default-features = false }
+# Image processing is always available
+# PDF processing (mupdf) is Unix-only due to build complexity on Windows
 
 # Utilities
 thiserror = "1.0"
@@ -95,6 +94,7 @@ unicode-segmentation = { version = "1.11", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 pty-process = "0.4"
+mupdf = { version = "0.5", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.10"

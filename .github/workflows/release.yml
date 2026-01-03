@@ -21,6 +21,10 @@ jobs:
             os: ubuntu-latest
             artifact_name: spot-linux-x86_64
             archive_ext: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact_name: spot-windows-x86_64
+            archive_ext: zip
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: spot-macos-x86_64
@@ -85,6 +89,17 @@ jobs:
             shasum -a 256 ${{ matrix.artifact_name }}.tar.gz > ${{ matrix.artifact_name }}.tar.gz.sha256
           fi
 
+      - name: Package binary (Windows)
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path "${{ env.BINARY_NAME }}.exe" -DestinationPath "../../../${{ matrix.artifact_name }}.zip"
+          cd ../../..
+          # Generate checksum
+          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.artifact_name }}.zip").Hash.ToLower()
+          "$hash  ${{ matrix.artifact_name }}.zip" | Out-File -Encoding ASCII "${{ matrix.artifact_name }}.zip.sha256"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -126,6 +141,7 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/*.tar.gz
+            artifacts/*.zip
             checksums.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
