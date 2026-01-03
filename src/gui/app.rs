@@ -8,8 +8,9 @@ use gpui::{
     actions, div, prelude::*, px, rgb, App, AsyncApp, Context, Entity, ExternalPaths, FocusHandle,
     Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Styled, WeakEntity, Window,
 };
+use gpui_component::input::{Input, InputEvent, InputState};
 
-use super::components::{ScrollbarDragState, TextInput};
+use super::components::ScrollbarDragState;
 use super::state::{Conversation, MessageRole};
 use super::theme::Theme;
 use crate::agents::{AgentExecutor, AgentManager, UserMode};
@@ -54,8 +55,8 @@ pub use attachments::{
 pub struct ChatApp {
     /// Focus handle for keyboard input
     focus_handle: FocusHandle,
-    /// Text input component
-    text_input: Entity<TextInput>,
+    /// Input state for the message input field (gpui-component)
+    input_state: Entity<InputState>,
     /// Current conversation
     conversation: Conversation,
     /// Selected agent name
@@ -133,7 +134,7 @@ pub struct ChatApp {
     add_model_models: Vec<crate::cli::add_model::ModelInfo>,
     add_model_selected_model: Option<String>,
     /// Text input for API key in add model dialog
-    add_model_api_key_input_entity: Option<Entity<TextInput>>,
+    add_model_api_key_input_entity: Option<Entity<InputState>>,
     add_model_loading: bool,
     add_model_error: Option<String>,
 
@@ -181,12 +182,26 @@ impl ChatApp {
         // Initialize MCP manager
         let mcp_manager = Arc::new(McpManager::new());
 
-        // Create text input
-        let text_input = cx.new(|cx| TextInput::new(cx, theme.clone()));
+        // Create input state with auto-grow (1-3 lines, then scrollbar)
+        let input_state = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Type a message...")
+                .auto_grow(1, 3)
+        });
+
+        // Subscribe to input events for Enter key
+        cx.subscribe(&input_state, |this, _input, event: &InputEvent, cx| {
+            if let InputEvent::PressEnter { secondary: false } = event {
+                if !this.is_generating {
+                    cx.dispatch_action(&Send);
+                }
+            }
+        })
+        .detach();
 
         let app = Self {
             focus_handle,
-            text_input,
+            input_state,
             conversation: Conversation::new(),
             current_agent,
             current_model,
@@ -245,8 +260,8 @@ impl ChatApp {
         // Start MCP servers in background
         app.start_mcp_servers(cx);
 
-        // Set up keyboard focus
-        window.focus(&app.text_input.focus_handle(cx), cx);
+        // Set up keyboard focus on the main app
+        window.focus(&app.focus_handle, cx);
 
         app
     }
@@ -327,8 +342,8 @@ impl ChatApp {
     }
 
     /// Handle sending a message with real agent execution
-    fn send_message(&mut self, cx: &mut Context<Self>) {
-        let content = self.text_input.read(cx).content().to_string();
+    fn send_message(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let content = self.input_state.read(cx).value().to_string();
         let text = content.trim().to_string();
         let has_attachments = !self.pending_attachments.is_empty();
 
@@ -526,8 +541,8 @@ impl ChatApp {
         }
 
         // Clear input and attachments
-        self.text_input.update(cx, |input, cx| {
-            input.clear(cx);
+        self.input_state.update(cx, |state, cx| {
+            state.set_value("", window, cx);
         });
         self.pending_attachments.clear();
 
@@ -733,7 +748,7 @@ impl ChatApp {
         let api_key_value = self
             .add_model_api_key_input_entity
             .as_ref()
-            .map(|e| e.read(cx).content().to_string())
+            .map(|e| e.read(cx).value().to_string())
             .unwrap_or_default();
 
         if !api_key_value.is_empty() {
@@ -1059,7 +1074,7 @@ impl ChatApp {
             tracing::info!("Clipboard is empty or unreadable");
         }
 
-        false // Not an image, let TextInput handle as text
+        false // Not an image, Input handles text paste internally
     }
 
     /// Remove an attachment by index
@@ -1074,14 +1089,16 @@ impl ChatApp {
     fn on_paste_attachment(
         &mut self,
         _: &PasteAttachment,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         // Try to paste as image attachment
-        if !self.handle_clipboard_paste(cx) {
-            // Not an image, trigger normal text paste in the input
-            // Dispatch the Paste action to the TextInput
-            window.dispatch_action(Box::new(super::components::Paste), cx);
+        // Returns true if an image was found and processed
+        let was_image = self.handle_clipboard_paste(cx);
+
+        // If not an image, propagate the action so Input can handle text paste
+        if !was_image {
+            cx.propagate();
         }
     }
 
@@ -1089,13 +1106,13 @@ impl ChatApp {
     fn new_conversation(
         &mut self,
         _: &NewConversation,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.conversation.clear();
         self.message_history.clear();
-        self.text_input.update(cx, |input, cx| {
-            input.clear(cx);
+        self.input_state.update(cx, |state, cx| {
+            state.set_value("", window, cx);
         });
         self.is_generating = false;
         self.show_agent_dropdown = false;
@@ -1110,7 +1127,7 @@ impl ChatApp {
     }
 
     /// Handle escape key to close dialogs
-    fn close_dialog(&mut self, _: &CloseDialog, _window: &mut Window, cx: &mut Context<Self>) {
+    fn close_dialog(&mut self, _: &CloseDialog, window: &mut Window, cx: &mut Context<Self>) {
         // Close dialogs in order of precedence (most recent first)
         if self.show_add_model_dialog {
             self.show_add_model_dialog = false;
@@ -1118,7 +1135,7 @@ impl ChatApp {
             self.add_model_selected_model = None;
             self.add_model_models.clear();
             if let Some(input) = &self.add_model_api_key_input_entity {
-                input.update(cx, |input, cx| input.clear(cx));
+                input.update(cx, |state, cx| state.set_value("", window, cx));
             }
             self.add_model_error = None;
         } else if self.show_api_keys_dialog {
@@ -1134,8 +1151,8 @@ impl ChatApp {
     }
 
     /// Handle send action
-    fn on_send(&mut self, _: &Send, _window: &mut Window, cx: &mut Context<Self>) {
-        self.send_message(cx);
+    fn on_send(&mut self, _: &Send, window: &mut Window, cx: &mut Context<Self>) {
+        self.send_message(window, cx);
     }
 
     /// Switch to next agent
@@ -1273,37 +1290,15 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-q", Quit, None),
         KeyBinding::new("cmd-n", NewConversation, None),
         KeyBinding::new("ctrl-n", NewConversation, None),
-        KeyBinding::new("enter", Send, Some("TextInput")),
         KeyBinding::new("cmd-]", NextAgent, None),
         KeyBinding::new("ctrl-]", NextAgent, None),
         KeyBinding::new("cmd-[", PrevAgent, None),
         KeyBinding::new("ctrl-[", PrevAgent, None),
         KeyBinding::new("escape", CloseDialog, None),
-        // PasteAttachment handles both image paste AND falls back to text paste
+        // PasteAttachment checks for image in clipboard; propagates to Input if text
         KeyBinding::new("cmd-v", PasteAttachment, None),
         KeyBinding::new("ctrl-v", PasteAttachment, None),
-        // Text input keybindings
-        KeyBinding::new("backspace", super::components::Backspace, Some("TextInput")),
-        KeyBinding::new("delete", super::components::Delete, Some("TextInput")),
-        KeyBinding::new("left", super::components::Left, Some("TextInput")),
-        KeyBinding::new("right", super::components::Right, Some("TextInput")),
-        KeyBinding::new(
-            "shift-left",
-            super::components::SelectLeft,
-            Some("TextInput"),
-        ),
-        KeyBinding::new(
-            "shift-right",
-            super::components::SelectRight,
-            Some("TextInput"),
-        ),
-        KeyBinding::new("cmd-a", super::components::SelectAll, Some("TextInput")),
-        KeyBinding::new("ctrl-a", super::components::SelectAll, Some("TextInput")),
-        KeyBinding::new("cmd-c", super::components::Copy, Some("TextInput")),
-        KeyBinding::new("ctrl-c", super::components::Copy, Some("TextInput")),
-        KeyBinding::new("cmd-x", super::components::Cut, Some("TextInput")),
-        KeyBinding::new("ctrl-x", super::components::Cut, Some("TextInput")),
-        KeyBinding::new("home", super::components::Home, Some("TextInput")),
-        KeyBinding::new("end", super::components::End, Some("TextInput")),
+        // Note: Enter key for Send is handled via InputEvent::PressEnter subscription
+        // Note: Text input keybindings (copy, cut, paste, etc.) are handled by gpui-component Input internally
     ]);
 }

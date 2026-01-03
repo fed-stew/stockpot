@@ -5,6 +5,7 @@ use gpui::{
     div, img, prelude::*, px, rgb, rgba, Context, ImageSource, MouseButton, RenderImage,
     SharedString, Styled,
 };
+use gpui_component::input::Input;
 use image::codecs::png::PngDecoder;
 use image::{DynamicImage, Frame, ImageDecoder};
 
@@ -43,7 +44,7 @@ impl ChatApp {
                     .flex()
                     .items_end()
                     .gap(px(12.))
-                    .child(self.text_input.clone())
+                    .child(Input::new(&self.input_state).cleanable(true).flex_1())
                     .child(
                         div()
                             .id("send-btn")
@@ -60,9 +61,9 @@ impl ChatApp {
                             .hover(|s| s.opacity(0.9))
                             .on_mouse_up(
                                 MouseButton::Left,
-                                cx.listener(|this, _, _window, cx| {
+                                cx.listener(|this, _, window, cx| {
                                     if !this.is_generating {
-                                        this.send_message(cx);
+                                        this.send_message(window, cx);
                                     }
                                 }),
                             )

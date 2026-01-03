@@ -7,7 +7,8 @@ mod markdown_text;
 mod message;
 mod scrollbar;
 mod selectable_text;
-mod text_input;
+// Note: text_input.rs is no longer used - now using gpui_component::input::Input
+// mod text_input;
 mod toolbar;
 
 pub use chat_view::ChatView;
@@ -17,10 +18,11 @@ pub use scrollbar::{scrollbar, ScrollbarDragState};
 pub use selectable_text::{
     Copy as SelectableCopy, SelectAll as SelectableSelectAll, SelectableText,
 };
-pub use text_input::{
-    Backspace, Copy, Cut, Delete, End, Home, Left, Paste, Right, SelectAll, SelectLeft,
-    SelectRight, Submit, TextElement, TextInput,
-};
+// Note: TextInput actions are no longer needed - gpui_component Input handles them internally
+// pub use text_input::{
+//     Backspace, Copy, Cut, Delete, End, Home, Left, Paste, Right, SelectAll, SelectLeft,
+//     SelectRight, Submit, TextElement, TextInput,
+// };
 pub use toolbar::Toolbar;
 
 pub use attachment_preview::{render_attachment_preview, render_attachments_row};

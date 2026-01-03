@@ -621,7 +621,7 @@ impl ChatApp {
                         .hover(|s| s.opacity(0.9))
                         .on_mouse_up(
                             MouseButton::Left,
-                            cx.listener(|this, _, _, cx| {
+                            cx.listener(|this, _, window, cx| {
                                 this.show_add_model_dialog = true;
                                 this.add_model_selected_provider = None;
                                 this.add_model_selected_model = None;
@@ -629,17 +629,14 @@ impl ChatApp {
                                 this.add_model_error = None;
 
                                 if this.add_model_api_key_input_entity.is_none() {
-                                    let theme = this.theme.clone();
                                     this.add_model_api_key_input_entity = Some(cx.new(|cx| {
-                                        let mut input =
-                                            crate::gui::components::TextInput::new(cx, theme);
-                                        input.set_placeholder("Enter API key...");
-                                        input
+                                        gpui_component::input::InputState::new(window, cx)
+                                            .placeholder("Enter API key...")
                                     }));
                                 }
 
                                 if let Some(input) = &this.add_model_api_key_input_entity {
-                                    input.update(cx, |input, cx| input.clear(cx));
+                                    input.update(cx, |state, cx| state.set_value("", window, cx));
                                 }
 
                                 this.fetch_providers(cx);
@@ -1501,7 +1498,7 @@ impl ChatApp {
                                         })
                                         .on_mouse_up(
                                             MouseButton::Left,
-                                            cx.listener(|this, _, _, cx| {
+                                            cx.listener(|this, _, window, cx| {
                                                 this.show_add_model_dialog = false;
                                                 this.add_model_selected_provider = None;
                                                 this.add_model_selected_model = None;
@@ -1509,7 +1506,9 @@ impl ChatApp {
                                                 if let Some(input) =
                                                     &this.add_model_api_key_input_entity
                                                 {
-                                                    input.update(cx, |input, cx| input.clear(cx));
+                                                    input.update(cx, |state, cx| {
+                                                        state.set_value("", window, cx)
+                                                    });
                                                 }
                                                 this.add_model_error = None;
                                                 cx.notify();
@@ -1675,7 +1674,7 @@ impl ChatApp {
                             .border_color(theme.border)
                             .on_mouse_up(
                                 MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
+                                cx.listener(move |this, _, window, cx| {
                                     this.add_model_selected_provider = Some(provider_id.clone());
                                     if let Some(p) = this
                                         .add_model_providers
@@ -1687,7 +1686,9 @@ impl ChatApp {
                                         this.add_model_models.sort_by(|a, b| a.id.cmp(&b.id));
                                     }
                                     if let Some(input) = &this.add_model_api_key_input_entity {
-                                        input.update(cx, |input, cx| input.clear(cx));
+                                        input.update(cx, |state, cx| {
+                                            state.set_value("", window, cx)
+                                        });
                                     }
                                     this.add_model_error = None;
                                     cx.notify();
@@ -1751,7 +1752,7 @@ impl ChatApp {
         let has_key_input = self
             .add_model_api_key_input_entity
             .as_ref()
-            .map(|e| !e.read(cx).content().is_empty())
+            .map(|e| !e.read(cx).value().is_empty())
             .unwrap_or(false);
         let can_add_models = has_existing_key || has_key_input;
 
@@ -1799,8 +1800,10 @@ impl ChatApp {
                             .flex()
                             .gap(px(8.))
                             .child(div().flex_1().min_h(px(44.)).when_some(
-                                self.add_model_api_key_input_entity.clone(),
-                                |d, input| d.child(input),
+                                self.add_model_api_key_input_entity.as_ref(),
+                                |d, input| {
+                                    d.child(gpui_component::input::Input::new(input).flex_1())
+                                },
                             ))
                             .child(
                                 div()
@@ -1815,15 +1818,19 @@ impl ChatApp {
                                     .hover(|s| s.opacity(0.8))
                                     .on_mouse_up(
                                         MouseButton::Left,
-                                        cx.listener(|this, _, _, cx| {
+                                        cx.listener(|this, _, window, cx| {
                                             if let Some(text) =
                                                 cx.read_from_clipboard().and_then(|i| i.text())
                                             {
                                                 if let Some(input) =
                                                     &this.add_model_api_key_input_entity
                                                 {
-                                                    input.update(cx, |input, cx| {
-                                                        input.set_content(text.to_string(), cx);
+                                                    input.update(cx, |state, cx| {
+                                                        state.set_value(
+                                                            text.to_string(),
+                                                            window,
+                                                            cx,
+                                                        );
                                                     });
                                                 }
                                                 cx.notify();
