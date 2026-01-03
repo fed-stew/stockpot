@@ -1010,38 +1010,53 @@ impl ChatApp {
 
         // Try to get image data from clipboard
         if let Some(clipboard_item) = cx.read_from_clipboard() {
-            // Check for image data in clipboard entries
-            for entry in clipboard_item.entries() {
-                if let ClipboardEntry::Image(image) = entry {
-                    let image_bytes = image.bytes().to_vec();
+            let entries = clipboard_item.entries();
+            tracing::info!("Clipboard has {} entries", entries.len());
 
-                    // Spawn async task to process the image
-                    cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
-                        match process_image_from_bytes(&image_bytes, None) {
-                            Ok(pending_image) => {
-                                this.update(cx, |app, cx| {
-                                    app.pending_attachments
-                                        .push(PendingAttachment::Image(pending_image));
-                                    cx.notify();
-                                })
-                                .ok();
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to process clipboard image: {}", e);
-                                this.update(cx, |app, cx| {
-                                    app.error_message =
-                                        Some("Failed to process pasted image".to_string());
-                                    cx.notify();
-                                })
-                                .ok();
-                            }
-                        }
-                    })
-                    .detach();
+            // Log and process entries
+            for (i, entry) in entries.iter().enumerate() {
+                match entry {
+                    ClipboardEntry::Image(image) => {
+                        tracing::info!("Entry {}: Image ({} bytes)", i, image.bytes().len());
 
-                    return true; // Handled as image
+                        let image_bytes = image.bytes().to_vec();
+
+                        // Spawn async task to process the image
+                        cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
+                            match process_image_from_bytes(&image_bytes, None) {
+                                Ok(pending_image) => {
+                                    this.update(cx, |app, cx| {
+                                        app.pending_attachments
+                                            .push(PendingAttachment::Image(pending_image));
+                                        cx.notify();
+                                    })
+                                    .ok();
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to process clipboard image: {}", e);
+                                    this.update(cx, |app, cx| {
+                                        app.error_message =
+                                            Some("Failed to process pasted image".to_string());
+                                        cx.notify();
+                                    })
+                                    .ok();
+                                }
+                            }
+                        })
+                        .detach();
+
+                        return true; // Handled as image
+                    }
+                    ClipboardEntry::String(_) => {
+                        tracing::info!("Entry {}: String", i);
+                    }
+                    _ => {
+                        tracing::info!("Entry {}: Other type", i);
+                    }
                 }
             }
+        } else {
+            tracing::info!("Clipboard is empty or unreadable");
         }
 
         false // Not an image, let TextInput handle as text
@@ -1253,13 +1268,20 @@ impl Render for ChatApp {
 /// Register keybindings for the application
 pub fn register_keybindings(cx: &mut App) {
     cx.bind_keys([
+        // App-level shortcuts (macOS: cmd, Linux/Windows: ctrl)
         KeyBinding::new("cmd-q", Quit, None),
+        KeyBinding::new("ctrl-q", Quit, None),
         KeyBinding::new("cmd-n", NewConversation, None),
+        KeyBinding::new("ctrl-n", NewConversation, None),
         KeyBinding::new("enter", Send, Some("TextInput")),
         KeyBinding::new("cmd-]", NextAgent, None),
+        KeyBinding::new("ctrl-]", NextAgent, None),
         KeyBinding::new("cmd-[", PrevAgent, None),
+        KeyBinding::new("ctrl-[", PrevAgent, None),
         KeyBinding::new("escape", CloseDialog, None),
+        // PasteAttachment handles both image paste AND falls back to text paste
         KeyBinding::new("cmd-v", PasteAttachment, None),
+        KeyBinding::new("ctrl-v", PasteAttachment, None),
         // Text input keybindings
         KeyBinding::new("backspace", super::components::Backspace, Some("TextInput")),
         KeyBinding::new("delete", super::components::Delete, Some("TextInput")),
@@ -1276,9 +1298,11 @@ pub fn register_keybindings(cx: &mut App) {
             Some("TextInput"),
         ),
         KeyBinding::new("cmd-a", super::components::SelectAll, Some("TextInput")),
-        KeyBinding::new("cmd-v", super::components::Paste, Some("TextInput")),
+        KeyBinding::new("ctrl-a", super::components::SelectAll, Some("TextInput")),
         KeyBinding::new("cmd-c", super::components::Copy, Some("TextInput")),
+        KeyBinding::new("ctrl-c", super::components::Copy, Some("TextInput")),
         KeyBinding::new("cmd-x", super::components::Cut, Some("TextInput")),
+        KeyBinding::new("ctrl-x", super::components::Cut, Some("TextInput")),
         KeyBinding::new("home", super::components::Home, Some("TextInput")),
         KeyBinding::new("end", super::components::End, Some("TextInput")),
     ]);

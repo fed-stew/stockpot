@@ -140,7 +140,9 @@ impl TextInput {
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.replace_text_in_range(None, &text, window, cx);
+            // Replace newlines with spaces for single-line input
+            let sanitized = text.replace('\n', " ").replace('\r', "");
+            self.replace_text_in_range(None, &sanitized, window, cx);
         }
     }
 
