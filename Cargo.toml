@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 description = "AI-powered coding assistant with GUI, CLI, and TUI modes"
 license = "MIT"

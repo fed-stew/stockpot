@@ -54,12 +54,35 @@ pub fn get_pdf_preview(path: &Path) -> anyhow::Result<PdfPreview> {
         let width = pixmap.width();
         let height = pixmap.height();
         let samples = pixmap.samples();
+        let n = pixmap.n() as usize; // Components per pixel
+        let stride = pixmap.stride() as usize; // Bytes per row (may include padding)
 
-        // Convert RGB to RGBA
-        let rgba_data: Vec<u8> = samples
-            .chunks(3)
-            .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
-            .collect();
+        // Build RGBA data accounting for stride
+        let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
+        
+        for y in 0..height as usize {
+            let row_start = y * stride;
+            for x in 0..width as usize {
+                let pixel_start = row_start + x * n;
+                if n >= 3 && pixel_start + 2 < samples.len() {
+                    rgba_data.push(samples[pixel_start]);     // R
+                    rgba_data.push(samples[pixel_start + 1]); // G
+                    rgba_data.push(samples[pixel_start + 2]); // B
+                    rgba_data.push(if n >= 4 && pixel_start + 3 < samples.len() {
+                        samples[pixel_start + 3] // A
+                    } else {
+                        255 // Opaque
+                    });
+                } else if n == 1 && pixel_start < samples.len() {
+                    // Grayscale
+                    let g = samples[pixel_start];
+                    rgba_data.extend_from_slice(&[g, g, g, 255]);
+                } else {
+                    // Fallback - white pixel
+                    rgba_data.extend_from_slice(&[255, 255, 255, 255]);
+                }
+            }
+        }
 
         let img = RgbaImage::from_raw(width, height, rgba_data)
             .ok_or_else(|| anyhow::anyhow!("Failed to create image from pixmap"))?;
@@ -110,12 +133,33 @@ pub fn render_pdf_to_images(path: &Path, _max_dimension: u32) -> anyhow::Result<
         let width = pixmap.width();
         let height = pixmap.height();
         let samples = pixmap.samples();
+        let n = pixmap.n() as usize;
+        let stride = pixmap.stride() as usize;
 
-        // Convert RGB to RGBA (mupdf returns RGB, image crate needs RGBA)
-        let rgba_data: Vec<u8> = samples
-            .chunks(3)
-            .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
-            .collect();
+        // Build RGBA data accounting for stride
+        let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
+        
+        for y in 0..height as usize {
+            let row_start = y * stride;
+            for x in 0..width as usize {
+                let pixel_start = row_start + x * n;
+                if n >= 3 && pixel_start + 2 < samples.len() {
+                    rgba_data.push(samples[pixel_start]);     // R
+                    rgba_data.push(samples[pixel_start + 1]); // G
+                    rgba_data.push(samples[pixel_start + 2]); // B
+                    rgba_data.push(if n >= 4 && pixel_start + 3 < samples.len() {
+                        samples[pixel_start + 3]
+                    } else {
+                        255
+                    });
+                } else if n == 1 && pixel_start < samples.len() {
+                    let g = samples[pixel_start];
+                    rgba_data.extend_from_slice(&[g, g, g, 255]);
+                } else {
+                    rgba_data.extend_from_slice(&[255, 255, 255, 255]);
+                }
+            }
+        }
         
         // Encode as PNG
         let img = RgbaImage::from_raw(width, height, rgba_data)
