@@ -156,6 +156,9 @@ impl ChatApp {
         // Initialize database
         let db = Rc::new(Database::open().expect("Failed to open database"));
 
+        // Run migrations to ensure schema is up to date
+        db.migrate().expect("Failed to run database migrations");
+
         // Load settings
         let settings = Settings::new(&db);
         let current_model = settings.model();
@@ -277,6 +280,29 @@ impl ChatApp {
             },
         )
         .detach();
+    }
+
+    /// Refresh the model registry and available models list.
+    /// Call this when opening settings, after OAuth, or after adding API keys.
+    pub(super) fn refresh_models(&mut self) {
+        tracing::debug!("refresh_models: starting");
+        match ModelRegistry::load_from_db(&self.db) {
+            Ok(registry) => {
+                let total_in_registry = registry.len();
+                self.available_models = registry.list_available(&self.db);
+                let available_count = self.available_models.len();
+                tracing::debug!(
+                    total_in_registry = total_in_registry,
+                    available_count = available_count,
+                    models = ?self.available_models,
+                    "refresh_models: complete"
+                );
+                self.model_registry = Arc::new(registry);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to refresh model registry");
+            }
+        }
     }
 
     /// Start listening to the message bus and update UI accordingly
@@ -864,10 +890,8 @@ impl ChatApp {
             this.update(cx, |app, cx| {
                 match result {
                     Ok(_) => {
-                        let registry =
-                            crate::models::ModelRegistry::load_from_db(&app.db).unwrap_or_default();
-                        app.available_models = registry.list_available(&app.db);
-                        app.model_registry = std::sync::Arc::new(registry);
+                        // Refresh models to pick up newly registered OAuth models
+                        app.refresh_models();
                     }
                     Err(e) => {
                         app.error_message = Some(format!("OAuth failed: {}", e));

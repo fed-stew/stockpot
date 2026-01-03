@@ -215,6 +215,8 @@ impl ChatApp {
                                                     super::settings::SettingsTab::PinnedAgents;
                                                 this.settings_selected_agent =
                                                     this.current_agent.clone();
+                                                // Refresh models to pick up any OAuth or API key changes
+                                                this.refresh_models();
                                             }
                                             cx.notify();
                                         }),

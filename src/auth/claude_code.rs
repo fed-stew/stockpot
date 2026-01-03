@@ -398,10 +398,9 @@ pub async fn get_claude_code_model(
         warn!("Example valid names: claude-sonnet-4-20250514, claude-3-5-sonnet-20241022");
     }
 
-    info!(
+    debug!(
         requested_model = %model_name,
         actual_model = %actual_model_name,
-        token_len = access_token.len(),
         "Creating Claude Code OAuth model"
     );
 

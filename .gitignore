@@ -1,5 +1,8 @@
 # Rust build artifacts
 /target/
+
+# Build-time downloaded catalog (cached from models.dev)
+models_catalog.json
 **/*.rs.bk
 Cargo.lock
 

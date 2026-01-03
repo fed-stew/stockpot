@@ -662,10 +662,36 @@ impl ChatApp {
             )
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.text)
-                    .child("Available Models"),
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.text)
+                            .child("Available Models"),
+                    )
+                    .child(
+                        div()
+                            .id("refresh-models-btn")
+                            .px(px(10.))
+                            .py(px(6.))
+                            .rounded(px(6.))
+                            .bg(theme.tool_card)
+                            .text_color(theme.text_muted)
+                            .text_size(px(12.))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme.accent).text_color(rgb(0xffffff)))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.refresh_models();
+                                    cx.notify();
+                                }),
+                            )
+                            .child("🔄 Refresh"),
+                    ),
             )
             .child(
                 div()

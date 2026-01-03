@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 description = "AI-powered coding assistant with GUI, CLI, and TUI modes"
 license = "MIT"
@@ -95,6 +95,9 @@ unicode-segmentation = { version = "1.11", optional = true }
 [target.'cfg(unix)'.dependencies]
 pty-process = "0.4"
 mupdf = { version = "0.5", default-features = false }
+
+[build-dependencies]
+reqwest = { version = "0.12", features = ["blocking"] }
 
 [dev-dependencies]
 tempfile = "3.10"

@@ -32,6 +32,17 @@ impl Database {
 
         let conn = Connection::open(&path)?;
 
+        // Set restrictive file permissions (0600) on Unix systems.
+        // The database contains sensitive data like API keys and OAuth tokens.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            {
+                tracing::warn!("Failed to set database file permissions: {}", e);
+            }
+        }
+
         // Enable foreign keys
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 

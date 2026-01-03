@@ -21,6 +21,10 @@ pub fn run_migrations(conn: &Connection) -> anyhow::Result<()> {
             "004_active_sessions",
             include_str!("sql/004_active_sessions.sql"),
         ),
+        (
+            "005_model_sources",
+            include_str!("sql/005_model_sources.sql"),
+        ),
     ];
 
     for (name, sql) in migrations {

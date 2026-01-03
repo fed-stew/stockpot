@@ -6,6 +6,7 @@
 //! - `ModelConfig` for per-model settings
 //! - `ModelRegistry` for loading and managing model configs
 
+use crate::auth::TokenStorage;
 use crate::db::Database;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -194,18 +195,17 @@ impl ModelRegistry {
     /// **Deprecated**: Use `load_from_db()` instead for database-backed storage.
     #[deprecated(note = "Use load_from_db() instead")]
     pub fn load() -> Result<Self, ModelConfigError> {
-        let mut registry = Self::new();
-        registry.add_builtin_defaults();
-        Ok(registry)
+        // Returns empty registry - models come from database now
+        Ok(Self::new())
     }
 
     /// Load models from the database.
-    /// Also adds built-in defaults if they don't exist.
+    ///
+    /// Models are added explicitly via `/add_model` or OAuth flows.
+    /// The models.dev catalog provides available models, and users
+    /// choose which ones to configure.
     pub fn load_from_db(db: &Database) -> Result<Self, ModelConfigError> {
         let mut registry = Self::new();
-
-        // First, ensure built-in models exist in DB
-        registry.ensure_builtin_models(db)?;
 
         // Load all models from database
         let mut stmt = db
@@ -245,71 +245,89 @@ impl ModelRegistry {
             .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
 
         for config in rows.flatten() {
+            tracing::debug!(
+                model = %config.name,
+                model_type = %config.model_type,
+                "Loaded model from database"
+            );
             registry.models.insert(config.name.clone(), config);
         }
+
+        tracing::debug!(
+            total_models = registry.models.len(),
+            "ModelRegistry loaded from database"
+        );
 
         Ok(registry)
     }
 
-    /// Ensure built-in default models exist in the database.
-    fn ensure_builtin_models(&self, db: &Database) -> Result<(), ModelConfigError> {
-        let defaults = crate::models::defaults::default_models();
-
-        for model in defaults {
-            // Insert if not exists (don't overwrite user customizations)
-            db.conn()
-                .execute(
-                    "INSERT OR IGNORE INTO models (name, model_type, model_id, context_length,
-                        supports_thinking, supports_vision, supports_tools, description, is_builtin)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-                    params![
-                        &model.name,
-                        model.model_type.to_string(),
-                        &model.model_id,
-                        model.context_length as i64,
-                        model.supports_thinking as i64,
-                        model.supports_vision as i64,
-                        model.supports_tools as i64,
-                        &model.description,
-                    ],
-                )
-                .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
-        }
-
-        Ok(())
+    /// Add a model to the database.
+    ///
+    /// For backwards compatibility, this defaults to source="custom".
+    /// Use `add_model_to_db_with_source` to specify the source explicitly.
+    pub fn add_model_to_db(db: &Database, config: &ModelConfig) -> Result<(), ModelConfigError> {
+        // Infer source from model type
+        let source = match config.model_type {
+            ModelType::ClaudeCode | ModelType::ChatgptOauth => "oauth",
+            _ if config.custom_endpoint.is_some() => "custom",
+            _ => "catalog",
+        };
+        Self::add_model_to_db_with_source(db, config, source)
     }
 
-    /// Add a custom model to the database.
-    pub fn add_model_to_db(db: &Database, config: &ModelConfig) -> Result<(), ModelConfigError> {
+    /// Add a model to the database with explicit source tracking.
+    ///
+    /// Source values:
+    /// - "catalog" - From the build-time models.dev catalog
+    /// - "oauth" - From OAuth authentication (ChatGPT, Claude Code)
+    /// - "custom" - User-added custom endpoint
+    pub fn add_model_to_db_with_source(
+        db: &Database,
+        config: &ModelConfig,
+        source: &str,
+    ) -> Result<(), ModelConfigError> {
+        tracing::debug!(
+            model = %config.name,
+            model_type = %config.model_type,
+            source = %source,
+            "Saving model to database"
+        );
+
         let headers_json = config
             .custom_endpoint
             .as_ref()
             .map(|e| serde_json::to_string(&e.headers).unwrap_or_default());
 
-        db.conn()
-            .execute(
-                "INSERT OR REPLACE INTO models (name, model_type, model_id, context_length,
-                    supports_thinking, supports_vision, supports_tools, description,
-                    api_endpoint, api_key_env, headers, is_builtin, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, unixepoch())",
-                params![
-                    &config.name,
-                    config.model_type.to_string(),
-                    &config.model_id,
-                    config.context_length as i64,
-                    config.supports_thinking as i64,
-                    config.supports_vision as i64,
-                    config.supports_tools as i64,
-                    &config.description,
-                    config.custom_endpoint.as_ref().map(|e| &e.url),
-                    config
-                        .custom_endpoint
-                        .as_ref()
-                        .and_then(|e| e.api_key.as_ref()),
-                    headers_json,
-                ],
-            )
-            .map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
+        let result = db.conn().execute(
+            "INSERT OR REPLACE INTO models (name, model_type, model_id, context_length,
+                supports_thinking, supports_vision, supports_tools, description,
+                api_endpoint, api_key_env, headers, is_builtin, source, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, unixepoch())",
+            params![
+                &config.name,
+                config.model_type.to_string(),
+                &config.model_id,
+                config.context_length as i64,
+                config.supports_thinking as i64,
+                config.supports_vision as i64,
+                config.supports_tools as i64,
+                &config.description,
+                config.custom_endpoint.as_ref().map(|e| &e.url),
+                config
+                    .custom_endpoint
+                    .as_ref()
+                    .and_then(|e| e.api_key.as_ref()),
+                headers_json,
+                source,
+            ],
+        );
+
+        match &result {
+            Ok(rows) => tracing::debug!(rows_affected = rows, "Model saved successfully"),
+            Err(e) => tracing::error!(error = %e, model = %config.name, "Failed to save model"),
+        }
+
+        result.map_err(|e| ModelConfigError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(())
     }
@@ -391,8 +409,8 @@ impl ModelRegistry {
     /// **Deprecated**: Use `reload_from_db()` instead for database-backed storage.
     #[deprecated(note = "Use reload_from_db() instead")]
     pub fn reload(&mut self) -> Result<(), ModelConfigError> {
+        // Just clear - models come from database now
         self.models.clear();
-        self.add_builtin_defaults();
         Ok(())
     }
 
@@ -402,107 +420,36 @@ impl ModelRegistry {
         Ok(home.join(".stockpot"))
     }
 
-    /// Add default built-in models.
-    fn add_builtin_defaults(&mut self) {
-        // OpenAI models
-        self.add(ModelConfig {
-            name: "gpt-4o".to_string(),
-            model_type: ModelType::Openai,
-            context_length: 128_000,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("GPT-4o - OpenAI's flagship model".to_string()),
-            ..Default::default()
-        });
-
-        self.add(ModelConfig {
-            name: "gpt-4o-mini".to_string(),
-            model_type: ModelType::Openai,
-            context_length: 128_000,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("GPT-4o Mini - Fast and affordable".to_string()),
-            ..Default::default()
-        });
-
-        self.add(ModelConfig {
-            name: "o1".to_string(),
-            model_type: ModelType::Openai,
-            context_length: 200_000,
-            supports_thinking: true,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("O1 - OpenAI's reasoning model".to_string()),
-            ..Default::default()
-        });
-
-        self.add(ModelConfig {
-            name: "o1-mini".to_string(),
-            model_type: ModelType::Openai,
-            context_length: 128_000,
-            supports_thinking: true,
-            supports_vision: false,
-            supports_tools: true,
-            description: Some("O1 Mini - Efficient reasoning".to_string()),
-            ..Default::default()
-        });
-
-        // Anthropic models
-        self.add(ModelConfig {
-            name: "claude-sonnet-4-20250514".to_string(),
-            model_type: ModelType::Anthropic,
-            context_length: 200_000,
-            supports_thinking: true,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("Claude Sonnet 4 - Balanced capability".to_string()),
-            ..Default::default()
-        });
-
-        self.add(ModelConfig {
-            name: "claude-opus-4-20250514".to_string(),
-            model_type: ModelType::Anthropic,
-            context_length: 200_000,
-            supports_thinking: true,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("Claude Opus 4 - Most capable".to_string()),
-            ..Default::default()
-        });
-
-        // Gemini models
-        self.add(ModelConfig {
-            name: "gemini-2.0-flash".to_string(),
-            model_type: ModelType::Gemini,
-            context_length: 1_000_000,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("Gemini 2.0 Flash - Fast and capable".to_string()),
-            ..Default::default()
-        });
-
-        self.add(ModelConfig {
-            name: "gemini-2.5-pro".to_string(),
-            model_type: ModelType::Gemini,
-            context_length: 1_000_000,
-            supports_thinking: true,
-            supports_vision: true,
-            supports_tools: true,
-            description: Some("Gemini 2.5 Pro - Most capable".to_string()),
-            ..Default::default()
-        });
-    }
-
     /// List only models that have valid provider configuration.
     /// Checks for API keys in database or environment, or OAuth tokens.
     pub fn list_available(&self, db: &Database) -> Vec<String> {
+        tracing::debug!(
+            total_in_registry = self.models.len(),
+            "list_available: checking models"
+        );
+
         let mut available: Vec<String> = self
             .models
             .iter()
-            .filter(|(name, config)| self.is_provider_available(db, name, config))
+            .filter(|(name, config)| {
+                let is_available = self.is_provider_available(db, name, config);
+                tracing::debug!(
+                    model = %name,
+                    model_type = %config.model_type,
+                    available = is_available,
+                    "Provider availability check"
+                );
+                is_available
+            })
             .map(|(name, _)| name.clone())
             .collect();
         available.sort();
+
+        tracing::debug!(
+            available_count = available.len(),
+            "list_available: filtered result"
+        );
+
         available
     }
 
@@ -515,12 +462,12 @@ impl ModelRegistry {
                 has_api_key(db, "GEMINI_API_KEY") || has_api_key(db, "GOOGLE_API_KEY")
             }
             ModelType::ClaudeCode => {
-                // Claude Code OAuth models are only in registry if auth succeeded
-                true
+                // Check if we have valid OAuth tokens
+                has_oauth_tokens(db, "claude-code")
             }
             ModelType::ChatgptOauth => {
-                // Same - if loaded, auth worked
-                true
+                // Check if we have valid OAuth tokens
+                has_oauth_tokens(db, "chatgpt")
             }
             ModelType::AzureOpenai => {
                 has_api_key(db, "AZURE_OPENAI_API_KEY") || has_api_key(db, "AZURE_OPENAI_ENDPOINT")
@@ -590,6 +537,37 @@ fn build_custom_endpoint(
 /// Check if an API key is available (in database or environment).
 pub fn has_api_key(db: &Database, key_name: &str) -> bool {
     db.has_api_key(key_name) || std::env::var(key_name).is_ok()
+}
+
+/// Check if valid OAuth tokens exist for a provider.
+/// Returns true if tokens exist and are not expired (or have a refresh token).
+pub fn has_oauth_tokens(db: &Database, provider: &str) -> bool {
+    let storage = TokenStorage::new(db);
+    let result = match storage.load(provider) {
+        Ok(Some(tokens)) => {
+            // Tokens exist - check if valid or refreshable
+            let is_expired = tokens.is_expired();
+            let has_refresh = tokens.refresh_token.is_some();
+            let valid = if is_expired { has_refresh } else { true };
+            tracing::debug!(
+                provider = %provider,
+                is_expired = is_expired,
+                has_refresh_token = has_refresh,
+                result = valid,
+                "OAuth token check"
+            );
+            valid
+        }
+        Ok(None) => {
+            tracing::debug!(provider = %provider, "No OAuth tokens found");
+            false
+        }
+        Err(e) => {
+            tracing::debug!(provider = %provider, error = %e, "OAuth token load error");
+            false
+        }
+    };
+    result
 }
 
 /// Resolve an API key, checking database first, then environment.
@@ -706,15 +684,11 @@ mod tests {
     }
 
     #[test]
-    fn test_registry_defaults() {
-        let mut registry = ModelRegistry::new();
+    fn test_registry_starts_empty() {
+        let registry = ModelRegistry::new();
         assert!(registry.is_empty());
-
-        registry.add_builtin_defaults();
-        assert!(!registry.is_empty());
-        assert!(registry.contains("gpt-4o"));
-        assert!(registry.contains("claude-sonnet-4-20250514"));
-        assert!(registry.contains("gemini-2.0-flash"));
+        // Models are now added explicitly via /add_model or OAuth
+        // The catalog provides available models, database stores configured ones
     }
 
     #[test]

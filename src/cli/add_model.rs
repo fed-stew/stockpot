@@ -10,10 +10,12 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+/// Models catalog downloaded at build time from https://models.dev/api.json
+/// See build.rs for the download logic, caching, and fallback behavior.
 const BUNDLED_MODELS_CATALOG_JSON: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/models.conf"));
+    include_str!(concat!(env!("OUT_DIR"), "/models_catalog.json"));
 
-/// Provider information from the bundled catalog (`models.conf`).
+/// Provider information from the bundled catalog (models.dev/api.json).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProviderInfo {
     pub id: String,
@@ -29,7 +31,7 @@ pub struct ProviderInfo {
     pub models: HashMap<String, ModelInfo>,
 }
 
-/// Model information from the bundled catalog (`models.conf`).
+/// Model information from the bundled catalog (models.dev/api.json).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelInfo {
     pub id: String,
@@ -43,15 +45,16 @@ pub struct ModelInfo {
     pub output_price: Option<f64>,
 }
 
-/// Load all providers from the build-time bundled catalog (`models.conf`).
+/// Load all providers from the build-time bundled catalog.
 ///
-/// To change the catalog, edit `models.conf` in the repo and rebuild.
+/// The catalog is downloaded from https://models.dev/api.json at build time.
+/// To force a refresh, run: FORCE_CATALOG_REFRESH=1 cargo build
 pub async fn fetch_providers() -> Result<HashMap<String, ProviderInfo>> {
-    println!("\x1b[2mLoading providers from bundled models.conf...\x1b[0m");
+    println!("\x1b[2mLoading providers from bundled catalog...\x1b[0m");
 
     let providers: HashMap<String, ProviderInfo> =
         serde_json::from_str(BUNDLED_MODELS_CATALOG_JSON)
-            .map_err(|e| anyhow!("Failed to parse bundled models.conf: {}", e))?;
+            .map_err(|e| anyhow!("Failed to parse bundled catalog: {}", e))?;
 
     Ok(providers)
 }
@@ -376,7 +379,7 @@ pub fn list_custom_models(db: &Database) -> Result<()> {
 
     if available.is_empty() {
         println!("\x1b[2mNo available models found.\x1b[0m");
-        println!("\x1b[2mUse /add_model to add models from the bundled models.conf catalog (edit + rebuild to change it)\x1b[0m");
+        println!("\x1b[2mUse /add_model to add models from the bundled catalog\x1b[0m");
         return Ok(());
     }
 
