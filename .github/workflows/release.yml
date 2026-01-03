@@ -21,10 +21,6 @@ jobs:
             os: ubuntu-latest
             artifact_name: spot-linux-x86_64
             archive_ext: tar.gz
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact_name: spot-windows-x86_64
-            archive_ext: zip
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: spot-macos-x86_64
@@ -37,6 +33,35 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            clang \
+            libxcb1 \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon0 \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libvulkan1 \
+            libvulkan-dev \
+            libssl-dev \
+            pkg-config \
+            libasound2t64 \
+            libasound2-dev \
+            libfontconfig1 \
+            libfontconfig1-dev \
+            libfreetype6 \
+            libfreetype6-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -59,17 +84,6 @@ jobs:
           else
             shasum -a 256 ${{ matrix.artifact_name }}.tar.gz > ${{ matrix.artifact_name }}.tar.gz.sha256
           fi
-
-      - name: Package binary (Windows)
-        if: matrix.archive_ext == 'zip'
-        shell: pwsh
-        run: |
-          cd target/${{ matrix.target }}/release
-          Compress-Archive -Path "${{ env.BINARY_NAME }}.exe" -DestinationPath "../../../${{ matrix.artifact_name }}.zip"
-          cd ../../..
-          # Generate checksum
-          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.artifact_name }}.zip").Hash.ToLower()
-          "$hash  ${{ matrix.artifact_name }}.zip" | Out-File -Encoding ASCII "${{ matrix.artifact_name }}.zip.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -112,7 +126,6 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/*.tar.gz
-            artifacts/*.zip
             checksums.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
