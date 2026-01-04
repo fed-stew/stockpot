@@ -354,6 +354,8 @@ impl ChatApp {
         let left_panel = div()
             .flex()
             .flex_col()
+            .flex_1()
+            .min_h(px(0.))
             .gap(px(8.))
             .child(
                 div()
@@ -372,7 +374,8 @@ impl ChatApp {
                 div()
                     .id("settings-agents-scroll")
                     .mt(px(6.))
-                    .max_h(px(420.))
+                    .flex_1()
+                    .min_h(px(0.))
                     .overflow_y_scroll()
                     .scrollbar_width(px(8.))
                     .flex()
@@ -438,6 +441,8 @@ impl ChatApp {
         let right_panel = div()
             .flex()
             .flex_col()
+            .flex_1()
+            .min_h(px(0.))
             .gap(px(10.))
             .child(
                 div()
@@ -456,7 +461,8 @@ impl ChatApp {
                 div()
                     .id("settings-pin-models-scroll")
                     .mt(px(6.))
-                    .max_h(px(420.))
+                    .flex_1()
+                    .min_h(px(0.))
                     .overflow_y_scroll()
                     .scrollbar_width(px(8.))
                     .flex()
@@ -541,13 +547,21 @@ impl ChatApp {
                     })),
             );
 
-        div().flex().flex_col().child(default_model_section).child(
-            div()
-                .flex()
-                .gap(px(18.))
-                .child(div().w(px(360.)).child(left_panel))
-                .child(div().flex_1().child(right_panel)),
-        )
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h(px(0.))
+            .child(default_model_section)
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h(px(0.))
+                    .gap(px(18.))
+                    .child(div().w(px(260.)).flex().flex_col().child(left_panel))
+                    .child(div().flex_1().flex().flex_col().child(right_panel)),
+            )
     }
 
     fn render_settings_models(&self, cx: &Context<Self>) -> impl IntoElement {

@@ -132,7 +132,7 @@ fn save_chatgpt_models_to_db(db: &Database, models: &[String]) -> Result<(), std
         // Context length varies by model
         // GPT-5 and newer models likely have larger context windows
         let context_length = if model_name.contains("gpt-5") {
-            256_000 // GPT-5 likely has 256k+ context
+            270_000 // GPT-5 has 270k context
         } else if model_name.contains("gpt-4o") {
             128_000
         } else if model_name.starts_with("o1")
