@@ -126,6 +126,8 @@ pub struct ChatApp {
     messages_scroll_handle: ScrollHandle,
     /// Drag state for chat messages scrollbar
     messages_scrollbar_drag: Rc<ScrollbarDragState>,
+    /// Whether user has manually scrolled away from bottom (disables auto-scroll)
+    user_scrolled_away: bool,
 
     /// Add model dialog state
     show_add_model_dialog: bool,
@@ -250,6 +252,7 @@ impl ChatApp {
             add_model_models_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
             messages_scroll_handle: ScrollHandle::new(),
             messages_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
+            user_scrolled_away: false,
 
             show_add_model_dialog: false,
             add_model_providers: Vec::new(),
@@ -362,9 +365,8 @@ impl ChatApp {
         let servers_obj = match servers_obj {
             Some(obj) => obj,
             None => {
-                self.mcp_import_error = Some(
-                    "JSON must contain 'mcpServers' or 'servers' object".to_string(),
-                );
+                self.mcp_import_error =
+                    Some("JSON must contain 'mcpServers' or 'servers' object".to_string());
                 cx.notify();
                 return;
             }
@@ -460,11 +462,24 @@ impl ChatApp {
         .detach();
     }
 
+    /// Scroll the messages view to the bottom
+    fn scroll_messages_to_bottom(&self) {
+        let max = self.messages_scroll_handle.max_offset().height;
+        if max > gpui::px(0.) {
+            self.messages_scroll_handle
+                .set_offset(gpui::point(gpui::px(0.), -max));
+        }
+    }
+
     /// Handle incoming messages from the agent
     fn handle_message(&mut self, msg: Message, cx: &mut Context<Self>) {
         match msg {
             Message::TextDelta(delta) => {
                 self.conversation.append_to_current(&delta.text);
+                // Auto-scroll to bottom if user hasn't scrolled away
+                if !self.user_scrolled_away {
+                    self.scroll_messages_to_bottom();
+                }
             }
             Message::Thinking(thinking) => {
                 // Display thinking in a muted style
@@ -487,6 +502,9 @@ impl ChatApp {
                 AgentEvent::Started => {
                     self.conversation.start_assistant_message();
                     self.is_generating = true;
+                    // Reset scroll state and scroll to bottom for new response
+                    self.user_scrolled_away = false;
+                    self.scroll_messages_to_bottom();
                 }
                 AgentEvent::Completed { .. } => {
                     self.conversation.finish_current_message();

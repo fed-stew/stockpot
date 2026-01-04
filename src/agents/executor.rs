@@ -503,7 +503,9 @@ impl<'a> AgentExecutor<'a> {
         }
 
         // Add MCP tools (filtered by agent attachments)
-        let mcp_tools = self.collect_mcp_tools(_mcp_manager, Some(spot_agent.name())).await;
+        let mcp_tools = self
+            .collect_mcp_tools(_mcp_manager, Some(spot_agent.name()))
+            .await;
         for (def, tool) in mcp_tools {
             builder = builder.tool_with_executor(def, ToolExecutorAdapter::new(tool));
         }
@@ -1136,7 +1138,9 @@ impl<'a> AgentExecutor<'a> {
             tools.into_iter().map(|t| (t.definition(), t)).collect();
 
         // Collect MCP tools from running servers (filtered by agent attachments)
-        let mcp_tool_calls = self.collect_mcp_tools(mcp_manager, Some(spot_agent.name())).await;
+        let mcp_tool_calls = self
+            .collect_mcp_tools(mcp_manager, Some(spot_agent.name()))
+            .await;
         tool_data.extend(mcp_tool_calls);
 
         // Prepare data for the spawned task

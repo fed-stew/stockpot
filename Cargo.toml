@@ -87,8 +87,9 @@ terminal_size = "0.4"
 
 # GUI (optional - for stockpot-gui binary)
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", optional = true }
-gpui-component = { git = "https://github.com/longbridge/gpui-component", optional = true }
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", optional = true }
+# Using vendored gpui-component fork with proper list rendering (upstream longbridge version has broken lists)
+gpui-component = { git = "https://github.com/janfeddersen-wq/gpui-component", optional = true }
+gpui-component-assets = { git = "https://github.com/janfeddersen-wq/gpui-component", optional = true }
 rfd = { version = "0.14", optional = true }
 unicode-segmentation = { version = "1.11", optional = true }
 

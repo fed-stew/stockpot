@@ -228,7 +228,12 @@ impl<'a> Settings<'a> {
         self.get(&Self::agent_mcp_key(agent_name))
             .ok()
             .flatten()
-            .map(|s| s.split(',').map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect())
+            .map(|s| {
+                s.split(',')
+                    .map(|m| m.trim().to_string())
+                    .filter(|m| !m.is_empty())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 

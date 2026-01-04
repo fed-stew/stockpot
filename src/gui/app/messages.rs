@@ -15,16 +15,24 @@ impl ChatApp {
             .id("messages-container")
             .flex()
             .flex_1()
+            .w_full()
             .min_h(px(0.))
             .overflow_hidden()
             .child(
                 div()
                     .id("messages-scroll")
                     .flex_1()
+                    .w_full()
                     .min_h(px(0.))
                     .overflow_y_scroll()
                     .track_scroll(&self.messages_scroll_handle)
-                    .on_scroll_wheel(cx.listener(|_, _, _, cx| {
+                    .on_scroll_wheel(cx.listener(|this, _, _, cx| {
+                        // Check if user is at the bottom (within threshold)
+                        let ratio =
+                            crate::gui::components::scroll_ratio(&this.messages_scroll_handle);
+                        // If ratio >= 0.98, user is at bottom, enable auto-scroll
+                        // If ratio < 0.98, user scrolled away, disable auto-scroll
+                        this.user_scrolled_away = ratio < 0.98;
                         cx.notify();
                     }))
                     .p(px(16.))
@@ -66,7 +74,7 @@ impl ChatApp {
                         )
                     })
                     .when(has_messages, |d| {
-                        d.child(div().flex().flex_col().gap(px(16.)).children(
+                        d.child(div().flex().flex_col().w_full().gap(px(16.)).children(
                             messages.into_iter().enumerate().map(|(idx, msg)| {
                                 let is_user = msg.role == MessageRole::User;
                                 let bubble_bg = if is_user {
@@ -80,6 +88,7 @@ impl ChatApp {
                                     .id(SharedString::from(format!("msg-{}", idx)))
                                     .flex()
                                     .flex_col()
+                                    .w_full()
                                     .when(is_user, |d| d.items_end())
                                     .when(!is_user, |d| d.items_start())
                                     .child(
@@ -99,9 +108,14 @@ impl ChatApp {
                                             .min_w_0()
                                             // User messages: constrained width, Assistant: full width
                                             .when(is_user, |d| d.max_w(px(600.)))
-                                            .when(!is_user, |d| d.w_full().max_w_full())
+                                            .when(!is_user, |d| d.w_full().min_w_0())
                                             // Use gpui-component's markdown renderer
-                                            .child(markdown(&msg.content).selectable(true))
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .overflow_x_hidden()
+                                                    .child(markdown(&msg.content).selectable(true)),
+                                            )
                                             .when(is_streaming, |d: gpui::Div| {
                                                 d.child(
                                                     div()

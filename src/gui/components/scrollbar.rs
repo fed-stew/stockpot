@@ -47,7 +47,7 @@ fn thumb_height(handle: &ScrollHandle, track_height: Pixels) -> Option<Pixels> {
     )
 }
 
-fn scroll_ratio(handle: &ScrollHandle) -> f32 {
+pub fn scroll_ratio(handle: &ScrollHandle) -> f32 {
     let max = handle.max_offset().height;
     if max <= Pixels::ZERO {
         return 0.0;

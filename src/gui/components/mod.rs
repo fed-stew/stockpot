@@ -14,7 +14,7 @@ mod toolbar;
 pub use chat_view::ChatView;
 pub use input_field::InputField;
 pub use message::MessageView;
-pub use scrollbar::{scrollbar, ScrollbarDragState};
+pub use scrollbar::{scroll_ratio, scrollbar, ScrollbarDragState};
 pub use selectable_text::{
     Copy as SelectableCopy, SelectAll as SelectableSelectAll, SelectableText,
 };

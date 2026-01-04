@@ -220,8 +220,10 @@ impl McpManager {
             // Use timeout to avoid hanging forever on unresponsive servers
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
-                handle.client.list_tools()
-            ).await {
+                handle.client.list_tools(),
+            )
+            .await
+            {
                 Ok(Ok(tools)) => {
                     all_tools.insert(name.clone(), tools);
                 }
@@ -272,10 +274,7 @@ impl McpManager {
         }
 
         // List tools to verify connection - with timeout since some servers are slow
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            client.list_tools()
-        ).await {
+        match tokio::time::timeout(std::time::Duration::from_secs(5), client.list_tools()).await {
             Ok(Ok(tools)) => {
                 info!(
                     server = %name,

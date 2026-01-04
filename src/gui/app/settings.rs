@@ -1061,7 +1061,12 @@ impl ChatApp {
             .iter()
             .map(|(name, entry)| {
                 let cmd_preview = format!("{} {}", entry.command, entry.args.join(" "));
-                (name.clone(), entry.enabled, entry.description.clone(), cmd_preview)
+                (
+                    name.clone(),
+                    entry.enabled,
+                    entry.description.clone(),
+                    cmd_preview,
+                )
             })
             .collect();
         servers.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1336,22 +1341,35 @@ impl ChatApp {
                                     .children(agents.iter().map(|info| {
                                         let is_selected = info.name == selected_agent;
                                         let agent_mcp_list = all_attachments.get(&info.name);
-                                        let mcp_count = agent_mcp_list.map(|m| m.len()).unwrap_or(0);
+                                        let mcp_count =
+                                            agent_mcp_list.map(|m| m.len()).unwrap_or(0);
 
                                         let agent_name = info.name.clone();
                                         div()
-                                            .id(SharedString::from(format!("mcp-agent-{}", agent_name)))
+                                            .id(SharedString::from(format!(
+                                                "mcp-agent-{}",
+                                                agent_name
+                                            )))
                                             .px(px(10.))
                                             .py(px(8.))
                                             .rounded(px(6.))
-                                            .bg(if is_selected { theme.accent } else { theme.tool_card })
-                                            .text_color(if is_selected { rgb(0xffffff) } else { theme.text })
+                                            .bg(if is_selected {
+                                                theme.accent
+                                            } else {
+                                                theme.tool_card
+                                            })
+                                            .text_color(if is_selected {
+                                                rgb(0xffffff)
+                                            } else {
+                                                theme.text
+                                            })
                                             .cursor_pointer()
                                             .hover(|s| s.opacity(0.9))
                                             .on_mouse_up(
                                                 MouseButton::Left,
                                                 cx.listener(move |this, _, _, cx| {
-                                                    this.mcp_settings_selected_agent = agent_name.clone();
+                                                    this.mcp_settings_selected_agent =
+                                                        agent_name.clone();
                                                     cx.notify();
                                                 }),
                                             )
@@ -1371,9 +1389,17 @@ impl ChatApp {
                                                                 .px(px(6.))
                                                                 .py(px(2.))
                                                                 .rounded(px(10.))
-                                                                .bg(if is_selected { rgba(0xffffff33) } else { theme.background })
+                                                                .bg(if is_selected {
+                                                                    rgba(0xffffff33)
+                                                                } else {
+                                                                    theme.background
+                                                                })
                                                                 .text_size(px(10.))
-                                                                .text_color(if is_selected { rgb(0xffffff) } else { theme.text_muted })
+                                                                .text_color(if is_selected {
+                                                                    rgb(0xffffff)
+                                                                } else {
+                                                                    theme.text_muted
+                                                                })
                                                                 .child(format!("{}", mcp_count)),
                                                         )
                                                     }),
@@ -1415,57 +1441,86 @@ impl ChatApp {
                                     .flex()
                                     .flex_col()
                                     .gap(px(4.))
-                                    .children(servers.iter().filter(|(_, enabled, _, _)| *enabled).map(|(name, _, _, _)| {
-                                        let mcp_name = name.clone();
-                                        let is_attached = agent_mcps.contains(&mcp_name);
-                                        let selected_agent = selected_agent.clone();
+                                    .children(
+                                        servers.iter().filter(|(_, enabled, _, _)| *enabled).map(
+                                            |(name, _, _, _)| {
+                                                let mcp_name = name.clone();
+                                                let is_attached = agent_mcps.contains(&mcp_name);
+                                                let selected_agent = selected_agent.clone();
 
-                                        div()
-                                            .id(SharedString::from(format!("attach-mcp-{}", mcp_name)))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(10.))
-                                            .px(px(10.))
-                                            .py(px(8.))
-                                            .rounded(px(6.))
-                                            .bg(if is_attached { theme.accent } else { theme.tool_card })
-                                            .cursor_pointer()
-                                            .hover(|s| s.opacity(0.9))
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(move |this, _, _, cx| {
-                                                    let settings = Settings::new(&this.db);
-                                                    if is_attached {
-                                                        let _ = settings.remove_agent_mcp(&selected_agent, &mcp_name);
-                                                    } else {
-                                                        let _ = settings.add_agent_mcp(&selected_agent, &mcp_name);
-                                                    }
-                                                    cx.notify();
-                                                }),
-                                            )
-                                            .child(
                                                 div()
-                                                    .w(px(18.))
-                                                    .h(px(18.))
-                                                    .rounded(px(4.))
-                                                    .border_2()
-                                                    .border_color(if is_attached { rgb(0xffffff) } else { theme.border })
-                                                    .bg(if is_attached { rgb(0xffffff) } else { theme.background })
+                                                    .id(SharedString::from(format!(
+                                                        "attach-mcp-{}",
+                                                        mcp_name
+                                                    )))
                                                     .flex()
                                                     .items_center()
-                                                    .justify_center()
-                                                    .text_size(px(12.))
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .text_color(theme.accent)
-                                                    .when(is_attached, |d| d.child("✓")),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(13.))
-                                                    .text_color(if is_attached { rgb(0xffffff) } else { theme.text })
-                                                    .child(name.clone()),
-                                            )
-                                    })),
+                                                    .gap(px(10.))
+                                                    .px(px(10.))
+                                                    .py(px(8.))
+                                                    .rounded(px(6.))
+                                                    .bg(if is_attached {
+                                                        theme.accent
+                                                    } else {
+                                                        theme.tool_card
+                                                    })
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.opacity(0.9))
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(move |this, _, _, cx| {
+                                                            let settings = Settings::new(&this.db);
+                                                            if is_attached {
+                                                                let _ = settings.remove_agent_mcp(
+                                                                    &selected_agent,
+                                                                    &mcp_name,
+                                                                );
+                                                            } else {
+                                                                let _ = settings.add_agent_mcp(
+                                                                    &selected_agent,
+                                                                    &mcp_name,
+                                                                );
+                                                            }
+                                                            cx.notify();
+                                                        }),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .w(px(18.))
+                                                            .h(px(18.))
+                                                            .rounded(px(4.))
+                                                            .border_2()
+                                                            .border_color(if is_attached {
+                                                                rgb(0xffffff)
+                                                            } else {
+                                                                theme.border
+                                                            })
+                                                            .bg(if is_attached {
+                                                                rgb(0xffffff)
+                                                            } else {
+                                                                theme.background
+                                                            })
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
+                                                            .text_size(px(12.))
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .text_color(theme.accent)
+                                                            .when(is_attached, |d| d.child("✓")),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(13.))
+                                                            .text_color(if is_attached {
+                                                                rgb(0xffffff)
+                                                            } else {
+                                                                theme.text
+                                                            })
+                                                            .child(name.clone()),
+                                                    )
+                                            },
+                                        ),
+                                    ),
                             ),
                     ),
             );
@@ -1573,10 +1628,9 @@ impl ChatApp {
                                 .flex_col()
                                 .gap(px(12.))
                                 .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .text_color(theme.text_muted)
-                                        .child("Paste your MCP config JSON (Claude Desktop format):"),
+                                    div().text_size(px(12.)).text_color(theme.text_muted).child(
+                                        "Paste your MCP config JSON (Claude Desktop format):",
+                                    ),
                                 )
                                 .child(
                                     div()
@@ -1600,14 +1654,16 @@ impl ChatApp {
                                                     theme.text
                                                 })
                                                 .child(if self.mcp_import_json.is_empty() {
-                                                    SharedString::from(r#"{
+                                                    SharedString::from(
+                                                        r#"{
   "mcpServers": {
     "playwright": {
       "command": "npx",
       "args": ["@playwright/mcp@latest"]
     }
   }
-}"#)
+}"#,
+                                                    )
                                                 } else {
                                                     SharedString::from(self.mcp_import_json.clone())
                                                 }),
