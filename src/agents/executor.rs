@@ -502,8 +502,8 @@ impl<'a> AgentExecutor<'a> {
             );
         }
 
-        // Add MCP tools
-        let mcp_tools = self.collect_mcp_tools(_mcp_manager).await;
+        // Add MCP tools (filtered by agent attachments)
+        let mcp_tools = self.collect_mcp_tools(_mcp_manager, Some(spot_agent.name())).await;
         for (def, tool) in mcp_tools {
             builder = builder.tool_with_executor(def, ToolExecutorAdapter::new(tool));
         }
@@ -1135,8 +1135,8 @@ impl<'a> AgentExecutor<'a> {
         let mut tool_data: Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> =
             tools.into_iter().map(|t| (t.definition(), t)).collect();
 
-        // Collect MCP tools from running servers
-        let mcp_tool_calls = self.collect_mcp_tools(mcp_manager).await;
+        // Collect MCP tools from running servers (filtered by agent attachments)
+        let mcp_tool_calls = self.collect_mcp_tools(mcp_manager, Some(spot_agent.name())).await;
         tool_data.extend(mcp_tool_calls);
 
         // Prepare data for the spawned task
@@ -1556,17 +1556,54 @@ pub async fn execute_agent(
 }
 
 impl<'a> AgentExecutor<'a> {
-    /// Collect MCP tools from running servers.
+    /// Collect MCP tools from running servers, filtered by agent attachments.
+    ///
+    /// Only returns tools from MCP servers that are attached to the given agent.
+    /// If no agent_name is provided or the agent has no attachments, returns tools
+    /// from ALL running servers (for backwards compatibility).
     async fn collect_mcp_tools(
         &self,
         mcp_manager: &McpManager,
+        agent_name: Option<&str>,
     ) -> Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> {
+        use crate::config::Settings;
+
         let mut tools = Vec::new();
+
+        // Get agent's MCP attachments from settings
+        let attached_mcps: Option<Vec<String>> = agent_name.and_then(|name| {
+            let settings = Settings::new(self.db);
+            let mcps = settings.get_agent_mcps(name);
+            if mcps.is_empty() {
+                None // No attachments = use all MCPs
+            } else {
+                Some(mcps)
+            }
+        });
 
         // Get all tools from running MCP servers
         let all_mcp_tools = mcp_manager.list_all_tools().await;
 
         for (server_name, server_tools) in all_mcp_tools {
+            // Filter by agent attachments if specified
+            if let Some(ref attached) = attached_mcps {
+                if !attached.contains(&server_name) {
+                    debug!(
+                        agent = agent_name.unwrap_or("unknown"),
+                        server = %server_name,
+                        "Skipping MCP server - not attached to agent"
+                    );
+                    continue;
+                }
+            }
+
+            debug!(
+                agent = agent_name.unwrap_or("unknown"),
+                server = %server_name,
+                tool_count = server_tools.len(),
+                "Including MCP tools from server"
+            );
+
             for mcp_tool in server_tools {
                 // Create a tool definition from MCP tool
                 let def = ToolDefinition::new(
@@ -1584,6 +1621,13 @@ impl<'a> AgentExecutor<'a> {
 
                 tools.push((def, Arc::new(executor) as Arc<dyn Tool + Send + Sync>));
             }
+        }
+
+        if tools.is_empty() && attached_mcps.is_some() {
+            debug!(
+                agent = agent_name.unwrap_or("unknown"),
+                "No MCP tools available - attached servers may not be running"
+            );
         }
 
         tools

@@ -215,4 +215,84 @@ impl<'a> Settings<'a> {
         }
         Ok(pins)
     }
+
+    // Agent MCP attachment management
+
+    /// Build the settings key for an agent's MCP attachments.
+    fn agent_mcp_key(agent_name: &str) -> String {
+        format!("agent_mcp.{}", agent_name)
+    }
+
+    /// Get the MCPs attached to an agent (comma-separated list stored as single value).
+    pub fn get_agent_mcps(&self, agent_name: &str) -> Vec<String> {
+        self.get(&Self::agent_mcp_key(agent_name))
+            .ok()
+            .flatten()
+            .map(|s| s.split(',').map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Set the MCPs attached to an agent.
+    pub fn set_agent_mcps(
+        &self,
+        agent_name: &str,
+        mcp_names: &[String],
+    ) -> Result<(), SettingsError> {
+        let value = mcp_names.join(",");
+        self.set(&Self::agent_mcp_key(agent_name), &value)
+    }
+
+    /// Add an MCP to an agent's attachments.
+    pub fn add_agent_mcp(&self, agent_name: &str, mcp_name: &str) -> Result<(), SettingsError> {
+        let mut mcps = self.get_agent_mcps(agent_name);
+        if !mcps.contains(&mcp_name.to_string()) {
+            mcps.push(mcp_name.to_string());
+            self.set_agent_mcps(agent_name, &mcps)?;
+        }
+        Ok(())
+    }
+
+    /// Remove an MCP from an agent's attachments.
+    pub fn remove_agent_mcp(&self, agent_name: &str, mcp_name: &str) -> Result<(), SettingsError> {
+        let mcps: Vec<String> = self
+            .get_agent_mcps(agent_name)
+            .into_iter()
+            .filter(|m| m != mcp_name)
+            .collect();
+        self.set_agent_mcps(agent_name, &mcps)
+    }
+
+    /// Clear all MCPs from an agent.
+    pub fn clear_agent_mcps(&self, agent_name: &str) -> Result<(), SettingsError> {
+        self.delete(&Self::agent_mcp_key(agent_name))
+    }
+
+    /// Get all agent->MCPs mappings.
+    pub fn get_all_agent_mcps(&self) -> Result<HashMap<String, Vec<String>>, SettingsError> {
+        let prefix = "agent_mcp.";
+        let mut stmt = self
+            .db
+            .conn()
+            .prepare("SELECT key, value FROM settings WHERE key LIKE ? ORDER BY key")?;
+        let pattern = format!("{}%", prefix);
+        let rows = stmt.query_map([pattern], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut attachments = HashMap::new();
+        for row in rows {
+            let (key, value) = row?;
+            if let Some(agent_name) = key.strip_prefix(prefix) {
+                let mcps: Vec<String> = value
+                    .split(',')
+                    .map(|m| m.trim().to_string())
+                    .filter(|m| !m.is_empty())
+                    .collect();
+                if !mcps.is_empty() {
+                    attachments.insert(agent_name.to_string(), mcps);
+                }
+            }
+        }
+        Ok(attachments)
+    }
 }

@@ -3,7 +3,7 @@
 //! Handles starting, stopping, and managing MCP server connections.
 
 use super::config::{McpConfig, McpServerEntry};
-use serdes_ai_mcp::{McpClient, McpError, McpToolset};
+use serdes_ai_mcp::{McpClient, McpError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
@@ -35,8 +35,6 @@ pub struct McpServerHandle {
     pub name: String,
     /// The connected client.
     pub client: Arc<McpClient>,
-    /// The toolset for agent integration.
-    pub toolset: McpToolset<()>,
 }
 
 impl McpServerHandle {
@@ -103,7 +101,7 @@ impl McpManager {
             }
         }
 
-        info!("Starting MCP server: {}", name);
+        info!(server = %name, "Starting MCP server");
 
         // Start the server
         let handle = self.connect_server(name, entry).await?;
@@ -112,7 +110,7 @@ impl McpManager {
         let mut servers = self.servers.write().await;
         servers.insert(name.to_string(), handle);
 
-        info!("MCP server started: {}", name);
+        info!(server = %name, "MCP server started");
         Ok(())
     }
 
@@ -177,16 +175,6 @@ impl McpManager {
         servers.contains_key(name)
     }
 
-    /// Get toolsets from all running servers.
-    ///
-    /// Returns a vector of toolsets that can be used with the agent.
-    pub async fn toolsets(&self) -> Vec<McpToolset<()>> {
-        // Note: We can't easily return references to the toolsets
-        // due to lifetime issues. In practice, you'd use the handles directly.
-        // This method is here for API completeness.
-        Vec::new()
-    }
-
     /// Get a server handle by name.
     pub async fn get_handle(&self, name: &str) -> Option<Arc<McpClient>> {
         let servers = self.servers.read().await;
@@ -229,12 +217,19 @@ impl McpManager {
         let mut all_tools = HashMap::new();
 
         for (name, handle) in servers.iter() {
-            match handle.client.list_tools().await {
-                Ok(tools) => {
+            // Use timeout to avoid hanging forever on unresponsive servers
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                handle.client.list_tools()
+            ).await {
+                Ok(Ok(tools)) => {
                     all_tools.insert(name.clone(), tools);
                 }
-                Err(e) => {
-                    warn!("Failed to list tools from {}: {}", name, e);
+                Ok(Err(e)) => {
+                    warn!(server = %name, error = %e, "Failed to list tools from MCP server");
+                }
+                Err(_) => {
+                    warn!(server = %name, "Timeout listing tools from MCP server");
                 }
             }
         }
@@ -252,18 +247,53 @@ impl McpManager {
         let args: Vec<&str> = entry.args.iter().map(|s| s.as_str()).collect();
 
         // Create the client
-        let client = McpClient::stdio(&entry.command, &args).await?;
+        let client = match McpClient::stdio(&entry.command, &args).await {
+            Ok(c) => c,
+            Err(e) => {
+                error!(server = %name, error = %e, "Failed to spawn MCP server process");
+                return Err(e.into());
+            }
+        };
 
         // Initialize the connection
-        client.initialize().await?;
+        match client.initialize().await {
+            Ok(result) => {
+                info!(
+                    server = %name,
+                    server_name = %result.server_info.name,
+                    server_version = %result.server_info.version,
+                    "MCP server initialized"
+                );
+            }
+            Err(e) => {
+                error!(server = %name, error = %e, "Failed to initialize MCP server");
+                return Err(e.into());
+            }
+        }
 
-        // Create the toolset
-        let toolset = McpToolset::new(McpClient::stdio(&entry.command, &args).await?).with_id(name);
+        // List tools to verify connection - with timeout since some servers are slow
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            client.list_tools()
+        ).await {
+            Ok(Ok(tools)) => {
+                info!(
+                    server = %name,
+                    tool_count = tools.len(),
+                    "MCP server ready with {} tools", tools.len()
+                );
+            }
+            Ok(Err(e)) => {
+                warn!(server = %name, error = %e, "Failed to list MCP tools");
+            }
+            Err(_) => {
+                warn!(server = %name, "Timeout listing MCP tools");
+            }
+        }
 
         Ok(McpServerHandle {
             name: name.to_string(),
             client: Arc::new(client),
-            toolset,
         })
     }
 }

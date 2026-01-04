@@ -145,6 +145,15 @@ pub struct ChatApp {
     api_key_new_value: String,
     /// Pending attachments (images and files) waiting to be sent
     pending_attachments: Vec<PendingAttachment>,
+
+    /// MCP settings: selected agent for MCP attachment
+    mcp_settings_selected_agent: String,
+    /// MCP settings: show import JSON dialog
+    show_mcp_import_dialog: bool,
+    /// MCP settings: pasted JSON content for import
+    mcp_import_json: String,
+    /// MCP settings: import error message
+    mcp_import_error: Option<String>,
 }
 
 impl ChatApp {
@@ -173,6 +182,7 @@ impl ChatApp {
         let agents = Arc::new(AgentManager::new());
         let current_agent = agents.current_name();
         let settings_selected_agent = current_agent.clone();
+        let mcp_settings_selected_agent = current_agent.clone();
         let available_agents: Vec<(String, String)> = agents
             .list_filtered(user_mode)
             .into_iter()
@@ -255,6 +265,11 @@ impl ChatApp {
             api_key_new_name: String::new(),
             api_key_new_value: String::new(),
             pending_attachments: Vec::new(),
+
+            mcp_settings_selected_agent,
+            show_mcp_import_dialog: false,
+            mcp_import_json: String::new(),
+            mcp_import_error: None,
         };
 
         // Start message listener
@@ -274,8 +289,17 @@ impl ChatApp {
         let mcp = self.mcp_manager.clone();
         cx.spawn(
             async move |_this: WeakEntity<ChatApp>, _cx: &mut AsyncApp| {
+                let enabled_count = mcp.config().enabled_servers().count();
+                if enabled_count == 0 {
+                    tracing::debug!("No MCP servers enabled, skipping startup");
+                    return;
+                }
+                tracing::info!(count = enabled_count, "Starting MCP servers...");
                 if let Err(e) = mcp.start_all().await {
-                    eprintln!("Failed to start MCP servers: {}", e);
+                    tracing::error!(error = %e, "Failed to start MCP servers");
+                } else {
+                    let running = mcp.running_servers().await;
+                    tracing::info!(servers = ?running, "MCP servers started successfully");
                 }
             },
         )
@@ -303,6 +327,120 @@ impl ChatApp {
                 tracing::error!(error = %e, "Failed to refresh model registry");
             }
         }
+    }
+
+    /// Import MCP servers from JSON (Claude Desktop format).
+    pub(super) fn do_mcp_import(&mut self, cx: &mut Context<Self>) {
+        use crate::mcp::{McpConfig, McpServerEntry};
+
+        let json_str = self.mcp_import_json.trim();
+        if json_str.is_empty() {
+            self.mcp_import_error = Some("No JSON to import".to_string());
+            cx.notify();
+            return;
+        }
+
+        // Try to parse the JSON - support both formats:
+        // 1. { "mcpServers": { ... } }  (Claude Desktop format)
+        // 2. { "servers": { ... } }     (our native format)
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(json_str);
+        let parsed = match parsed {
+            Ok(v) => v,
+            Err(e) => {
+                self.mcp_import_error = Some(format!("Invalid JSON: {}", e));
+                cx.notify();
+                return;
+            }
+        };
+
+        // Find the servers object
+        let servers_obj = parsed
+            .get("mcpServers")
+            .or_else(|| parsed.get("servers"))
+            .and_then(|v| v.as_object());
+
+        let servers_obj = match servers_obj {
+            Some(obj) => obj,
+            None => {
+                self.mcp_import_error = Some(
+                    "JSON must contain 'mcpServers' or 'servers' object".to_string(),
+                );
+                cx.notify();
+                return;
+            }
+        };
+
+        // Load existing config and merge
+        let mut config = McpConfig::load_or_default();
+        let mut imported_count = 0;
+
+        for (name, server_value) in servers_obj {
+            // Parse each server entry
+            let command = server_value
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+
+            if command.is_empty() {
+                continue; // Skip entries without command
+            }
+
+            let args: Vec<String> = server_value
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let env: std::collections::HashMap<String, String> = server_value
+                .get("env")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let description = server_value
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            let mut entry = McpServerEntry::new(command).with_args(args);
+            for (k, v) in env {
+                entry = entry.with_env(k, v);
+            }
+            if let Some(desc) = description {
+                entry = entry.with_description(desc);
+            }
+
+            config.add_server(name.clone(), entry);
+            imported_count += 1;
+        }
+
+        if imported_count == 0 {
+            self.mcp_import_error = Some("No valid MCP servers found in JSON".to_string());
+            cx.notify();
+            return;
+        }
+
+        // Save the config
+        if let Err(e) = config.save_default() {
+            self.mcp_import_error = Some(format!("Failed to save: {}", e));
+            cx.notify();
+            return;
+        }
+
+        // Success!
+        self.show_mcp_import_dialog = false;
+        self.mcp_import_json.clear();
+        self.mcp_import_error = None;
+        tracing::info!("Imported {} MCP servers", imported_count);
+        cx.notify();
     }
 
     /// Start listening to the message bus and update UI accordingly
@@ -1303,6 +1441,8 @@ impl Render for ChatApp {
             .child(self.render_input(cx))
             .child(self.render_settings(cx))
             .child(self.render_add_model_dialog(cx))
+            .child(self.render_api_keys_dialog(cx))
+            .child(self.render_mcp_import_dialog(cx))
     }
 }
 

@@ -37,3 +37,7 @@ compass_artifact_*
 # Debug/proxy scripts
 mitmproxy_logger.py
 run_with_proxy.sh
+
+node_modules/
+package.json
+package-lock.json
