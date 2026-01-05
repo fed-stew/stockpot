@@ -14,12 +14,24 @@
 //! let tools = registry.all_tools();
 //! ```
 
+// Core operations (low-level)
 pub mod agent_tools;
 mod common;
 pub mod diff;
 mod file_ops;
-pub mod registry;
 mod shell;
+
+// Tool implementations (serdesAI wrappers)
+mod delete_file_tool;
+mod edit_file_tool;
+mod grep_tool;
+mod list_files_tool;
+mod read_file_tool;
+mod reasoning_tool;
+mod shell_tool;
+
+// Registry
+pub mod registry;
 
 // Re-export low-level operations (for direct use)
 pub use agent_tools::{
@@ -30,8 +42,14 @@ pub use diff::{apply_unified_diff, is_unified_diff, UnifiedDiff};
 pub use file_ops::{apply_diff, grep, list_files, read_file, write_file};
 pub use shell::{CommandResult, CommandRunner};
 
-// Re-export registry types for convenience
-pub use registry::{
-    ArcTool, DeleteFileTool, EditFileTool, GrepTool, ListFilesTool, ReadFileTool,
-    RunShellCommandTool, ShareReasoningTool, SpotToolRegistry,
-};
+// Re-export tool types for convenience
+pub use delete_file_tool::DeleteFileTool;
+pub use edit_file_tool::EditFileTool;
+pub use grep_tool::GrepTool;
+pub use list_files_tool::ListFilesTool;
+pub use read_file_tool::ReadFileTool;
+pub use reasoning_tool::ShareReasoningTool;
+pub use shell_tool::RunShellCommandTool;
+
+// Re-export registry types
+pub use registry::{ArcTool, SpotToolRegistry};
