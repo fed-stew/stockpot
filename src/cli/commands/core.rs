@@ -7,6 +7,7 @@ use crate::agents::{AgentInfo, AgentVisibility};
 use crate::config::Settings;
 use crate::db::Database;
 use crate::models::{ModelConfig, ModelRegistry, ModelSettings};
+use crate::tokens::format_tokens_with_separator;
 
 /// Handle the /cd command - change or show working directory.
 pub fn cmd_cd(args: &str) {
@@ -68,10 +69,10 @@ pub fn cmd_show(
 
         // Rough token estimate
         let est_tokens = message_count * 500;
-        let usage_pct = (est_tokens as f64 / config.context_length as f64) * 100.0;
         println!(
-            "  Usage:       ~{:.1}% ({} est. tokens)",
-            usage_pct, est_tokens
+            "  Usage:       ~{}/{}",
+            format_tokens_with_separator(est_tokens),
+            format_tokens_with_separator(config.context_length)
         );
     }
 

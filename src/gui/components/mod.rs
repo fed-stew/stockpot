@@ -11,7 +11,9 @@ mod selectable_text;
 mod spinner;
 // Note: text_input.rs is no longer used - now using gpui_component::input::Input
 // mod text_input;
+mod throughput_chart;
 mod toolbar;
+mod tooltip;
 
 pub use chat_view::ChatView;
 pub use input_field::InputField;
@@ -31,3 +33,5 @@ pub use attachment_preview::{render_attachment_preview, render_attachments_row};
 pub use spinner::{current_spinner_frame, spinner, Spinner};
 
 pub use collapsible::{collapsible, collapsible_display, CollapsibleProps};
+pub use throughput_chart::{throughput_chart, ThroughputChartProps};
+pub use tooltip::SimpleTooltip;

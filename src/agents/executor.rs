@@ -475,7 +475,7 @@ impl<'a> AgentExecutor<'a> {
         let mut builder = agent(wrapped_model)
             .system_prompt(spot_agent.system_prompt())
             .temperature(0.7)
-            .max_tokens(4096);
+            .max_tokens(16384);
 
         // Register built-in tools with real executors
         for tool in tools {
@@ -1183,7 +1183,7 @@ impl<'a> AgentExecutor<'a> {
             let mut builder = agent(wrapped_model)
                 .system_prompt(system_prompt)
                 .temperature(0.7)
-                .max_tokens(4096);
+                .max_tokens(16384);
 
             match tool_return_recorder {
                 Some(recorder) => {

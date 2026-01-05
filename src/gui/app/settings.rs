@@ -345,6 +345,7 @@ impl ChatApp {
                                                         this.current_model = model_name.clone();
                                                         let settings = Settings::new(&this.db);
                                                         let _ = settings.set("model", &model_name);
+                                                        this.update_context_usage();
                                                         this.show_default_model_dropdown = false;
                                                         cx.notify();
                                                     }),
@@ -763,6 +764,7 @@ impl ChatApp {
                                             this.current_model = model_name.clone();
                                             let settings = Settings::new(&this.db);
                                             let _ = settings.set("model", &model_name);
+                                            this.update_context_usage();
                                             cx.notify();
                                         }),
                                     )

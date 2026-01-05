@@ -1,7 +1,9 @@
 use gpui::{div, prelude::*, px, rgb, Context, MouseButton, Styled};
 use rfd::FileDialog;
 
+use super::super::components::{throughput_chart, ThroughputChartProps};
 use super::{ChatApp, NewConversation};
+use crate::tokens::format_tokens_with_separator;
 
 impl ChatApp {
     pub(super) fn render_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -18,6 +20,33 @@ impl ChatApp {
         } else {
             "▾"
         };
+
+        // Context usage calculation
+        let usage_percent = if self.context_window_size > 0 {
+            ((self.context_tokens_used as f64 / self.context_window_size as f64) * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+
+        // Color based on usage threshold
+        let (progress_color, label_color) = if usage_percent > 80.0 {
+            (self.theme.error, self.theme.error)
+        } else if usage_percent > 60.0 {
+            (self.theme.warning, self.theme.warning)
+        } else {
+            (self.theme.accent, self.theme.text_muted)
+        };
+
+        // Capture for tooltip closure
+        let context_tokens_used = self.context_tokens_used;
+        let context_window_size = self.context_window_size;
+        let current_throughput_cps = self.current_throughput_cps;
+        let throughput_history: Vec<f64> = self.throughput_history.iter().cloned().collect();
+        let is_streaming_active = self.is_streaming_active;
+        let theme_accent = self.theme.accent;
+        let theme_success = self.theme.success;
+        let theme_border = self.theme.border;
+        let theme_text_muted = self.theme.text_muted;
 
         let view = cx.entity().clone();
 
@@ -153,6 +182,93 @@ impl ChatApp {
                                     )
                                     .child(model_bounds_tracker)
                                     .child(format!("📦 {} {}", model_display, model_chevron)),
+                            )
+                            // Context usage indicator
+                            .child(
+                                div()
+                                    .id("context-usage")
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .px(px(10.))
+                                    .py(px(5.))
+                                    .rounded(px(6.))
+                                    .bg(self.theme.tool_card)
+                                    .tooltip(move |_window, cx| {
+                                        cx.new(|_| {
+                                            super::super::components::SimpleTooltip::new(
+                                                format!("~{} / {} tokens", context_tokens_used, context_window_size)
+                                            )
+                                        }).into()
+                                    })
+                                    // Label
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(self.theme.text_muted)
+                                            .child("Context:")
+                                    )
+                                    // Progress bar container
+                                    .child(
+                                        div()
+                                            .w(px(60.))
+                                            .h(px(4.))
+                                            .bg(self.theme.border)
+                                            .rounded(px(2.))
+                                            .overflow_hidden()
+                                            .child(
+                                                // Progress bar fill
+                                                div()
+                                                    .h_full()
+                                                    .w(gpui::relative(usage_percent as f32 / 100.0))
+                                                    .bg(progress_color)
+                                                    .rounded(px(2.))
+                                            )
+                                    )
+                                    // Token count text
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(label_color)
+                                            .child(format!(
+                                                "{}/{}",
+                                                format_tokens_with_separator(context_tokens_used),
+                                                format_tokens_with_separator(context_window_size)
+                                            ))
+                                    )
+                            )
+                            // Throughput chart
+                            .child(
+                                div()
+                                    .id("throughput-chart")
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.))
+                                    .tooltip(move |_window, cx| {
+                                        let cps_display = if current_throughput_cps > 0.0 {
+                                            format!("{:.0} chars/sec", current_throughput_cps)
+                                        } else {
+                                            "Idle".to_string()
+                                        };
+                                        cx.new(|_| {
+                                            super::super::components::SimpleTooltip::new(cps_display)
+                                        }).into()
+                                    })
+                                    .child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(theme_text_muted)
+                                            .child("Speed:")
+                                    )
+                                    .child(throughput_chart(ThroughputChartProps {
+                                        samples: throughput_history,
+                                        current_cps: current_throughput_cps,
+                                        is_active: is_streaming_active,
+                                        max_cps: 500.0,
+                                        bar_color: theme_accent,
+                                        bar_color_fast: theme_success,
+                                        background_color: theme_border,
+                                    }))
                             ),
                     )
                     .child(
@@ -161,17 +277,7 @@ impl ChatApp {
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            // MCP status
-                            .child(
-                                div()
-                                    .px(px(10.))
-                                    .py(px(5.))
-                                    .rounded(px(6.))
-                                    .bg(self.theme.tool_card)
-                                    .text_color(self.theme.text_muted)
-                                    .text_size(px(12.))
-                                    .child("🔌 MCP"),
-                            )
+
                             // New conversation
                             .child(
                                 div()

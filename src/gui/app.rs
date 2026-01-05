@@ -1,6 +1,6 @@
 //! Main application state and rendering
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -85,6 +85,24 @@ pub struct ChatApp {
     mcp_manager: Arc<McpManager>,
     /// Message history for context
     message_history: Vec<serdes_ai_core::ModelRequest>,
+    /// Estimated tokens currently used in context
+    context_tokens_used: usize,
+    /// Current model's context window size
+    context_window_size: usize,
+    /// Last time context usage was updated (for throttling)
+    last_context_update: std::time::Instant,
+    /// Rolling window of throughput samples: (chars_in_sample, timestamp)
+    throughput_samples: Vec<(usize, std::time::Instant)>,
+    /// Current calculated throughput in chars/sec (for display)
+    current_throughput_cps: f64,
+    /// Whether we're actively receiving streaming data
+    is_streaming_active: bool,
+    /// Historical throughput values for chart display (last 8 values, sampled every 250ms)
+    throughput_history: VecDeque<f64>,
+    /// Last time we triggered a UI render (for throttling during streaming)
+    last_render_notify: std::time::Instant,
+    /// Last time we added a history sample
+    last_history_sample: std::time::Instant,
     /// Available agents list
     available_agents: Vec<(String, String)>,
     /// Available models list
@@ -238,6 +256,15 @@ impl ChatApp {
             tool_registry,
             mcp_manager,
             message_history: Vec::new(),
+            context_tokens_used: 0,
+            context_window_size: 0,
+            last_context_update: std::time::Instant::now(),
+            throughput_samples: Vec::new(),
+            current_throughput_cps: 0.0,
+            is_streaming_active: false,
+            throughput_history: VecDeque::new(),
+            last_render_notify: std::time::Instant::now(),
+            last_history_sample: std::time::Instant::now(),
             available_agents,
             available_models,
             show_settings: false,
@@ -483,7 +510,7 @@ impl ChatApp {
 
     /// Handle incoming messages from the agent
     fn handle_message(&mut self, msg: Message, cx: &mut Context<Self>) {
-        match msg {
+        match &msg {
             Message::TextDelta(delta) => {
                 // Check if this delta is from a nested agent
                 if let Some(agent_name) = &delta.agent_name {
@@ -498,6 +525,15 @@ impl ChatApp {
                 } else {
                     // No agent attribution - append to current (handles main agent)
                     self.conversation.append_to_current(&delta.text);
+                }
+
+                // Track throughput
+                self.update_throughput(delta.text.len());
+
+                // Throttled context usage update (every 500ms during streaming)
+                if self.last_context_update.elapsed() > std::time::Duration::from_millis(500) {
+                    self.update_context_usage();
+                    self.last_context_update = std::time::Instant::now();
                 }
 
                 // Auto-scroll to bottom if user hasn't scrolled away
@@ -546,6 +582,8 @@ impl ChatApp {
                         } else {
                             self.conversation.complete_tool_call(&tool.tool_name, true);
                         }
+                        // Update context usage after tool completes
+                        self.update_context_usage();
                     }
                     ToolStatus::Failed => {
                         if let Some(agent_name) = &tool.agent_name {
@@ -561,11 +599,13 @@ impl ChatApp {
                         } else {
                             self.conversation.complete_tool_call(&tool.tool_name, false);
                         }
+                        // Update context usage after tool fails
+                        self.update_context_usage();
                     }
                     _ => {}
                 }
             }
-            Message::Agent(agent) => match agent.event {
+            Message::Agent(agent) => match &agent.event {
                 AgentEvent::Started => {
                     if self.active_agent_stack.is_empty() {
                         // Main agent starting - existing behavior
@@ -574,6 +614,10 @@ impl ChatApp {
                         // Reset scroll state and scroll to bottom for new response
                         self.user_scrolled_away = false;
                         self.scroll_messages_to_bottom();
+                        // Update context at start of conversation
+                        self.update_context_usage();
+                        // Reset throughput tracking for new response
+                        self.reset_throughput();
                     } else {
                         // Sub-agent starting - create collapsible section
                         if let Some(section_id) = self
@@ -597,10 +641,15 @@ impl ChatApp {
                         }
                     }
 
+                    // Update context usage when agent completes
+                    self.update_context_usage();
+
                     // Only finish generating if main agent completed (stack empty)
                     if self.active_agent_stack.is_empty() {
                         self.conversation.finish_current_message();
                         self.is_generating = false;
+                        // Stop throughput tracking
+                        self.is_streaming_active = false;
                     }
                 }
                 AgentEvent::Error { message } => {
@@ -624,13 +673,29 @@ impl ChatApp {
                             .append_to_current(&format!("\n\n❌ Error: {}", message));
                         self.conversation.finish_current_message();
                         self.is_generating = false;
-                        self.error_message = Some(message);
+                        self.error_message = Some(message.clone());
                     }
                 }
             },
             _ => {}
         }
-        cx.notify();
+
+        // Throttle notifications during streaming to ~60fps (16ms)
+        let should_notify = match &msg {
+            Message::TextDelta(_) => {
+                if self.last_render_notify.elapsed() > std::time::Duration::from_millis(16) {
+                    self.last_render_notify = std::time::Instant::now();
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => true, // All other message types notify immediately
+        };
+
+        if should_notify {
+            cx.notify();
+        }
     }
 
     /// Toggle a nested agent section's collapsed state
@@ -902,6 +967,9 @@ impl ChatApp {
         self.is_generating = true;
         self.error_message = None;
 
+        // Update context before spawning - gives initial estimate
+        self.update_context_usage();
+
         cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
             // Destructure the data bundle
             let ExecuteData {
@@ -978,12 +1046,19 @@ impl ChatApp {
             };
 
             // Update state based on result
+            tracing::info!("Execution async task finished, calling this.update()");
             this.update(cx, |app, cx| {
+                tracing::info!("Inside this.update() callback");
                 app.is_generating = false;
                 match result {
                     Ok(exec_result) => {
+                        tracing::info!(
+                            messages_count = exec_result.messages.len(),
+                            "Execution completed, updating message history"
+                        );
                         if !exec_result.messages.is_empty() {
                             app.message_history = exec_result.messages;
+                            app.update_context_usage();
                         }
                     }
                     Err(e) => {
@@ -995,6 +1070,7 @@ impl ChatApp {
                 }
                 cx.notify();
             })
+            .map_err(|e| tracing::error!("this.update() failed: {:?}", e))
             .ok();
         })
         .detach();
@@ -1040,7 +1116,7 @@ impl ChatApp {
         cx: &mut Context<Self>,
     ) {
         use crate::models::{CustomEndpoint, ModelConfig, ModelRegistry, ModelType};
-        use std::collections::HashMap;
+        use std::collections::{HashMap, VecDeque};
 
         self.add_model_error = None;
 
@@ -1172,6 +1248,7 @@ impl ChatApp {
                 }
                 cx.notify();
             })
+            .map_err(|e| tracing::error!("this.update() failed: {:?}", e))
             .ok();
         })
         .detach();
@@ -1298,6 +1375,7 @@ impl ChatApp {
                 app.pending_attachments.extend(new_attachments);
                 cx.notify();
             })
+            .map_err(|e| tracing::error!("this.update() failed: {:?}", e))
             .ok();
         })
         .detach();
@@ -1408,6 +1486,7 @@ impl ChatApp {
     ) {
         self.conversation.clear();
         self.message_history.clear();
+        self.update_context_usage();
         self.active_agent_stack.clear();
         self.active_section_ids.clear();
         self.input_state.update(cx, |state, cx| {
@@ -1522,6 +1601,86 @@ impl ChatApp {
 
     fn current_effective_model(&self) -> (String, bool) {
         self.effective_model_for_agent(&self.current_agent)
+    }
+
+    /// Update the context usage metrics based on current message history
+    fn update_context_usage(&mut self) {
+        // Get context window size from current model
+        let (effective_model, _) = self.current_effective_model();
+        let model = self.model_registry.get(&effective_model);
+        self.context_window_size = model
+            .map(|m| m.context_length)
+            .unwrap_or(128_000);
+
+        // Estimate tokens - during streaming use conversation content (includes in-progress response),
+        // otherwise use message_history for accurate count
+        if self.is_generating {
+            // During streaming, estimate from conversation content
+            // ~4 chars per token approximation
+            let conv_chars: usize = self.conversation.messages.iter()
+                .map(|m| m.content.len())
+                .sum();
+            self.context_tokens_used = conv_chars / 4;
+        } else if !self.message_history.is_empty() {
+            self.context_tokens_used = crate::tokens::estimate_tokens(&self.message_history);
+        } else {
+            // Fallback for empty history
+            let conv_chars: usize = self.conversation.messages.iter()
+                .map(|m| m.content.len())
+                .sum();
+            self.context_tokens_used = conv_chars / 4;
+        }
+
+        tracing::debug!(
+            model = %effective_model,
+            context_window = self.context_window_size,
+            tokens_used = self.context_tokens_used,
+            history_len = self.message_history.len(),
+            "Context usage updated"
+        );
+    }
+
+    /// Update throughput calculation based on incoming text delta
+    fn update_throughput(&mut self, chars_received: usize) {
+        let now = std::time::Instant::now();
+
+        // Add new sample
+        self.throughput_samples.push((chars_received, now));
+
+        // Keep only samples from last 2 seconds
+        let cutoff = now - std::time::Duration::from_secs(2);
+        self.throughput_samples.retain(|(_, ts)| *ts > cutoff);
+
+        // Calculate throughput if we have samples spanning at least 100ms
+        if self.throughput_samples.len() >= 2 {
+            let first_ts = self.throughput_samples.first().map(|(_, ts)| *ts).unwrap();
+            let elapsed = now.duration_since(first_ts).as_secs_f64();
+
+            if elapsed > 0.1 {
+                let total_chars: usize = self.throughput_samples.iter().map(|(c, _)| *c).sum();
+                self.current_throughput_cps = total_chars as f64 / elapsed;
+            }
+        }
+
+        // Add to history every 250ms for chart display
+        if self.last_history_sample.elapsed() > std::time::Duration::from_millis(250) {
+            self.throughput_history.push_back(self.current_throughput_cps);
+            // Keep only last 8 samples
+            while self.throughput_history.len() > 8 {
+                self.throughput_history.pop_front();
+            }
+            self.last_history_sample = now;
+        }
+
+        self.is_streaming_active = true;
+    }
+
+    /// Reset throughput tracking (call when streaming starts)
+    fn reset_throughput(&mut self) {
+        self.throughput_samples.clear();
+        self.throughput_history.clear();
+        self.current_throughput_cps = 0.0;
+        self.is_streaming_active = false;
     }
 
     /// Get display name for current agent

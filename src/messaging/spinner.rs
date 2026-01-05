@@ -208,15 +208,9 @@ impl Default for Spinner {
     }
 }
 
-/// Format token count for display (e.g., 1.2k, 128k).
+/// Format token count for display with space as thousands separator.
 fn format_tokens(count: usize) -> String {
-    if count >= 1_000_000 {
-        format!("{:.1}M", count as f64 / 1_000_000.0)
-    } else if count >= 1000 {
-        format!("{:.1}k", count as f64 / 1000.0)
-    } else {
-        count.to_string()
-    }
+    crate::tokens::format_tokens_with_separator(count)
 }
 
 #[cfg(test)]
@@ -226,9 +220,9 @@ mod tests {
     #[test]
     fn test_format_tokens() {
         assert_eq!(format_tokens(500), "500");
-        assert_eq!(format_tokens(1500), "1.5k");
-        assert_eq!(format_tokens(128000), "128.0k");
-        assert_eq!(format_tokens(1500000), "1.5M");
+        assert_eq!(format_tokens(1500), "1 500");
+        assert_eq!(format_tokens(128000), "128 000");
+        assert_eq!(format_tokens(1500000), "1 500 000");
     }
 
     #[test]

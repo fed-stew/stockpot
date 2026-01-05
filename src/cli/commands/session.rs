@@ -4,7 +4,7 @@ use crate::agents::AgentManager;
 use crate::config::Settings;
 use crate::db::Database;
 use crate::session::{format_relative_time, SessionData, SessionManager};
-use crate::tokens::estimate_tokens;
+use crate::tokens::{estimate_tokens, format_tokens_with_separator};
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use serdes_ai_core::ModelRequest;
 
@@ -157,7 +157,11 @@ pub fn cmd_context(
     println!("  Messages:    {}", messages.len());
     println!("  Tokens:      ~{}", token_count);
     println!("  Context:     {} max", context_length);
-    println!("  Usage:       {:.1}%", usage_pct);
+    println!(
+        "  Usage:       {}/{}",
+        format_tokens_with_separator(token_count),
+        format_tokens_with_separator(context_length)
+    );
 
     // Visual bar
     let bar_width = 30;
