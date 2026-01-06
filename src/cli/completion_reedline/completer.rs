@@ -287,3 +287,281 @@ fn complete_command(input: &str, pos: usize) -> Vec<Suggestion> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== Construction and setters ====================
+
+    #[test]
+    fn test_spot_completer_new() {
+        let completer = SpotCompleter::new();
+        assert!(completer.models.is_empty());
+        assert!(completer.agents.is_empty());
+        assert!(completer.sessions.is_empty());
+        assert!(completer.mcp_servers.is_empty());
+    }
+
+    #[test]
+    fn test_spot_completer_default() {
+        let completer = SpotCompleter::default();
+        assert!(completer.models.is_empty());
+        assert!(completer.agents.is_empty());
+        assert!(completer.sessions.is_empty());
+        assert!(completer.mcp_servers.is_empty());
+    }
+
+    #[test]
+    fn test_spot_completer_set_models() {
+        let mut completer = SpotCompleter::new();
+        completer.set_models(vec!["gpt-4".to_string(), "claude-3".to_string()]);
+        assert_eq!(completer.models.len(), 2);
+        assert_eq!(completer.models[0], "gpt-4");
+        assert_eq!(completer.models[1], "claude-3");
+    }
+
+    #[test]
+    fn test_spot_completer_set_agents() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec!["coder".to_string(), "assistant".to_string()]);
+        assert_eq!(completer.agents.len(), 2);
+        assert_eq!(completer.agents[0], "coder");
+        assert_eq!(completer.agents[1], "assistant");
+    }
+
+    #[test]
+    fn test_spot_completer_set_sessions() {
+        let mut completer = SpotCompleter::new();
+        completer.set_sessions(vec!["session1".to_string(), "session2".to_string()]);
+        assert_eq!(completer.sessions.len(), 2);
+        assert_eq!(completer.sessions[0], "session1");
+    }
+
+    #[test]
+    fn test_spot_completer_set_mcp_servers() {
+        let mut completer = SpotCompleter::new();
+        completer.set_mcp_servers(vec!["server1".to_string(), "server2".to_string()]);
+        assert_eq!(completer.mcp_servers.len(), 2);
+        assert_eq!(completer.mcp_servers[0], "server1");
+    }
+
+    // ==================== Completer::complete() method tests ====================
+
+    #[test]
+    fn test_complete_empty_input() {
+        let mut completer = SpotCompleter::new();
+        let result = completer.complete("", 0);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_complete_no_slash_prefix() {
+        let mut completer = SpotCompleter::new();
+        let result = completer.complete("help", 4);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_complete_pos_beyond_line_length() {
+        let mut completer = SpotCompleter::new();
+        let result = completer.complete("/help", 10);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_complete_command_no_space() {
+        let mut completer = SpotCompleter::new();
+        let result = completer.complete("/hel", 4);
+        assert!(!result.is_empty());
+        assert!(result.iter().any(|s| s.value == "/help"));
+    }
+
+    #[test]
+    fn test_complete_model_with_prefix() {
+        let mut completer = SpotCompleter::new();
+        completer.set_models(vec![
+            "gpt-4".to_string(),
+            "gpt-3.5".to_string(),
+            "claude-3".to_string(),
+        ]);
+        let result = completer.complete("/model gpt", 10);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|s| s.value.starts_with("gpt")));
+    }
+
+    #[test]
+    fn test_complete_model_empty_prefix() {
+        let mut completer = SpotCompleter::new();
+        let models: Vec<String> = (0..15).map(|i| format!("model-{}", i)).collect();
+        completer.set_models(models);
+        let result = completer.complete("/model ", 7);
+        // Should return up to 12 models
+        assert_eq!(result.len(), 12);
+    }
+
+    #[test]
+    fn test_complete_model_short_alias() {
+        let mut completer = SpotCompleter::new();
+        completer.set_models(vec!["gpt-4".to_string(), "claude-3".to_string()]);
+        let result = completer.complete("/m ", 3);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_complete_pin_just_command() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec!["coder".to_string(), "assistant".to_string()]);
+        completer.set_models(vec!["gpt-4".to_string()]);
+        let result = completer.complete("/pin ", 5);
+        // Should show agents, not models
+        assert_eq!(result.len(), 2);
+        assert!(result
+            .iter()
+            .all(|s| s.description == Some("agent".to_string())));
+    }
+
+    #[test]
+    fn test_complete_pin_with_valid_agent() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec!["coder".to_string(), "assistant".to_string()]);
+        completer.set_models(vec!["gpt-4".to_string(), "claude-3".to_string()]);
+        let result = completer.complete("/pin coder ", 11);
+        // Should show models now
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|s| s.value == "gpt-4"));
+    }
+
+    #[test]
+    fn test_complete_pin_with_partial_agent() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec!["coder".to_string(), "assistant".to_string()]);
+        let result = completer.complete("/pin cod", 8);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, "coder");
+    }
+
+    #[test]
+    fn test_complete_unpin_filters_agents() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec!["coder".to_string(), "assistant".to_string()]);
+        let result = completer.complete("/unpin as", 9);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, "assistant");
+    }
+
+    #[test]
+    fn test_complete_agent_prefix() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec![
+            "coder".to_string(),
+            "assistant".to_string(),
+            "code-review".to_string(),
+        ]);
+        let result = completer.complete("/agent co", 9);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|s| s.value.starts_with("co")));
+    }
+
+    #[test]
+    fn test_complete_agent_short_alias() {
+        let mut completer = SpotCompleter::new();
+        completer.set_agents(vec!["coder".to_string(), "assistant".to_string()]);
+        let result = completer.complete("/a ", 3);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_complete_session_load() {
+        let mut completer = SpotCompleter::new();
+        completer.set_sessions(vec!["session1".to_string(), "session2".to_string()]);
+        let result = completer.complete("/load ", 6);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_complete_session_resume() {
+        let mut completer = SpotCompleter::new();
+        completer.set_sessions(vec!["session1".to_string(), "session2".to_string()]);
+        let result = completer.complete("/resume ses", 11);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_complete_session_delete() {
+        let mut completer = SpotCompleter::new();
+        completer.set_sessions(vec!["session1".to_string(), "other".to_string()]);
+        let result = completer.complete("/delete-session ses", 19);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, "session1");
+    }
+
+    #[test]
+    fn test_complete_mcp_subcommand_no_space() {
+        let mut completer = SpotCompleter::new();
+        let result = completer.complete("/mcp sta", 8);
+        assert!(!result.is_empty());
+        assert!(result.iter().any(|s| s.value == "start"));
+        assert!(result.iter().any(|s| s.value == "start-all"));
+        assert!(result.iter().any(|s| s.value == "status"));
+    }
+
+    #[test]
+    fn test_complete_mcp_server_start() {
+        let mut completer = SpotCompleter::new();
+        completer.set_mcp_servers(vec!["filesystem".to_string(), "git".to_string()]);
+        let result = completer.complete("/mcp start ", 11);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_complete_mcp_server_stop() {
+        let mut completer = SpotCompleter::new();
+        completer.set_mcp_servers(vec!["filesystem".to_string(), "git".to_string()]);
+        let result = completer.complete("/mcp stop fi", 12);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].value, "filesystem");
+    }
+
+    #[test]
+    fn test_complete_unknown_returns_empty() {
+        let mut completer = SpotCompleter::new();
+        let result = completer.complete("/unknown-cmd arg", 16);
+        assert!(result.is_empty());
+    }
+
+    // ==================== complete_command function tests ====================
+
+    #[test]
+    fn test_complete_command_full_match() {
+        let result = complete_command("/help", 5);
+        assert!(result.iter().any(|s| s.value == "/help"));
+    }
+
+    #[test]
+    fn test_complete_command_partial_match() {
+        let result = complete_command("/mod", 4);
+        assert!(result.iter().any(|s| s.value == "/model"));
+        assert!(result.iter().any(|s| s.value == "/models"));
+        assert!(result.iter().any(|s| s.value == "/model_settings"));
+    }
+
+    #[test]
+    fn test_complete_command_case_insensitive() {
+        let result = complete_command("/HELP", 5);
+        assert!(result.iter().any(|s| s.value == "/help"));
+    }
+
+    #[test]
+    fn test_complete_command_limit_10() {
+        // "/" should match all commands but be limited to 10
+        let result = complete_command("/", 1);
+        assert!(result.len() <= 10);
+    }
+
+    #[test]
+    fn test_complete_command_no_match_returns_empty() {
+        let result = complete_command("/zzzznonexistent", 16);
+        assert!(result.is_empty());
+    }
+}

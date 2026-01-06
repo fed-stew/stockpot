@@ -11,8 +11,8 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
 use serdes_ai_agent::{agent, RunOptions};
-use serdes_ai_core::messages::{UserContent, UserContentPart};
 use serdes_ai_core::messages::ToolCallArgs;
+use serdes_ai_core::messages::{UserContent, UserContentPart};
 use serdes_ai_core::{
     ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, TextPart, ToolCallPart,
     ToolReturnPart,
@@ -456,5 +456,123 @@ fn log_http_error(error_str: &str) {
 
     if error_str.contains("body:") {
         error!("API Error Body: {}", error_str);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // log_http_error Tests
+    // =========================================================================
+
+    // Note: log_http_error doesn't return anything, so we test it doesn't panic
+    // and verify correct behavior via tracing subscriber if needed.
+
+    #[test]
+    fn test_log_http_error_400_bad_request() {
+        // Should not panic
+        log_http_error("HTTP error status: 400 Bad Request");
+    }
+
+    #[test]
+    fn test_log_http_error_401_unauthorized() {
+        log_http_error("HTTP error status: 401 Unauthorized");
+    }
+
+    #[test]
+    fn test_log_http_error_403_forbidden() {
+        log_http_error("HTTP error status: 403 Forbidden");
+    }
+
+    #[test]
+    fn test_log_http_error_404_not_found() {
+        log_http_error("HTTP error status: 404 Not Found");
+    }
+
+    #[test]
+    fn test_log_http_error_429_rate_limited() {
+        log_http_error("HTTP error status: 429 Too Many Requests");
+    }
+
+    #[test]
+    fn test_log_http_error_500_server_error() {
+        log_http_error("HTTP error status: 500 Internal Server Error");
+    }
+
+    #[test]
+    fn test_log_http_error_502_bad_gateway() {
+        log_http_error("HTTP error status: 502 Bad Gateway");
+    }
+
+    #[test]
+    fn test_log_http_error_503_service_unavailable() {
+        log_http_error("HTTP error status: 503 Service Unavailable");
+    }
+
+    #[test]
+    fn test_log_http_error_with_body() {
+        log_http_error("Error body: {\"error\": \"invalid_api_key\"}");
+    }
+
+    #[test]
+    fn test_log_http_error_combined_status_and_body() {
+        log_http_error("HTTP error status: 401, body: {\"error\": \"unauthorized\"}");
+    }
+
+    #[test]
+    fn test_log_http_error_unknown_error() {
+        // Should handle unknown errors gracefully (no panic)
+        log_http_error("Connection refused");
+    }
+
+    #[test]
+    fn test_log_http_error_empty_string() {
+        log_http_error("");
+    }
+
+    // =========================================================================
+    // RawToolCall Tests (struct is private, but we can test it within module)
+    // =========================================================================
+
+    #[test]
+    fn test_raw_tool_call_creation() {
+        let tc = RawToolCall {
+            tool_name: "read_file".to_string(),
+            tool_call_id: Some("call_123".to_string()),
+            args_buffer: String::new(),
+        };
+
+        assert_eq!(tc.tool_name, "read_file");
+        assert_eq!(tc.tool_call_id, Some("call_123".to_string()));
+        assert!(tc.args_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_raw_tool_call_without_id() {
+        let tc = RawToolCall {
+            tool_name: "shell_command".to_string(),
+            tool_call_id: None,
+            args_buffer: "{\"command\": \"ls\"}".to_string(),
+        };
+
+        assert_eq!(tc.tool_name, "shell_command");
+        assert!(tc.tool_call_id.is_none());
+        assert_eq!(tc.args_buffer, "{\"command\": \"ls\"}");
+    }
+
+    #[test]
+    fn test_raw_tool_call_args_buffer_append() {
+        let mut tc = RawToolCall {
+            tool_name: "test".to_string(),
+            tool_call_id: None,
+            args_buffer: String::new(),
+        };
+
+        tc.args_buffer.push_str("{\"key\":");
+        tc.args_buffer.push_str(" \"value\"}");
+
+        assert_eq!(tc.args_buffer, "{\"key\": \"value\"}");
     }
 }

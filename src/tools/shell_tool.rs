@@ -118,3 +118,481 @@ impl Tool for RunShellCommandTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // definition() Tests
+    // =========================================================================
+
+    #[test]
+    fn test_definition_returns_correct_name() {
+        let tool = RunShellCommandTool;
+        let def = tool.definition();
+        assert_eq!(def.name(), "run_shell_command");
+    }
+
+    #[test]
+    fn test_definition_has_description() {
+        let tool = RunShellCommandTool;
+        let def = tool.definition();
+        assert!(def.description().contains("Execute"));
+        assert!(def.description().contains("shell"));
+    }
+
+    #[test]
+    fn test_definition_has_parameters() {
+        let tool = RunShellCommandTool;
+        let def = tool.definition();
+        let params = def.parameters();
+        assert!(params.is_object());
+        let schema_str = serde_json::to_string(params).unwrap();
+        assert!(schema_str.contains("command"));
+        assert!(schema_str.contains("working_directory"));
+        assert!(schema_str.contains("timeout_seconds"));
+    }
+
+    #[test]
+    fn test_definition_command_is_required() {
+        let tool = RunShellCommandTool;
+        let def = tool.definition();
+        let params = def.parameters();
+        let schema_str = serde_json::to_string(params).unwrap();
+        assert!(schema_str.contains("required"));
+        assert!(schema_str.contains("command"));
+    }
+
+    // =========================================================================
+    // call() Success Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_call_success_with_output() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "echo hello" }))
+            .await;
+
+        assert!(result.is_ok());
+        let ret = result.unwrap();
+        assert!(!ret.is_error());
+        let text = ret.as_text().unwrap();
+        assert!(text.contains("successfully"));
+        assert!(text.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_call_success_exit_code_zero() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "echo test" }))
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("exit code: 0"));
+    }
+
+    #[tokio::test]
+    async fn test_call_includes_stdout_section() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "echo output" }))
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("--- stdout ---"));
+        assert!(text.contains("output"));
+    }
+
+    // =========================================================================
+    // call() With working_directory Tests
+    // =========================================================================
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_with_working_directory() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "command": "pwd",
+                    "working_directory": dir.path().to_str().unwrap()
+                }),
+            )
+            .await
+            .unwrap();
+
+        // On macOS, /tmp is a symlink to /private/tmp
+        let text = result.as_text().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
+        assert!(
+            text.contains(dir_str) || text.contains("/private") || text.contains("tmp"),
+            "Expected working directory in output, got: {}",
+            text
+        );
+    }
+
+    #[tokio::test]
+    async fn test_call_invalid_working_directory() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "command": "echo test",
+                    "working_directory": "/nonexistent/path/xyz123abc"
+                }),
+            )
+            .await;
+
+        assert!(result.is_ok());
+        let ret = result.unwrap();
+        assert!(ret.is_error());
+        assert!(ret.as_text().unwrap().contains("failed"));
+    }
+
+    // =========================================================================
+    // call() With timeout_seconds Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_call_with_timeout_seconds() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        // Quick command with timeout - should succeed
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "command": "echo fast",
+                    "timeout_seconds": 60
+                }),
+            )
+            .await;
+
+        assert!(result.is_ok());
+        let ret = result.unwrap();
+        assert!(!ret.is_error());
+        assert!(ret.as_text().unwrap().contains("fast"));
+    }
+
+    // =========================================================================
+    // call() Command Not Found Tests
+    // =========================================================================
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_command_not_found() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({ "command": "nonexistent_command_xyz123abc456" }),
+            )
+            .await;
+
+        assert!(result.is_ok());
+        let ret = result.unwrap();
+        // Either is_error or has non-zero exit code
+        assert!(ret.is_error() || ret.as_text().unwrap().contains("failed"));
+    }
+
+    // =========================================================================
+    // call() Failed Exit Code Tests
+    // =========================================================================
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_failed_exit_code() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "exit 42" }))
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("failed"));
+        assert!(text.contains("exit code: 42"));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_exit_code_1() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "exit 1" }))
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("failed"));
+        assert!(text.contains("exit code: 1"));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_captures_stderr() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "echo error >&2" }))
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("--- stderr ---"));
+        assert!(text.contains("error"));
+    }
+
+    // =========================================================================
+    // call() Invalid Args Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_call_missing_command_returns_error() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool.call(&ctx, serde_json::json!({})).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_call_wrong_type_command_returns_error() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool.call(&ctx, serde_json::json!({ "command": 123 })).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_call_wrong_type_working_directory_returns_error() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({ "command": "echo", "working_directory": 123 }),
+            )
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_call_wrong_type_timeout_returns_error() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({ "command": "echo", "timeout_seconds": "sixty" }),
+            )
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_call_array_args_returns_error() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool.call(&ctx, serde_json::json!(["echo", "hello"])).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_call_null_command_returns_error() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": null }))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Additional Edge Cases
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_call_empty_command() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        // Empty command should execute (shell handles it)
+        let result = tool.call(&ctx, serde_json::json!({ "command": "" })).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_command_with_pipe() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({ "command": "echo 'hello world' | grep hello" }),
+            )
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("successfully"));
+        assert!(text.contains("hello"));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_command_with_multiple_statements() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({ "command": "echo first; echo second" }),
+            )
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("first"));
+        assert!(text.contains("second"));
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_command_with_env_expansion() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(&ctx, serde_json::json!({ "command": "echo $HOME" }))
+            .await
+            .unwrap();
+
+        // $HOME should be expanded
+        let text = result.as_text().unwrap();
+        assert!(text.contains("/"));
+    }
+
+    #[tokio::test]
+    async fn test_call_extra_fields_ignored() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "command": "echo test",
+                    "extra_field": "ignored"
+                }),
+            )
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_call_mixed_stdout_stderr() {
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({ "command": "echo out; echo err >&2" }),
+            )
+            .await
+            .unwrap();
+
+        let text = result.as_text().unwrap();
+        assert!(text.contains("--- stdout ---"));
+        assert!(text.contains("out"));
+        assert!(text.contains("--- stderr ---"));
+        assert!(text.contains("err"));
+    }
+
+    #[test]
+    fn test_tool_debug_impl() {
+        let tool = RunShellCommandTool;
+        let debug_str = format!("{:?}", tool);
+        assert!(debug_str.contains("RunShellCommandTool"));
+    }
+
+    #[test]
+    fn test_tool_clone_impl() {
+        let tool = RunShellCommandTool;
+        let cloned = tool.clone();
+        assert_eq!(tool.definition().name(), cloned.definition().name());
+    }
+
+    #[test]
+    fn test_tool_default_impl() {
+        let tool = RunShellCommandTool::default();
+        assert_eq!(tool.definition().name(), "run_shell_command");
+    }
+
+    #[tokio::test]
+    async fn test_call_with_all_options() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+
+        let tool = RunShellCommandTool;
+        let ctx = RunContext::minimal("test");
+
+        let result = tool
+            .call(
+                &ctx,
+                serde_json::json!({
+                    "command": "echo complete",
+                    "working_directory": dir.path().to_str().unwrap(),
+                    "timeout_seconds": 30
+                }),
+            )
+            .await;
+
+        assert!(result.is_ok());
+        let ret = result.unwrap();
+        assert!(ret.as_text().unwrap().contains("complete"));
+    }
+}

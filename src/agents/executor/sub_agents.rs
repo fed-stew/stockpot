@@ -262,3 +262,99 @@ impl serdes_ai_agent::ToolExecutor<()> for ListAgentsExecutor {
         })))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // =========================================================================
+    // InvokeAgentExecutor Tests
+    // =========================================================================
+
+    #[test]
+    fn test_invoke_agent_executor_new_with_path() {
+        let db_path = PathBuf::from("/tmp/test.db");
+        let executor = InvokeAgentExecutor::new_with_path(db_path.clone(), "gpt-4", None);
+
+        assert_eq!(executor.db_path, db_path);
+        assert_eq!(executor.current_model, "gpt-4");
+        assert!(executor.bus.is_none());
+    }
+
+    #[test]
+    fn test_invoke_agent_executor_new_with_path_and_bus() {
+        use crate::messaging::MessageBus;
+
+        let db_path = PathBuf::from("/tmp/test.db");
+        let msg_bus = MessageBus::new();
+        let bus = msg_bus.sender();
+        let executor =
+            InvokeAgentExecutor::new_with_path(db_path.clone(), "claude-3", Some(bus.clone()));
+
+        assert_eq!(executor.db_path, db_path);
+        assert_eq!(executor.current_model, "claude-3");
+        assert!(executor.bus.is_some());
+    }
+
+    #[test]
+    fn test_invoke_agent_executor_definition_valid() {
+        let def = InvokeAgentExecutor::definition();
+
+        assert_eq!(def.name, "invoke_agent");
+        assert!(!def.description.is_empty());
+        // Should have parameters defined (not null)
+        assert!(!def.parameters().is_null());
+    }
+
+    #[test]
+    fn test_invoke_agent_executor_definition_has_required_params() {
+        let def = InvokeAgentExecutor::definition();
+
+        // Check the parameters JSON has expected structure
+        let params = def.parameters();
+        if let Some(params_obj) = params.as_object() {
+            // Tool definitions typically have "properties" and "required" fields
+            assert!(
+                params_obj.contains_key("properties") || params_obj.contains_key("type"),
+                "parameters should have properties or type"
+            );
+        }
+    }
+
+    // =========================================================================
+    // ListAgentsExecutor Tests
+    // =========================================================================
+
+    #[test]
+    fn test_list_agents_executor_new_with_path() {
+        let db_path = PathBuf::from("/tmp/test.db");
+        let executor = ListAgentsExecutor::new_with_path(db_path.clone());
+
+        assert_eq!(executor.db_path, db_path);
+    }
+
+    #[test]
+    fn test_list_agents_executor_definition_valid() {
+        let def = ListAgentsExecutor::definition();
+
+        assert_eq!(def.name, "list_agents");
+        assert!(!def.description.is_empty());
+        assert!(def.description.contains("agents") || def.description.contains("available"));
+    }
+
+    #[test]
+    fn test_list_agents_executor_definition_no_required_params() {
+        let def = ListAgentsExecutor::definition();
+
+        // list_agents doesn't require any parameters
+        let params = def.parameters();
+        if let Some(obj) = params.as_object() {
+            if let Some(required) = obj.get("required") {
+                if let Some(arr) = required.as_array() {
+                    assert!(arr.is_empty(), "list_agents should have no required params");
+                }
+            }
+        }
+    }
+}

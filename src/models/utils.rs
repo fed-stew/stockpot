@@ -138,6 +138,23 @@ pub fn resolve_endpoint_env_vars(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    // =========================================================================
+    // Test Helpers
+    // =========================================================================
+
+    fn setup_test_db() -> (TempDir, Database) {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Database::open_at(db_path).unwrap();
+        db.migrate().unwrap();
+        (temp_dir, db)
+    }
+
+    // =========================================================================
+    // resolve_env_var Tests
+    // =========================================================================
 
     #[test]
     fn test_resolve_env_var() {
@@ -158,5 +175,342 @@ mod tests {
         assert!(result.is_err());
 
         std::env::remove_var("PUPPY_TEST_VAR");
+    }
+
+    // =========================================================================
+    // has_api_key Tests
+    // =========================================================================
+
+    #[test]
+    fn test_has_api_key_in_db() {
+        let (_temp, db) = setup_test_db();
+        db.save_api_key("MY_TEST_KEY", "secret-value").unwrap();
+
+        assert!(has_api_key(&db, "MY_TEST_KEY"));
+    }
+
+    #[test]
+    fn test_has_api_key_in_env() {
+        let (_temp, db) = setup_test_db();
+
+        // Set env var but not in DB
+        std::env::set_var("STOCKPOT_TEST_API_KEY_ENV", "from-env");
+
+        assert!(has_api_key(&db, "STOCKPOT_TEST_API_KEY_ENV"));
+
+        std::env::remove_var("STOCKPOT_TEST_API_KEY_ENV");
+    }
+
+    #[test]
+    fn test_has_api_key_missing() {
+        let (_temp, db) = setup_test_db();
+
+        // Ensure not in env
+        std::env::remove_var("NONEXISTENT_STOCKPOT_KEY_XYZ");
+
+        assert!(!has_api_key(&db, "NONEXISTENT_STOCKPOT_KEY_XYZ"));
+    }
+
+    #[test]
+    fn test_has_api_key_db_takes_precedence() {
+        let (_temp, db) = setup_test_db();
+
+        // Key in both DB and env - should still return true
+        db.save_api_key("DUAL_KEY", "db-value").unwrap();
+        std::env::set_var("DUAL_KEY", "env-value");
+
+        assert!(has_api_key(&db, "DUAL_KEY"));
+
+        std::env::remove_var("DUAL_KEY");
+    }
+
+    // =========================================================================
+    // resolve_api_key Tests
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_api_key_from_db() {
+        let (_temp, db) = setup_test_db();
+        db.save_api_key("RESOLVE_DB_KEY", "db-secret").unwrap();
+
+        let result = resolve_api_key(&db, "RESOLVE_DB_KEY");
+        assert_eq!(result, Some("db-secret".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_api_key_from_env() {
+        let (_temp, db) = setup_test_db();
+
+        std::env::set_var("STOCKPOT_RESOLVE_ENV_KEY", "env-secret");
+
+        let result = resolve_api_key(&db, "STOCKPOT_RESOLVE_ENV_KEY");
+        assert_eq!(result, Some("env-secret".to_string()));
+
+        std::env::remove_var("STOCKPOT_RESOLVE_ENV_KEY");
+    }
+
+    #[test]
+    fn test_resolve_api_key_missing() {
+        let (_temp, db) = setup_test_db();
+
+        std::env::remove_var("NONEXISTENT_RESOLVE_KEY");
+
+        let result = resolve_api_key(&db, "NONEXISTENT_RESOLVE_KEY");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_api_key_db_preferred_over_env() {
+        let (_temp, db) = setup_test_db();
+
+        // Set both DB and env
+        db.save_api_key("PRIORITY_KEY", "db-value").unwrap();
+        std::env::set_var("PRIORITY_KEY", "env-value");
+
+        let result = resolve_api_key(&db, "PRIORITY_KEY");
+        // DB should take precedence
+        assert_eq!(result, Some("db-value".to_string()));
+
+        std::env::remove_var("PRIORITY_KEY");
+    }
+
+    // =========================================================================
+    // build_custom_endpoint Tests
+    // =========================================================================
+
+    #[test]
+    fn test_build_custom_endpoint_full_fields() {
+        let url = Some("https://api.example.com/v1".to_string());
+        let api_key = Some("sk-test-key".to_string());
+        let headers_json = Some(r#"{"X-Custom": "value"}"#.to_string());
+
+        let result = build_custom_endpoint(url, api_key, headers_json);
+
+        assert!(result.is_some());
+        let endpoint = result.unwrap();
+        assert_eq!(endpoint.url, "https://api.example.com/v1");
+        assert_eq!(endpoint.api_key, Some("sk-test-key".to_string()));
+        assert_eq!(endpoint.headers.get("X-Custom"), Some(&"value".to_string()));
+    }
+
+    #[test]
+    fn test_build_custom_endpoint_no_url_returns_none() {
+        let result = build_custom_endpoint(None, Some("key".to_string()), None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_build_custom_endpoint_url_only() {
+        let result = build_custom_endpoint(Some("https://api.example.com".to_string()), None, None);
+
+        assert!(result.is_some());
+        let endpoint = result.unwrap();
+        assert_eq!(endpoint.url, "https://api.example.com");
+        assert!(endpoint.api_key.is_none());
+        assert!(endpoint.headers.is_empty());
+    }
+
+    #[test]
+    fn test_build_custom_endpoint_invalid_headers_json_defaults_empty() {
+        let result = build_custom_endpoint(
+            Some("https://api.example.com".to_string()),
+            None,
+            Some("not valid json".to_string()),
+        );
+
+        assert!(result.is_some());
+        let endpoint = result.unwrap();
+        // Invalid JSON should result in empty headers (default)
+        assert!(endpoint.headers.is_empty());
+    }
+
+    #[test]
+    fn test_build_custom_endpoint_empty_headers_json() {
+        let result = build_custom_endpoint(
+            Some("https://api.example.com".to_string()),
+            None,
+            Some("{}".to_string()),
+        );
+
+        assert!(result.is_some());
+        let endpoint = result.unwrap();
+        assert!(endpoint.headers.is_empty());
+    }
+
+    // =========================================================================
+    // resolve_endpoint_env_vars Tests
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_endpoint_env_vars_all_fields() {
+        // Set up env vars
+        std::env::set_var("STOCKPOT_EP_URL", "https://resolved.example.com");
+        std::env::set_var("STOCKPOT_EP_KEY", "resolved-api-key");
+        std::env::set_var("STOCKPOT_EP_CA", "/path/to/ca.pem");
+        std::env::set_var("STOCKPOT_EP_HEADER", "resolved-header-value");
+
+        let mut headers = HashMap::new();
+        headers.insert("X-Custom".to_string(), "${STOCKPOT_EP_HEADER}".to_string());
+
+        let endpoint = CustomEndpoint {
+            url: "${STOCKPOT_EP_URL}".to_string(),
+            api_key: Some("${STOCKPOT_EP_KEY}".to_string()),
+            headers,
+            ca_certs_path: Some("${STOCKPOT_EP_CA}".to_string()),
+        };
+
+        let resolved = resolve_endpoint_env_vars(&endpoint).unwrap();
+
+        assert_eq!(resolved.url, "https://resolved.example.com");
+        assert_eq!(resolved.api_key, Some("resolved-api-key".to_string()));
+        assert_eq!(resolved.ca_certs_path, Some("/path/to/ca.pem".to_string()));
+        assert_eq!(
+            resolved.headers.get("X-Custom"),
+            Some(&"resolved-header-value".to_string())
+        );
+
+        // Cleanup
+        std::env::remove_var("STOCKPOT_EP_URL");
+        std::env::remove_var("STOCKPOT_EP_KEY");
+        std::env::remove_var("STOCKPOT_EP_CA");
+        std::env::remove_var("STOCKPOT_EP_HEADER");
+    }
+
+    #[test]
+    fn test_resolve_endpoint_env_vars_no_env_vars() {
+        let endpoint = CustomEndpoint {
+            url: "https://literal.example.com".to_string(),
+            api_key: Some("literal-key".to_string()),
+            headers: HashMap::new(),
+            ca_certs_path: None,
+        };
+
+        let resolved = resolve_endpoint_env_vars(&endpoint).unwrap();
+
+        assert_eq!(resolved.url, "https://literal.example.com");
+        assert_eq!(resolved.api_key, Some("literal-key".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_endpoint_env_vars_missing_var_errors() {
+        let endpoint = CustomEndpoint {
+            url: "${NONEXISTENT_STOCKPOT_VAR_XYZ}".to_string(),
+            api_key: None,
+            headers: HashMap::new(),
+            ca_certs_path: None,
+        };
+
+        let result = resolve_endpoint_env_vars(&endpoint);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_endpoint_env_vars_partial_resolution() {
+        std::env::set_var("STOCKPOT_PARTIAL_KEY", "my-key");
+
+        let endpoint = CustomEndpoint {
+            url: "https://api.example.com".to_string(), // literal
+            api_key: Some("${STOCKPOT_PARTIAL_KEY}".to_string()), // env var
+            headers: HashMap::new(),
+            ca_certs_path: None,
+        };
+
+        let resolved = resolve_endpoint_env_vars(&endpoint).unwrap();
+
+        assert_eq!(resolved.url, "https://api.example.com");
+        assert_eq!(resolved.api_key, Some("my-key".to_string()));
+
+        std::env::remove_var("STOCKPOT_PARTIAL_KEY");
+    }
+
+    // =========================================================================
+    // parse_model_type Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_model_type_openai() {
+        assert!(matches!(parse_model_type("openai"), ModelType::Openai));
+    }
+
+    #[test]
+    fn test_parse_model_type_anthropic() {
+        assert!(matches!(
+            parse_model_type("anthropic"),
+            ModelType::Anthropic
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_gemini() {
+        assert!(matches!(parse_model_type("gemini"), ModelType::Gemini));
+    }
+
+    #[test]
+    fn test_parse_model_type_custom_openai() {
+        assert!(matches!(
+            parse_model_type("custom_openai"),
+            ModelType::CustomOpenai
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_custom_anthropic() {
+        assert!(matches!(
+            parse_model_type("custom_anthropic"),
+            ModelType::CustomAnthropic
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_claude_code() {
+        assert!(matches!(
+            parse_model_type("claude_code"),
+            ModelType::ClaudeCode
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_chatgpt_oauth() {
+        assert!(matches!(
+            parse_model_type("chatgpt_oauth"),
+            ModelType::ChatgptOauth
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_azure_openai() {
+        assert!(matches!(
+            parse_model_type("azure_openai"),
+            ModelType::AzureOpenai
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_openrouter() {
+        assert!(matches!(
+            parse_model_type("openrouter"),
+            ModelType::Openrouter
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_round_robin() {
+        assert!(matches!(
+            parse_model_type("round_robin"),
+            ModelType::RoundRobin
+        ));
+    }
+
+    #[test]
+    fn test_parse_model_type_unknown_defaults_to_custom_openai() {
+        assert!(matches!(
+            parse_model_type("unknown_type"),
+            ModelType::CustomOpenai
+        ));
+        assert!(matches!(
+            parse_model_type("foobar"),
+            ModelType::CustomOpenai
+        ));
+        assert!(matches!(parse_model_type(""), ModelType::CustomOpenai));
     }
 }

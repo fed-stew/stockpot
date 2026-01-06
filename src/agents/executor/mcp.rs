@@ -75,3 +75,49 @@ impl Tool for McpToolExecutor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr;
+
+    #[test]
+    fn mcp_tool_executor_definition_name() {
+        // Use null pointer - safe as long as we don't call()
+        let executor = McpToolExecutor {
+            server_name: "filesystem".to_string(),
+            tool_name: "read_file".to_string(),
+            mcp_manager_ptr: ptr::null(),
+        };
+
+        let def = executor.definition();
+        assert_eq!(def.name, "read_file");
+    }
+
+    #[test]
+    fn mcp_tool_executor_definition_description() {
+        let executor = McpToolExecutor {
+            server_name: "github-mcp".to_string(),
+            tool_name: "list_issues".to_string(),
+            mcp_manager_ptr: ptr::null(),
+        };
+
+        let def = executor.definition();
+        assert_eq!(def.description, "MCP tool from github-mcp");
+    }
+
+    #[test]
+    fn mcp_tool_executor_stores_server_and_tool_names() {
+        let executor = McpToolExecutor {
+            server_name: "my-server".to_string(),
+            tool_name: "my-tool".to_string(),
+            mcp_manager_ptr: ptr::null(),
+        };
+
+        assert_eq!(executor.server_name, "my-server");
+        assert_eq!(executor.tool_name, "my-tool");
+    }
+
+    // Note: call() tests require a running MCP server, skipped for unit tests.
+    // Integration tests should cover MCP tool execution.
+}

@@ -238,13 +238,7 @@ impl ChatApp {
             .items_center()
             .justify_between()
             .child(self.render_model_item_info(&model_name, &ctx_info))
-            .child(self.render_model_add_button(
-                &model_id,
-                &provider_id,
-                &env_var,
-                can_add,
-                cx,
-            ))
+            .child(self.render_model_add_button(&model_id, &provider_id, &env_var, can_add, cx))
     }
 
     /// Render the model info (name and context length).

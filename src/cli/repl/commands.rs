@@ -126,7 +126,11 @@ pub async fn handle_command(
             let settings = Settings::new(db);
             let user_mode = settings.user_mode();
             let agent_list = agents.list_filtered(user_mode);
-            core::cmd_agents(&agent_list, &agents.current_name(), user_mode == UserMode::Developer);
+            core::cmd_agents(
+                &agent_list,
+                &agents.current_name(),
+                user_mode == UserMode::Developer,
+            );
         }
         "mcp" => mcp::handle(mcp_manager, args).await,
         "set" => cmd_set(db, args)?,
@@ -416,5 +420,269 @@ fn cmd_unpin(db: &Database, agents: &AgentManager, current_model: &mut String, a
 
         let is_current = target_agent == current_agent;
         context::unpin_model(db, current_model, target_agent, is_current);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for REPL commands.
+    //!
+    //! Coverage:
+    //! - CommandResult enum variants
+    //! - cmd_set function (settings management)
+    //! - cmd_yolo function (toggle dangerous mode)
+
+    use super::*;
+    use tempfile::TempDir;
+
+    // =========================================================================
+    // Test Helpers
+    // =========================================================================
+
+    fn setup_test_db() -> (TempDir, Database) {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Database::open_at(db_path).unwrap();
+        db.migrate().unwrap();
+        (temp_dir, db)
+    }
+
+    // =========================================================================
+    // CommandResult Tests
+    // =========================================================================
+
+    #[test]
+    fn test_command_result_continue_variant() {
+        let result = CommandResult::Continue;
+        // Verify it's the Continue variant via pattern matching
+        assert!(matches!(result, CommandResult::Continue));
+    }
+
+    #[test]
+    fn test_command_result_exit_variant() {
+        let result = CommandResult::Exit;
+        // Verify it's the Exit variant via pattern matching
+        assert!(matches!(result, CommandResult::Exit));
+    }
+
+    // =========================================================================
+    // cmd_set Tests
+    // =========================================================================
+
+    #[test]
+    fn test_cmd_set_empty_args_lists_settings() {
+        let (_temp, db) = setup_test_db();
+
+        // Set some values first
+        let settings = Settings::new(&db);
+        settings.set("test_key", "test_value").unwrap();
+
+        // Empty args should list settings (doesn't error)
+        let result = cmd_set(&db, "");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cmd_set_key_equals_value_sets() {
+        let (_temp, db) = setup_test_db();
+
+        // Set a value using key=value syntax
+        let result = cmd_set(&db, "my_setting=my_value");
+        assert!(result.is_ok());
+
+        // Verify it was set
+        let settings = Settings::new(&db);
+        assert_eq!(
+            settings.get("my_setting").unwrap(),
+            Some("my_value".to_string())
+        );
+    }
+
+    #[test]
+    fn test_cmd_set_user_mode_valid_normal() {
+        let (_temp, db) = setup_test_db();
+
+        let result = cmd_set(&db, "user_mode=normal");
+        assert!(result.is_ok());
+
+        let settings = Settings::new(&db);
+        assert_eq!(settings.user_mode(), UserMode::Normal);
+    }
+
+    #[test]
+    fn test_cmd_set_user_mode_valid_expert() {
+        let (_temp, db) = setup_test_db();
+
+        let result = cmd_set(&db, "user_mode=expert");
+        assert!(result.is_ok());
+
+        let settings = Settings::new(&db);
+        assert_eq!(settings.user_mode(), UserMode::Expert);
+    }
+
+    #[test]
+    fn test_cmd_set_user_mode_valid_developer() {
+        let (_temp, db) = setup_test_db();
+
+        let result = cmd_set(&db, "user_mode=developer");
+        assert!(result.is_ok());
+
+        let settings = Settings::new(&db);
+        assert_eq!(settings.user_mode(), UserMode::Developer);
+    }
+
+    #[test]
+    fn test_cmd_set_user_mode_invalid() {
+        let (_temp, db) = setup_test_db();
+
+        // Invalid mode should not error but should print error message
+        // The function still returns Ok, just prints an error
+        let result = cmd_set(&db, "user_mode=invalid_mode");
+        assert!(result.is_ok());
+
+        // user_mode should remain at default (Normal) since invalid was rejected
+        let settings = Settings::new(&db);
+        assert_eq!(settings.user_mode(), UserMode::Normal);
+    }
+
+    #[test]
+    fn test_cmd_set_get_existing_setting() {
+        let (_temp, db) = setup_test_db();
+
+        // First set a value
+        let settings = Settings::new(&db);
+        settings.set("existing_key", "existing_value").unwrap();
+
+        // Get it via cmd_set (just key name, no =)
+        let result = cmd_set(&db, "existing_key");
+        assert!(result.is_ok());
+        // The function prints the value but returns Ok
+    }
+
+    #[test]
+    fn test_cmd_set_get_nonexistent_setting() {
+        let (_temp, db) = setup_test_db();
+
+        // Try to get a non-existent key
+        let result = cmd_set(&db, "nonexistent_key");
+        assert!(result.is_ok());
+        // The function prints "Setting not found" but returns Ok
+    }
+
+    #[test]
+    fn test_cmd_set_user_mode_get() {
+        let (_temp, db) = setup_test_db();
+
+        // Set user_mode first
+        let settings = Settings::new(&db);
+        settings.set_user_mode(UserMode::Expert).unwrap();
+
+        // Query user_mode without value (special case)
+        let result = cmd_set(&db, "user_mode");
+        assert!(result.is_ok());
+        // Should print "user_mode = expert"
+    }
+
+    #[test]
+    fn test_cmd_set_key_value_with_spaces() {
+        let (_temp, db) = setup_test_db();
+
+        // Key=value with spaces around = should be trimmed
+        let result = cmd_set(&db, "  spaced_key  =  spaced_value  ");
+        assert!(result.is_ok());
+
+        let settings = Settings::new(&db);
+        assert_eq!(
+            settings.get("spaced_key").unwrap(),
+            Some("spaced_value".to_string())
+        );
+    }
+
+    #[test]
+    fn test_cmd_set_user_mode_case_insensitive() {
+        let (_temp, db) = setup_test_db();
+
+        // UserMode parsing is case-insensitive
+        let result = cmd_set(&db, "user_mode=EXPERT");
+        assert!(result.is_ok());
+
+        let settings = Settings::new(&db);
+        assert_eq!(settings.user_mode(), UserMode::Expert);
+    }
+
+    // =========================================================================
+    // cmd_yolo Tests
+    // =========================================================================
+
+    #[test]
+    fn test_cmd_yolo_enables_when_disabled() {
+        let (_temp, db) = setup_test_db();
+
+        // Yolo mode starts disabled by default
+        let settings = Settings::new(&db);
+        assert!(!settings.yolo_mode());
+
+        // Toggle it on
+        let result = cmd_yolo(&db);
+        assert!(result.is_ok());
+
+        // Should now be enabled
+        assert!(settings.yolo_mode());
+    }
+
+    #[test]
+    fn test_cmd_yolo_disables_when_enabled() {
+        let (_temp, db) = setup_test_db();
+
+        // First enable yolo mode
+        let settings = Settings::new(&db);
+        settings.set("yolo_mode", "true").unwrap();
+        assert!(settings.yolo_mode());
+
+        // Toggle it off
+        let result = cmd_yolo(&db);
+        assert!(result.is_ok());
+
+        // Should now be disabled
+        assert!(!settings.yolo_mode());
+    }
+
+    #[test]
+    fn test_cmd_yolo_toggle_twice() {
+        let (_temp, db) = setup_test_db();
+
+        let settings = Settings::new(&db);
+
+        // Start disabled
+        assert!(!settings.yolo_mode());
+
+        // First toggle: disabled -> enabled
+        cmd_yolo(&db).unwrap();
+        assert!(settings.yolo_mode());
+
+        // Second toggle: enabled -> disabled
+        cmd_yolo(&db).unwrap();
+        assert!(!settings.yolo_mode());
+    }
+
+    #[test]
+    fn test_cmd_yolo_preserves_other_settings() {
+        let (_temp, db) = setup_test_db();
+
+        let settings = Settings::new(&db);
+
+        // Set some other settings
+        settings.set("other_key", "other_value").unwrap();
+        settings.set("model", "gpt-4").unwrap();
+
+        // Toggle yolo
+        cmd_yolo(&db).unwrap();
+
+        // Other settings should be unchanged
+        assert_eq!(
+            settings.get("other_key").unwrap(),
+            Some("other_value".to_string())
+        );
+        assert_eq!(settings.get("model").unwrap(), Some("gpt-4".to_string()));
     }
 }

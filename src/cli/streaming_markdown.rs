@@ -203,4 +203,183 @@ mod tests {
         renderer.reset();
         assert!(renderer.line_buffer.is_empty());
     }
+
+    // =========================================================================
+    // Process Method Tests
+    // =========================================================================
+
+    #[test]
+    fn test_process_accumulates_without_newline() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("hello").unwrap();
+        // Without newline, content stays in buffer
+        assert_eq!(renderer.buffer(), "hello");
+    }
+
+    #[test]
+    fn test_process_multiple_deltas() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("hel").unwrap();
+        renderer.process("lo ").unwrap();
+        renderer.process("world").unwrap();
+        assert_eq!(renderer.buffer(), "hello world");
+    }
+
+    #[test]
+    fn test_process_empty_string_no_change() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("content").unwrap();
+        renderer.process("").unwrap();
+        assert_eq!(renderer.buffer(), "content");
+    }
+
+    #[test]
+    fn test_process_only_newlines() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("\n\n\n").unwrap();
+        // All newlines processed, buffer should be empty
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_process_newline_flushes_line() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("line one\n").unwrap();
+        // After newline, that line is rendered, buffer should be empty
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_process_partial_after_newline() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("line one\npartial").unwrap();
+        // "line one" rendered, "partial" stays in buffer
+        assert_eq!(renderer.buffer(), "partial");
+    }
+
+    #[test]
+    fn test_process_multiple_lines() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("line1\nline2\nline3\n").unwrap();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    // =========================================================================
+    // Buffer Accessor Tests
+    // =========================================================================
+
+    #[test]
+    fn test_buffer_accessor_after_process() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("test content").unwrap();
+        assert_eq!(renderer.buffer(), "test content");
+    }
+
+    #[test]
+    fn test_buffer_partial_line_preserved() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("complete\nincomplete").unwrap();
+        // "incomplete" should remain in buffer
+        assert_eq!(renderer.buffer(), "incomplete");
+    }
+
+    #[test]
+    fn test_buffer_after_multiple_newlines() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("a\nb\nc\npartial").unwrap();
+        assert_eq!(renderer.buffer(), "partial");
+    }
+
+    // =========================================================================
+    // Reset Method Tests
+    // =========================================================================
+
+    #[test]
+    fn test_reset_clears_buffer_with_content() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("some content here").unwrap();
+        assert!(!renderer.buffer().is_empty());
+        renderer.reset();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_reset_after_process() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("first").unwrap();
+        renderer.process(" second").unwrap();
+        renderer.reset();
+        assert!(renderer.buffer().is_empty());
+        // Can process again after reset
+        renderer.process("new content").unwrap();
+        assert_eq!(renderer.buffer(), "new content");
+    }
+
+    #[test]
+    fn test_reset_after_partial_line() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("line\npartial").unwrap();
+        renderer.reset();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    // =========================================================================
+    // Flush Method Tests
+    // =========================================================================
+
+    #[test]
+    fn test_flush_clears_buffer() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("unflushed content").unwrap();
+        assert!(!renderer.buffer().is_empty());
+        renderer.flush().unwrap();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_flush_resets_parser_state() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        // Process some markdown that might leave parser in a state
+        renderer.process("```rust\nlet x = 1;").unwrap();
+        renderer.flush().unwrap();
+        // After flush, should be able to process fresh content
+        renderer.process("new content\n").unwrap();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_flush_empty_buffer() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        // Flushing empty buffer should not panic
+        renderer.flush().unwrap();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_flush_after_complete_line() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("complete line\n").unwrap();
+        // Buffer already empty from newline
+        renderer.flush().unwrap();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_flush_multiple_times() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("content").unwrap();
+        renderer.flush().unwrap();
+        renderer.flush().unwrap();
+        renderer.flush().unwrap();
+        assert!(renderer.buffer().is_empty());
+    }
+
+    #[test]
+    fn test_process_after_flush() {
+        let mut renderer = StreamingMarkdownRenderer::with_width(80);
+        renderer.process("first batch").unwrap();
+        renderer.flush().unwrap();
+        renderer.process("second batch").unwrap();
+        assert_eq!(renderer.buffer(), "second batch");
+    }
 }

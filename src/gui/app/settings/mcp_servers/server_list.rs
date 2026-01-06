@@ -128,7 +128,14 @@ fn render_server_card(
         .bg(theme.tool_card)
         .border_l_2()
         .border_color(if enabled { rgb(0x4ade80) } else { theme.border })
-        .child(render_server_header(&theme, cx, &name_display, enabled, server_name_toggle, server_name_del))
+        .child(render_server_header(
+            &theme,
+            cx,
+            &name_display,
+            enabled,
+            server_name_toggle,
+            server_name_del,
+        ))
         .when_some(description, |d, desc| {
             d.child(
                 div()
@@ -186,12 +193,26 @@ fn render_server_header(
                         .py(px(2.))
                         .rounded(px(4.))
                         .text_size(px(10.))
-                        .bg(if enabled { rgba(0x4ade8033) } else { theme.background })
-                        .text_color(if enabled { rgb(0x4ade80) } else { theme.text_muted })
+                        .bg(if enabled {
+                            rgba(0x4ade8033)
+                        } else {
+                            theme.background
+                        })
+                        .text_color(if enabled {
+                            rgb(0x4ade80)
+                        } else {
+                            theme.text_muted
+                        })
                         .child(if enabled { "enabled" } else { "disabled" }),
                 ),
         )
-        .child(render_server_controls(&theme, cx, enabled, server_name_toggle, server_name_del))
+        .child(render_server_controls(
+            &theme,
+            cx,
+            enabled,
+            server_name_toggle,
+            server_name_del,
+        ))
 }
 
 /// Renders the toggle and delete buttons for a server.

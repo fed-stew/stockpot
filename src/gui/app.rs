@@ -681,8 +681,6 @@ impl ChatApp {
             cx.propagate();
         }
     }
-
-
 }
 
 impl Focusable for ChatApp {

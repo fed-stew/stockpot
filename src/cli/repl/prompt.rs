@@ -511,3 +511,171 @@ pub fn show_error_hints(current_model: &str, error_str: &str) {
         println!("\x1b[2mHint: Check your model name with /model\x1b[0m");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // print_tool_args Tests
+    // =========================================================================
+
+    #[test]
+    fn test_print_tool_args_read_file_extracts_path() {
+        // Should not panic; prints cyan path
+        let args = r#"{"file_path": "/some/path/to/file.rs"}"#;
+        print_tool_args("read_file", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_list_files_extracts_dir() {
+        // Should not panic; prints cyan directory
+        let args = r#"{"directory": "/some/directory"}"#;
+        print_tool_args("list_files", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_grep_extracts_pattern() {
+        // Should not panic; prints cyan pattern with quotes
+        let args = r#"{"pattern": "fn main"}"#;
+        print_tool_args("grep", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_shell_command_short() {
+        // Short command should print without truncation
+        let args = r#"{"command": "ls -la"}"#;
+        print_tool_args("run_shell_command", args);
+        print_tool_args("agent_run_shell_command", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_shell_command_truncates_long() {
+        // Command > 60 chars should be truncated with "..."
+        let long_cmd = "a".repeat(100);
+        let args = format!(r#"{{"command": "{}"}}"#, long_cmd);
+        print_tool_args("run_shell_command", &args);
+        print_tool_args("agent_run_shell_command", &args);
+    }
+
+    #[test]
+    fn test_print_tool_args_other_tool_compact() {
+        // Unknown tool shows compact JSON
+        let args = r#"{"key": "value", "num": 42}"#;
+        print_tool_args("unknown_tool", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_other_tool_truncates() {
+        // JSON > 80 chars should be truncated
+        let long_value = "x".repeat(100);
+        let args = format!(r#"{{"long_key": "{}"}}"#, long_value);
+        print_tool_args("unknown_tool", &args);
+    }
+
+    #[test]
+    fn test_print_tool_args_invalid_json_shows_raw() {
+        // Invalid JSON fallback to raw display
+        let args = "not valid json {{{";
+        print_tool_args("some_tool", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_invalid_json_truncates_long() {
+        // Long invalid JSON should be truncated
+        let long_invalid = "not json ".repeat(20);
+        print_tool_args("some_tool", &long_invalid);
+    }
+
+    #[test]
+    fn test_print_tool_args_empty_buffer() {
+        // Empty args buffer should not panic
+        print_tool_args("any_tool", "");
+    }
+
+    #[test]
+    fn test_print_tool_args_read_file_missing_path() {
+        // Valid JSON but missing expected field - should not panic
+        let args = r#"{"other_field": "value"}"#;
+        print_tool_args("read_file", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_list_files_missing_dir() {
+        // Valid JSON but missing expected field
+        let args = r#"{"path": "/some/path"}"#;
+        print_tool_args("list_files", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_grep_missing_pattern() {
+        // Valid JSON but missing expected field
+        let args = r#"{"search": "term"}"#;
+        print_tool_args("grep", args);
+    }
+
+    #[test]
+    fn test_print_tool_args_shell_command_missing_command() {
+        // Valid JSON but missing expected field
+        let args = r#"{"exec": "ls"}"#;
+        print_tool_args("run_shell_command", args);
+    }
+
+    // =========================================================================
+    // show_error_hints Tests
+    // =========================================================================
+
+    #[test]
+    fn test_show_error_hints_chatgpt_auth() {
+        // ChatGPT auth error should suggest /chatgpt-auth
+        show_error_hints("chatgpt-4o", "Auth error: Not authenticated");
+    }
+
+    #[test]
+    fn test_show_error_hints_claude_code_auth() {
+        // Claude code auth error should suggest /claude-code-auth
+        show_error_hints("claude-code-sonnet", "Auth error: token expired");
+    }
+
+    #[test]
+    fn test_show_error_hints_generic_auth() {
+        // Generic provider auth error should suggest API key
+        show_error_hints("gpt-4", "Not authenticated with provider");
+    }
+
+    #[test]
+    fn test_show_error_hints_generic_auth_uppercase() {
+        // Auth detection should work with "Auth" capitalized
+        show_error_hints("gemini-pro", "Auth failed");
+    }
+
+    #[test]
+    fn test_show_error_hints_model_error() {
+        // Model-related error should suggest /model command
+        show_error_hints("unknown-model", "Invalid model specified");
+    }
+
+    #[test]
+    fn test_show_error_hints_model_error_lowercase() {
+        // "model" lowercase should also trigger hint
+        show_error_hints("gpt-4", "unknown model name");
+    }
+
+    #[test]
+    fn test_show_error_hints_other_error_no_hint() {
+        // Errors not matching patterns should not panic
+        show_error_hints("gpt-4", "Connection timeout");
+    }
+
+    #[test]
+    fn test_show_error_hints_empty_error() {
+        // Empty error string should not panic
+        show_error_hints("gpt-4", "");
+    }
+
+    #[test]
+    fn test_show_error_hints_empty_model() {
+        // Empty model string should not panic
+        show_error_hints("", "Auth error");
+    }
+}

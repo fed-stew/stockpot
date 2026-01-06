@@ -157,3 +157,313 @@ pub async fn get_model(
     info!(model_name = %model_name, "Model ready");
     Ok(model)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{CustomEndpoint, ModelConfig, ModelType};
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn setup_test_db() -> (TempDir, Database) {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Database::open_at(db_path).unwrap();
+        db.migrate().unwrap();
+        (temp_dir, db)
+    }
+
+    fn create_custom_model(name: &str, url: &str, api_key: Option<&str>) -> ModelConfig {
+        ModelConfig {
+            name: name.to_string(),
+            model_type: ModelType::CustomOpenai,
+            model_id: Some("test-model-id".to_string()),
+            context_length: 8192,
+            supports_thinking: false,
+            supports_vision: false,
+            supports_tools: true,
+            description: None,
+            custom_endpoint: Some(CustomEndpoint {
+                url: url.to_string(),
+                api_key: api_key.map(|s| s.to_string()),
+                headers: HashMap::new(),
+                ca_certs_path: None,
+            }),
+            azure_deployment: None,
+            azure_api_version: None,
+            round_robin_models: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_custom_endpoint_with_literal_api_key() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = create_custom_model(
+            "custom-literal",
+            "https://api.example.com/v1",
+            Some("sk-literal-key-12345"),
+        );
+        registry.add(model);
+        let result = get_model(&db, "custom-literal", &registry).await;
+        assert!(result.is_ok(), "Should succeed with literal API key");
+        let model = result.unwrap();
+        assert!(model.identifier().contains("test-model-id"));
+    }
+
+    #[tokio::test]
+    async fn test_custom_endpoint_with_env_var_key() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let env_key = "TEST_CUSTOM_API_KEY_FOR_MODEL_FACTORY";
+        std::env::set_var(env_key, "sk-from-env-var");
+        let model = create_custom_model(
+            "custom-env",
+            "https://api.example.com/v1",
+            Some(&format!("${}", env_key)),
+        );
+        registry.add(model);
+        let result = get_model(&db, "custom-env", &registry).await;
+        std::env::remove_var(env_key);
+        assert!(result.is_ok(), "Should succeed with env var API key");
+    }
+
+    #[tokio::test]
+    async fn test_custom_endpoint_with_env_var_from_db() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let key_name = "DB_STORED_API_KEY";
+        db.save_api_key(key_name, "sk-from-database").unwrap();
+        let model = create_custom_model(
+            "custom-db-key",
+            "https://api.example.com/v1",
+            Some(&format!("${}", key_name)),
+        );
+        registry.add(model);
+        let result = get_model(&db, "custom-db-key", &registry).await;
+        assert!(result.is_ok(), "Should resolve API key from database");
+    }
+
+    #[tokio::test]
+    async fn test_custom_endpoint_missing_key_returns_error() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = create_custom_model(
+            "custom-no-key",
+            "https://api.example.com/v1",
+            Some("$NONEXISTENT_API_KEY_XYZ_123"),
+        );
+        registry.add(model);
+        let result = get_model(&db, "custom-no-key", &registry).await;
+        assert!(result.is_err(), "Should error when env var not found");
+        if let Err(ExecutorError::Config(msg)) = result {
+            assert!(
+                msg.contains("not found"),
+                "Error should mention key not found"
+            );
+        } else {
+            panic!("Expected ExecutorError::Config");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_custom_endpoint_no_api_key_configured() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = create_custom_model("custom-missing", "https://api.example.com/v1", None);
+        registry.add(model);
+        let result = get_model(&db, "custom-missing", &registry).await;
+        assert!(result.is_err());
+        if let Err(ExecutorError::Config(msg)) = result {
+            assert!(msg.contains("no API key configured"));
+        } else {
+            panic!("Expected ExecutorError::Config for missing API key");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_legacy_chatgpt_prefix_detected() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let result = get_model(&db, "chatgpt-4o-latest", &registry).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(ExecutorError::Auth(_))),
+            "Expected Auth error for chatgpt- prefix"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_legacy_chatgpt_underscore_prefix_detected() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let result = get_model(&db, "chatgpt_4o_latest", &registry).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(ExecutorError::Auth(_))),
+            "Expected Auth error for chatgpt_ prefix"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_legacy_claude_code_prefix_detected() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let result = get_model(&db, "claude-code-sonnet", &registry).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(ExecutorError::Auth(_))),
+            "Expected Auth error for claude-code- prefix"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_legacy_claude_code_underscore_prefix_detected() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let result = get_model(&db, "claude_code_opus", &registry).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(ExecutorError::Auth(_))),
+            "Expected Auth error for claude_code_ prefix"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_custom_model_not_in_registry_returns_error() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let result = get_model(&db, "openrouter:mistral-7b", &registry).await;
+        assert!(result.is_err());
+        if let Err(ExecutorError::Config(msg)) = result {
+            assert!(msg.contains("not found in registry"));
+            assert!(msg.contains("/add-model"));
+        } else {
+            panic!("Expected ExecutorError::Config for custom model not in registry");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_custom_model_with_colon_not_in_registry() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        for model_name in [
+            "together:llama-3.1",
+            "groq:mixtral",
+            "local:phi-3",
+            "custom:my-model",
+        ] {
+            let result = get_model(&db, model_name, &registry).await;
+            assert!(
+                matches!(result, Err(ExecutorError::Config(_))),
+                "Model {} should fail when not in registry",
+                model_name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_claude_code_colon_not_treated_as_custom() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let result = get_model(&db, "claude-code:sonnet-4", &registry).await;
+        match result {
+            Err(ExecutorError::Auth(_)) => {}
+            Err(ExecutorError::Config(ref msg)) if msg.contains("not found in registry") => {
+                panic!("claude-code: should not be treated as custom model format")
+            }
+            _ => {}
+        }
+    }
+
+    #[tokio::test]
+    async fn test_claude_code_model_type_triggers_oauth() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = ModelConfig {
+            name: "my-claude".to_string(),
+            model_type: ModelType::ClaudeCode,
+            ..Default::default()
+        };
+        registry.add(model);
+        let result = get_model(&db, "my-claude", &registry).await;
+        assert!(matches!(result, Err(ExecutorError::Auth(_))));
+    }
+
+    #[tokio::test]
+    async fn test_chatgpt_oauth_model_type_triggers_oauth() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = ModelConfig {
+            name: "my-chatgpt".to_string(),
+            model_type: ModelType::ChatgptOauth,
+            ..Default::default()
+        };
+        registry.add(model);
+        let result = get_model(&db, "my-chatgpt", &registry).await;
+        assert!(matches!(result, Err(ExecutorError::Auth(_))));
+    }
+
+    #[tokio::test]
+    async fn test_env_var_with_braces() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let env_key = "TEST_BRACED_KEY_MODEL_FACTORY";
+        std::env::set_var(env_key, "sk-braced-key");
+        let model = create_custom_model(
+            "custom-braced",
+            "https://api.example.com/v1",
+            Some(&format!("${{{}}}", env_key)),
+        );
+        registry.add(model);
+        let result = get_model(&db, "custom-braced", &registry).await;
+        std::env::remove_var(env_key);
+        assert!(result.is_ok(), "Should resolve braced env var syntax");
+    }
+
+    #[tokio::test]
+    async fn test_model_id_used_when_present() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = ModelConfig {
+            name: "friendly-name".to_string(),
+            model_type: ModelType::CustomOpenai,
+            model_id: Some("actual-api-model-id".to_string()),
+            custom_endpoint: Some(CustomEndpoint {
+                url: "https://api.example.com/v1".to_string(),
+                api_key: Some("sk-test".to_string()),
+                headers: HashMap::new(),
+                ca_certs_path: None,
+            }),
+            ..Default::default()
+        };
+        registry.add(model);
+        let result = get_model(&db, "friendly-name", &registry).await;
+        assert!(result.is_ok());
+        let model = result.unwrap();
+        assert!(model.identifier().contains("actual-api-model-id"));
+    }
+
+    #[tokio::test]
+    async fn test_model_name_used_when_no_model_id() {
+        let (_temp, db) = setup_test_db();
+        let mut registry = ModelRegistry::new();
+        let model = ModelConfig {
+            name: "fallback-name".to_string(),
+            model_type: ModelType::CustomOpenai,
+            model_id: None,
+            custom_endpoint: Some(CustomEndpoint {
+                url: "https://api.example.com/v1".to_string(),
+                api_key: Some("sk-test".to_string()),
+                headers: HashMap::new(),
+                ca_certs_path: None,
+            }),
+            ..Default::default()
+        };
+        registry.add(model);
+        let result = get_model(&db, "fallback-name", &registry).await;
+        assert!(result.is_ok());
+        let model = result.unwrap();
+        assert!(model.identifier().contains("fallback-name"));
+    }
+}

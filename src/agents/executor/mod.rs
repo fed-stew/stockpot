@@ -534,3 +534,366 @@ pub async fn execute_agent(
 
     Ok(result.output)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::messaging::MessageBus;
+    use tempfile::TempDir;
+
+    fn setup_test_db() -> (TempDir, Database) {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Database::open_at(db_path).unwrap();
+        db.migrate().unwrap();
+        (temp_dir, db)
+    }
+
+    #[test]
+    fn test_agent_executor_new() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        assert!(executor.bus.is_none());
+    }
+
+    #[test]
+    fn test_agent_executor_with_bus() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let bus = MessageBus::new();
+        let sender = bus.sender();
+        let executor = AgentExecutor::new(&db, &registry).with_bus(sender);
+        assert!(executor.bus.is_some());
+    }
+
+    #[test]
+    fn test_agent_executor_with_bus_builder_pattern() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let bus = MessageBus::new();
+        let executor = AgentExecutor::new(&db, &registry).with_bus(bus.sender());
+        assert!(executor.bus.is_some());
+    }
+
+    #[test]
+    fn test_filter_tools_removes_share_your_reasoning_when_disabled() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec!["read_file", "share_your_reasoning", "write_file"];
+        let filtered = executor.filter_tools(tools);
+        assert!(!filtered.contains(&"share_your_reasoning"));
+        assert!(filtered.contains(&"read_file"));
+        assert!(filtered.contains(&"write_file"));
+    }
+
+    #[test]
+    fn test_filter_tools_keeps_share_your_reasoning_when_enabled() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let settings = Settings::new(&db);
+        settings.set("show_reasoning", "true").unwrap();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec!["read_file", "share_your_reasoning", "write_file"];
+        let filtered = executor.filter_tools(tools);
+        assert!(filtered.contains(&"share_your_reasoning"));
+        assert!(filtered.contains(&"read_file"));
+        assert!(filtered.contains(&"write_file"));
+    }
+
+    #[test]
+    fn test_filter_tools_removes_invoke_agent() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec!["read_file", "invoke_agent", "write_file"];
+        let filtered = executor.filter_tools(tools);
+        assert!(!filtered.contains(&"invoke_agent"));
+        assert!(filtered.contains(&"read_file"));
+        assert!(filtered.contains(&"write_file"));
+    }
+
+    #[test]
+    fn test_filter_tools_removes_list_agents() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec!["read_file", "list_agents", "write_file"];
+        let filtered = executor.filter_tools(tools);
+        assert!(!filtered.contains(&"list_agents"));
+        assert!(filtered.contains(&"read_file"));
+        assert!(filtered.contains(&"write_file"));
+    }
+
+    #[test]
+    fn test_filter_tools_removes_all_special_tools() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec![
+            "read_file",
+            "invoke_agent",
+            "list_agents",
+            "share_your_reasoning",
+            "write_file",
+        ];
+        let filtered = executor.filter_tools(tools);
+        assert!(!filtered.contains(&"invoke_agent"));
+        assert!(!filtered.contains(&"list_agents"));
+        assert!(!filtered.contains(&"share_your_reasoning"));
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_tools_preserves_other_tools() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec![
+            "read_file",
+            "write_file",
+            "list_files",
+            "grep",
+            "shell_command",
+            "apply_diff",
+        ];
+        let filtered = executor.filter_tools(tools);
+        assert_eq!(filtered.len(), 6);
+        for tool in &[
+            "read_file",
+            "write_file",
+            "list_files",
+            "grep",
+            "shell_command",
+            "apply_diff",
+        ] {
+            assert!(filtered.contains(tool));
+        }
+    }
+
+    #[test]
+    fn test_filter_tools_empty_input() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools: Vec<&str> = vec![];
+        let filtered = executor.filter_tools(tools);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_wants_invoke_agent_true() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = ["read_file", "invoke_agent", "write_file"];
+        assert!(executor.wants_invoke_agent(&tools));
+    }
+
+    #[test]
+    fn test_wants_invoke_agent_false() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = ["read_file", "write_file", "grep"];
+        assert!(!executor.wants_invoke_agent(&tools));
+    }
+
+    #[test]
+    fn test_wants_invoke_agent_empty() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools: [&str; 0] = [];
+        assert!(!executor.wants_invoke_agent(&tools));
+    }
+
+    #[test]
+    fn test_wants_list_agents_true() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = ["read_file", "list_agents", "write_file"];
+        assert!(executor.wants_list_agents(&tools));
+    }
+
+    #[test]
+    fn test_wants_list_agents_false() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = ["read_file", "write_file", "grep"];
+        assert!(!executor.wants_list_agents(&tools));
+    }
+
+    #[test]
+    fn test_wants_list_agents_empty() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools: [&str; 0] = [];
+        assert!(!executor.wants_list_agents(&tools));
+    }
+
+    struct MockAgent {
+        name: &'static str,
+    }
+
+    impl SpotAgent for MockAgent {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn display_name(&self) -> &str {
+            self.name
+        }
+
+        fn description(&self) -> &str {
+            "Mock agent for testing"
+        }
+
+        fn system_prompt(&self) -> String {
+            "You are a test agent.".to_string()
+        }
+
+        fn available_tools(&self) -> Vec<&str> {
+            vec!["read_file"]
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_bus_without_bus_returns_config_error() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let agent = MockAgent { name: "test" };
+        let tool_registry = SpotToolRegistry::new();
+        let mcp_manager = McpManager::new();
+
+        let result = executor
+            .execute_with_bus(
+                &agent,
+                "gpt-4",
+                "test prompt",
+                None,
+                &tool_registry,
+                &mcp_manager,
+            )
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(ExecutorError::Config(msg)) => {
+                assert!(msg.contains("No message bus configured"));
+                assert!(msg.contains("with_bus()"));
+            }
+            Err(e) => panic!("Expected ExecutorError::Config, got error: {}", e),
+            Ok(_) => panic!("Expected ExecutorError::Config, got Ok"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_images_without_bus_returns_config_error() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let agent = MockAgent { name: "test" };
+        let tool_registry = SpotToolRegistry::new();
+        let mcp_manager = McpManager::new();
+
+        let result = executor
+            .execute_with_images(
+                &agent,
+                "gpt-4",
+                "test prompt",
+                &[],
+                None,
+                &tool_registry,
+                &mcp_manager,
+            )
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(ExecutorError::Config(msg)) => {
+                assert!(msg.contains("No message bus configured"));
+            }
+            Err(e) => panic!("Expected ExecutorError::Config, got error: {}", e),
+            Ok(_) => panic!("Expected ExecutorError::Config, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_filter_tools_with_all_special_tools_and_reasoning_enabled() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let settings = Settings::new(&db);
+        settings.set("show_reasoning", "true").unwrap();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec![
+            "read_file",
+            "invoke_agent",
+            "list_agents",
+            "share_your_reasoning",
+            "write_file",
+        ];
+        let filtered = executor.filter_tools(tools);
+        assert!(filtered.contains(&"share_your_reasoning"));
+        assert!(!filtered.contains(&"invoke_agent"));
+        assert!(!filtered.contains(&"list_agents"));
+        assert!(filtered.contains(&"read_file"));
+        assert!(filtered.contains(&"write_file"));
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_wants_both_agent_tools() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = ["invoke_agent", "list_agents", "read_file"];
+        assert!(executor.wants_invoke_agent(&tools));
+        assert!(executor.wants_list_agents(&tools));
+    }
+
+    #[test]
+    fn test_filter_tools_only_special_tools() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec!["invoke_agent", "list_agents", "share_your_reasoning"];
+        let filtered = executor.filter_tools(tools);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filter_tools_duplicate_tools() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = vec!["read_file", "read_file", "write_file"];
+        let filtered = executor.filter_tools(tools);
+        assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_wants_invoke_agent_similar_names() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        let tools = ["invoke_agent_v2", "my_invoke_agent", "invoke"];
+        assert!(!executor.wants_invoke_agent(&tools));
+        let tools = ["invoke_agent_v2", "invoke_agent"];
+        assert!(executor.wants_invoke_agent(&tools));
+    }
+
+    #[test]
+    fn test_executor_lifetime_with_registry() {
+        let (_temp, db) = setup_test_db();
+        let registry = ModelRegistry::new();
+        let executor = AgentExecutor::new(&db, &registry);
+        assert!(registry.is_empty());
+        assert!(executor.bus.is_none());
+    }
+}
