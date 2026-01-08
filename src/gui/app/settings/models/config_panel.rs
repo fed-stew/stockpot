@@ -194,9 +194,6 @@ impl ChatApp {
                     .min_h(px(0.))
                     .overflow_y_scroll()
                     .track_scroll(&self.add_model_models_scroll_handle)
-                    .on_scroll_wheel(cx.listener(|_, _, _, cx| {
-                        cx.notify();
-                    }))
                     .children(self.add_model_models.iter().map(|model| {
                         self.render_model_list_item(model, provider_id, env_var, can_add_models, cx)
                     })),
@@ -238,13 +235,7 @@ impl ChatApp {
             .items_center()
             .justify_between()
             .child(self.render_model_item_info(&model_name, &ctx_info))
-            .child(self.render_model_add_button(
-                &model_id,
-                &provider_id,
-                &env_var,
-                can_add,
-                cx,
-            ))
+            .child(self.render_model_add_button(&model_id, &provider_id, &env_var, can_add, cx))
     }
 
     /// Render the model info (name and context length).

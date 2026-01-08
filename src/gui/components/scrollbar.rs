@@ -6,8 +6,9 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    canvas, div, point, prelude::*, px, rgba, App, Bounds, Hsla, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ScrollHandle, Size, Window,
+    canvas, div, point, prelude::*, px, rgba, App, Bounds, Hsla, ListState, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ScrollHandle, Size,
+    Window,
 };
 
 use crate::gui::theme::Theme;
@@ -230,6 +231,248 @@ pub fn scrollbar(
                         0.0
                     };
 
+                    let thumb_y = (track_height - thumb_height) * ratio;
+
+                    let thumb_bounds = Bounds {
+                        origin: point(bounds.origin.x + px(1.), bounds.origin.y + thumb_y),
+                        size: Size {
+                            width: bounds.size.width - px(2.),
+                            height: thumb_height,
+                        },
+                    };
+
+                    let color = if dragging {
+                        thumb_drag_color
+                    } else {
+                        thumb_color
+                    };
+                    window.paint_quad(PaintQuad {
+                        bounds: thumb_bounds,
+                        corner_radii: px(3.).into(),
+                        background: color.into(),
+                        border_widths: Default::default(),
+                        border_color: gpui::transparent_black(),
+                        border_style: gpui::BorderStyle::Solid,
+                    });
+                },
+            )
+            .size_full(),
+        )
+}
+
+/// Drag state for list scrollbar
+#[derive(Default)]
+pub struct ListScrollbarDragState {
+    pub is_dragging: Cell<bool>,
+    pub drag_start_y: Cell<Pixels>,
+    pub drag_start_ratio: Cell<f32>,
+    pub bounds: Cell<Bounds<Pixels>>,
+}
+
+/// Create a visual scrollbar for a GPUI `ListState`.
+///
+/// Uses GPUI's native pixel-based scrollbar APIs on `ListState`.
+pub fn list_scrollbar(
+    list_state: ListState,
+    _item_count: usize,
+    drag_state: Rc<ListScrollbarDragState>,
+    _theme: Theme,
+) -> impl IntoElement {
+    let track_color: Hsla = rgba(0x00000044).into();
+    let thumb_color: Hsla = rgba(0xffffff77).into();
+    let thumb_drag_color: Hsla = rgba(0xffffffaa).into();
+
+    fn list_thumb_height(
+        viewport_height: Pixels,
+        max_offset_height: Pixels,
+        track_height: Pixels,
+    ) -> Option<Pixels> {
+        if viewport_height <= Pixels::ZERO
+            || max_offset_height <= Pixels::ZERO
+            || track_height <= Pixels::ZERO
+        {
+            return None;
+        }
+
+        let content_height = viewport_height + max_offset_height;
+        if content_height <= viewport_height {
+            return None;
+        }
+
+        Some(
+            (track_height * (viewport_height / content_height))
+                .max(THUMB_MIN_HEIGHT)
+                .min(track_height),
+        )
+    }
+
+    fn set_scroll_ratio(list_state: &ListState, max_offset_height: Pixels, ratio: f32) {
+        if max_offset_height <= Pixels::ZERO {
+            return;
+        }
+
+        list_state.set_offset_from_scrollbar(point(px(0.), -(max_offset_height * clamp01(ratio))));
+    }
+
+    let list_state_for_down = list_state.clone();
+    let list_state_for_move = list_state.clone();
+    let list_state_for_up = list_state.clone();
+    let list_state_for_up_out = list_state.clone();
+
+    div()
+        .w(SCROLLBAR_WIDTH)
+        .h_full()
+        .flex_shrink_0()
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, {
+            let drag_state = drag_state.clone();
+            move |event: &MouseDownEvent, window: &mut Window, _cx: &mut App| {
+                let bounds = drag_state.bounds.get();
+                let track_height = bounds.size.height;
+                if track_height <= Pixels::ZERO {
+                    return;
+                }
+
+                let viewport_height = list_state_for_down.viewport_bounds().size.height;
+                let max_offset = list_state_for_down.max_offset_for_scrollbar();
+
+                if viewport_height <= Pixels::ZERO || max_offset.height <= Pixels::ZERO {
+                    return;
+                }
+
+                let Some(thumb_height) =
+                    list_thumb_height(viewport_height, max_offset.height, track_height)
+                else {
+                    return;
+                };
+
+                let thumb_range = (track_height - thumb_height).max(Pixels::ZERO);
+                let offset = list_state_for_down.scroll_px_offset_for_scrollbar();
+                let ratio = clamp01(-offset.y / max_offset.height);
+
+                let thumb_y = thumb_range * ratio;
+
+                let click_y = (event.position.y - bounds.origin.y)
+                    .max(Pixels::ZERO)
+                    .min(track_height);
+
+                let in_thumb = click_y >= thumb_y && click_y <= (thumb_y + thumb_height);
+
+                if in_thumb {
+                    drag_state.is_dragging.set(true);
+                    drag_state.drag_start_y.set(event.position.y);
+                    drag_state.drag_start_ratio.set(ratio);
+                    list_state_for_down.scrollbar_drag_started();
+                } else if thumb_range > Pixels::ZERO {
+                    // Click on the track: jump so the thumb centers on the click.
+                    let target_thumb_y =
+                        (click_y - (thumb_height / 2.0)).clamp(Pixels::ZERO, thumb_range);
+                    set_scroll_ratio(
+                        &list_state_for_down,
+                        max_offset.height,
+                        target_thumb_y / thumb_range,
+                    );
+                }
+
+                window.refresh();
+            }
+        })
+        .on_mouse_move({
+            let drag_state = drag_state.clone();
+            move |event: &MouseMoveEvent, window: &mut Window, _cx: &mut App| {
+                if !drag_state.is_dragging.get() {
+                    return;
+                }
+
+                let bounds = drag_state.bounds.get();
+                let track_height = bounds.size.height;
+                if track_height <= Pixels::ZERO {
+                    return;
+                }
+
+                let viewport_height = list_state_for_move.viewport_bounds().size.height;
+                let max_offset = list_state_for_move.max_offset_for_scrollbar();
+
+                if viewport_height <= Pixels::ZERO || max_offset.height <= Pixels::ZERO {
+                    return;
+                }
+
+                let Some(thumb_height) =
+                    list_thumb_height(viewport_height, max_offset.height, track_height)
+                else {
+                    return;
+                };
+
+                let thumb_range = (track_height - thumb_height).max(Pixels::ZERO);
+                if thumb_range <= Pixels::ZERO {
+                    return;
+                }
+
+                let mouse_delta_y = event.position.y - drag_state.drag_start_y.get();
+                let start_ratio = drag_state.drag_start_ratio.get();
+                let new_ratio = clamp01(start_ratio + (mouse_delta_y / thumb_range));
+
+                set_scroll_ratio(&list_state_for_move, max_offset.height, new_ratio);
+                window.refresh();
+            }
+        })
+        .on_mouse_up(MouseButton::Left, {
+            let drag_state = drag_state.clone();
+            move |_event: &MouseUpEvent, window: &mut Window, _cx: &mut App| {
+                if drag_state.is_dragging.replace(false) {
+                    list_state_for_up.scrollbar_drag_ended();
+                }
+                window.refresh();
+            }
+        })
+        .on_mouse_up_out(MouseButton::Left, {
+            let drag_state = drag_state.clone();
+            move |_event: &MouseUpEvent, window: &mut Window, _cx: &mut App| {
+                if drag_state.is_dragging.replace(false) {
+                    list_state_for_up_out.scrollbar_drag_ended();
+                }
+                window.refresh();
+            }
+        })
+        .child(
+            canvas(
+                {
+                    let drag_state = drag_state.clone();
+                    let list_state = list_state.clone();
+                    move |bounds, _window, _cx| {
+                        drag_state.bounds.set(bounds);
+                        let dragging = drag_state.is_dragging.get();
+                        let viewport_bounds = list_state.viewport_bounds();
+                        let max_offset = list_state.max_offset_for_scrollbar();
+                        let offset = list_state.scroll_px_offset_for_scrollbar();
+                        (dragging, viewport_bounds, max_offset, offset)
+                    }
+                },
+                move |bounds, (dragging, viewport_bounds, max_offset, offset), window, _cx| {
+                    let viewport_height = viewport_bounds.size.height;
+                    let max = max_offset.height;
+
+                    if viewport_height <= Pixels::ZERO || max <= Pixels::ZERO {
+                        return;
+                    }
+
+                    let track_height = bounds.size.height;
+                    let Some(thumb_height) = list_thumb_height(viewport_height, max, track_height)
+                    else {
+                        return;
+                    };
+
+                    // Track background
+                    window.paint_quad(PaintQuad {
+                        bounds,
+                        corner_radii: px(4.).into(),
+                        background: track_color.into(),
+                        border_widths: Default::default(),
+                        border_color: gpui::transparent_black(),
+                        border_style: gpui::BorderStyle::Solid,
+                    });
+
+                    let ratio = clamp01(-offset.y / max);
                     let thumb_y = (track_height - thumb_height) * ratio;
 
                     let thumb_bounds = Bounds {

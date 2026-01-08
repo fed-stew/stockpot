@@ -218,6 +218,7 @@ impl ChatApp {
         } else {
             self.conversation.add_user_message(&text);
         }
+        self.sync_messages_list_state();
 
         // Clear input and attachments
         self.input_state.update(cx, |state, cx| {

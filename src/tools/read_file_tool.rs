@@ -95,6 +95,15 @@ impl Tool for ReadFileTool {
                 "File too large: {} bytes (max: {}). Use start_line and num_lines for partial reads.",
                 size, max
             ))),
+            Err(FileError::TokenLimitExceeded { estimated_tokens, total_lines, suggested_chunk_size }) => {
+                Ok(ToolReturn::error(format!(
+                    "[FILE TOO LARGE: ~{} tokens, {} lines]\n\
+                     This file exceeds the 10,000 token safety limit.\n\
+                     Please read it in chunks using start_line and num_lines parameters.\n\
+                     Suggested: start_line=1, num_lines={}",
+                    estimated_tokens, total_lines, suggested_chunk_size
+                )))
+            }
             Err(e) => Ok(ToolReturn::error(format!("Failed to read file: {}", e))),
         }
     }

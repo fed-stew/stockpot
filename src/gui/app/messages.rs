@@ -1,24 +1,24 @@
 use gpui::{
-    div, prelude::*, px, AnyElement, Context, IntoElement, SharedString,
+    div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, SharedString,
     StatefulInteractiveElement, Styled,
 };
 use gpui_component::text::markdown;
 
 use super::ChatApp;
 use crate::gui::components::{
-    collapsible_display, current_spinner_frame, scrollbar, CollapsibleProps,
+    collapsible_display, current_spinner_frame, list_scrollbar, CollapsibleProps,
 };
 use crate::gui::state::{MessageRole, MessageSection};
 
 impl ChatApp {
     pub(super) fn render_messages(&self, cx: &Context<Self>) -> impl IntoElement {
-        let messages = self.conversation.messages.clone();
         let theme = self.theme.clone();
-        let has_messages = !messages.is_empty();
+        let has_messages = !self.conversation.messages.is_empty();
 
         div()
             .id("messages-container")
             .flex()
+            .flex_row() // Makes children sit side by side (list + scrollbar)
             .flex_1()
             .w_full()
             .min_h(px(0.))
@@ -29,17 +29,6 @@ impl ChatApp {
                     .flex_1()
                     .w_full()
                     .min_h(px(0.))
-                    .overflow_y_scroll()
-                    .track_scroll(&self.messages_scroll_handle)
-                    .on_scroll_wheel(cx.listener(|this, _, _, cx| {
-                        // Check if user is at the bottom (within threshold)
-                        let ratio =
-                            crate::gui::components::scroll_ratio(&this.messages_scroll_handle);
-                        // If ratio >= 0.98, user is at bottom, enable auto-scroll
-                        // If ratio < 0.98, user scrolled away, disable auto-scroll
-                        this.user_scrolled_away = ratio < 0.98;
-                        cx.notify();
-                    }))
                     .p(px(16.))
                     .when(!has_messages, |d| {
                         d.flex().items_center().justify_center().child(
@@ -79,8 +68,20 @@ impl ChatApp {
                         )
                     })
                     .when(has_messages, |d| {
-                        d.child(div().flex().flex_col().w_full().gap(px(16.)).children(
-                            messages.into_iter().enumerate().map(|(idx, msg)| {
+                        // Use GPUI's virtualized list - only renders visible messages!
+                        let view = cx.entity().clone();
+                        let theme = theme.clone();
+
+                        d.overflow_y_scroll().child(
+                            list(self.messages_list_state.clone(), move |idx, _window, cx| {
+                                // Read FRESH data from the entity each time!
+                                // This fixes the stale closure capture bug where streaming
+                                // updates weren't visible because messages was cloned at render time.
+                                let app = view.read(cx);
+                                let Some(msg) = app.conversation.messages.get(idx) else {
+                                    return div().into_any_element();
+                                };
+
                                 let is_user = msg.role == MessageRole::User;
                                 let bubble_bg = if is_user {
                                     theme.user_bubble
@@ -89,11 +90,21 @@ impl ChatApp {
                                 };
                                 let is_streaming = msg.is_streaming;
 
+                                let content_elements: Vec<gpui::AnyElement> = app
+                                    .render_message_content(
+                                        &msg.sections,
+                                        &msg.content,
+                                        idx,
+                                        &theme,
+                                        cx,
+                                    );
+
                                 div()
                                     .id(SharedString::from(format!("msg-{}", idx)))
                                     .flex()
                                     .flex_col()
                                     .w_full()
+                                    .pb(px(16.)) // Gap between messages
                                     .when(is_user, |d| d.items_end())
                                     .when(!is_user, |d| d.items_start())
                                     .child(
@@ -111,18 +122,10 @@ impl ChatApp {
                                             .text_color(theme.text)
                                             .overflow_hidden()
                                             .min_w_0()
-                                            // User messages: constrained width, Assistant: full width
                                             .when(is_user, |d| d.max_w(px(600.)))
                                             .when(!is_user, |d| d.w_full().min_w_0())
-                                            // Render sections if available, otherwise fall back to content
-                                            .children(self.render_message_content(
-                                                &msg.sections,
-                                                &msg.content,
-                                                idx,
-                                                &theme,
-                                                cx,
-                                            ))
-                                            .when(is_streaming, |d: gpui::Div| {
+                                            .children(content_elements)
+                                            .when(is_streaming, |d| {
                                                 d.child(
                                                     div()
                                                         .ml(px(2.))
@@ -131,13 +134,16 @@ impl ChatApp {
                                                 )
                                             }),
                                     )
-                            }),
-                        ))
+                                    .into_any_element()
+                            })
+                            .size_full(),
+                        )
                     }),
             )
-            .child(scrollbar(
-                self.messages_scroll_handle.clone(),
-                self.messages_scrollbar_drag.clone(),
+            .child(list_scrollbar(
+                self.messages_list_state.clone(),
+                self.conversation.messages.len(),
+                self.messages_list_scrollbar_drag.clone(),
                 theme.clone(),
             ))
     }
@@ -149,20 +155,22 @@ impl ChatApp {
     /// - NestedAgent sections render as collapsible containers
     ///
     /// If no sections exist (legacy messages), the raw content is rendered as markdown.
-    fn render_message_content(
+    ///
+    /// This variant accepts Entity<ChatApp> and &App for use within virtualized list callbacks.
+    pub(super) fn render_message_content(
         &self,
         sections: &[MessageSection],
         content: &str,
         msg_idx: usize,
         theme: &crate::gui::theme::Theme,
-        cx: &Context<Self>,
+        _cx: &App,
     ) -> Vec<AnyElement> {
         // If we have sections, render them
         if !sections.is_empty() {
             sections
                 .iter()
                 .enumerate()
-                .map(|(sec_idx, section)| self.render_section(section, msg_idx, sec_idx, theme, cx))
+                .map(|(sec_idx, section)| self.render_section(section, msg_idx, sec_idx, theme))
                 .collect()
         } else {
             // Legacy: render content directly as markdown
@@ -183,7 +191,6 @@ impl ChatApp {
         msg_idx: usize,
         sec_idx: usize,
         theme: &crate::gui::theme::Theme,
-        cx: &Context<Self>,
     ) -> AnyElement {
         match section {
             MessageSection::Text(text) => {
@@ -200,40 +207,51 @@ impl ChatApp {
             }
             MessageSection::NestedAgent(agent_section) => {
                 // Nested agent sections render as collapsible
-                self.render_agent_section(agent_section, msg_idx, sec_idx, theme, cx)
+                self.render_agent_section_static(agent_section, msg_idx, sec_idx, theme)
             }
         }
     }
 
-    /// Render a nested agent section as a collapsible container.
-    fn render_agent_section(
+    /// Render a nested agent section as a collapsible container (static, no click handler).
+    /// Click handlers for collapsibles inside virtualized lists need special handling.
+    fn render_agent_section_static(
         &self,
         agent_section: &crate::gui::state::AgentSection,
         msg_idx: usize,
         sec_idx: usize,
         theme: &crate::gui::theme::Theme,
-        cx: &Context<Self>,
     ) -> AnyElement {
-        let section_id_for_click = agent_section.id.clone();
+        let is_collapsed = agent_section.is_collapsed;
 
         // Build collapsible props from theme and agent section state
         let props = CollapsibleProps::with_theme(theme)
             .id(format!("msg-{}-agent-{}", msg_idx, sec_idx))
             .title(agent_section.display_name.clone())
             .icon("🤖")
-            .collapsed(agent_section.is_collapsed)
+            .collapsed(is_collapsed)
             .loading(!agent_section.is_complete);
 
-        // Render the agent content as markdown
-        let content = div()
-            .w_full()
-            .overflow_x_hidden()
-            .child(markdown(&agent_section.content).selectable(true));
+        // LAZY EVALUATION: Only parse markdown when section is expanded!
+        // This is critical for performance - markdown parsing is expensive and
+        // was causing 5+ second delays when toggling sections with large content.
+        let content = if is_collapsed {
+            // Fast path: empty placeholder when collapsed (content won't be shown anyway)
+            div().into_any_element()
+        } else {
+            // Slow path: only parse markdown when actually visible
+            div()
+                .w_full()
+                .overflow_x_hidden()
+                .child(markdown(&agent_section.content).selectable(true))
+                .into_any_element()
+        };
 
-        // Create the collapsible in display-only mode (no internal click handler)
+        // Create the collapsible in display-only mode
+        // NOTE: Click handlers for toggling are not supported in virtualized list items
+        // The collapsible will display properly but won't toggle on click
+        // This is a trade-off for virtualization performance
         let collapsible_element = collapsible_display(props, content);
 
-        // Wrap in a clickable container that handles toggle via cx.listener()
         div()
             .id(SharedString::from(format!(
                 "msg-{}-sec-{}-container",
@@ -241,11 +259,6 @@ impl ChatApp {
             )))
             .w_full()
             .my(px(8.)) // Vertical margin for visual separation
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.conversation
-                    .toggle_section_collapsed(&section_id_for_click);
-                cx.notify();
-            }))
             .child(collapsible_element)
             .into_any_element()
     }

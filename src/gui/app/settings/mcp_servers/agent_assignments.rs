@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, Styled};
 
-use crate::config::Settings;
 use crate::agents::AgentInfo;
+use crate::config::Settings;
 use crate::gui::app::ChatApp;
 use crate::gui::theme::Theme;
 
@@ -53,8 +53,20 @@ pub fn render_agent_assignments(
                 .gap(px(16.))
                 .flex_1()
                 .min_h(px(0.))
-                .child(render_agent_list(&theme, cx, agents, &selected_agent_owned, all_attachments))
-                .child(render_mcp_checkboxes(&theme, cx, servers, &selected_agent_owned, agent_mcps)),
+                .child(render_agent_list(
+                    &theme,
+                    cx,
+                    agents,
+                    &selected_agent_owned,
+                    all_attachments,
+                ))
+                .child(render_mcp_checkboxes(
+                    &theme,
+                    cx,
+                    servers,
+                    &selected_agent_owned,
+                    agent_mcps,
+                )),
         )
 }
 
@@ -117,8 +129,16 @@ fn render_agent_item(
         .px(px(10.))
         .py(px(8.))
         .rounded(px(6.))
-        .bg(if is_selected { theme.accent } else { theme.tool_card })
-        .text_color(if is_selected { rgb(0xffffff) } else { theme.text })
+        .bg(if is_selected {
+            theme.accent
+        } else {
+            theme.tool_card
+        })
+        .text_color(if is_selected {
+            rgb(0xffffff)
+        } else {
+            theme.text
+        })
         .cursor_pointer()
         .hover(|s| s.opacity(0.9))
         .on_mouse_up(
@@ -133,20 +153,24 @@ fn render_agent_item(
                 .flex()
                 .items_center()
                 .justify_between()
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .child(display_name),
-                )
+                .child(div().text_size(px(12.)).child(display_name))
                 .when(mcp_count > 0, |d| {
                     d.child(
                         div()
                             .px(px(6.))
                             .py(px(2.))
                             .rounded(px(10.))
-                            .bg(if is_selected { rgba(0xffffff33) } else { theme.background })
+                            .bg(if is_selected {
+                                rgba(0xffffff33)
+                            } else {
+                                theme.background
+                            })
                             .text_size(px(10.))
-                            .text_color(if is_selected { rgb(0xffffff) } else { theme.text_muted })
+                            .text_color(if is_selected {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text_muted
+                            })
                             .child(format!("{}", mcp_count)),
                     )
                 }),
@@ -196,14 +220,11 @@ fn render_mcp_checkboxes(
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .children(
-                    servers
-                        .iter()
-                        .filter(|(_, enabled, _, _)| *enabled)
-                        .map(|(name, _, _, _)| {
-                            render_mcp_checkbox(&theme, cx, name, &selected_agent_owned, agent_mcps)
-                        }),
-                ),
+                .children(servers.iter().filter(|(_, enabled, _, _)| *enabled).map(
+                    |(name, _, _, _)| {
+                        render_mcp_checkbox(&theme, cx, name, &selected_agent_owned, agent_mcps)
+                    },
+                )),
         )
 }
 
@@ -229,7 +250,11 @@ fn render_mcp_checkbox(
         .px(px(10.))
         .py(px(8.))
         .rounded(px(6.))
-        .bg(if is_attached { theme.accent } else { theme.tool_card })
+        .bg(if is_attached {
+            theme.accent
+        } else {
+            theme.tool_card
+        })
         .cursor_pointer()
         .hover(|s| s.opacity(0.9))
         .on_mouse_up(
@@ -250,8 +275,16 @@ fn render_mcp_checkbox(
                 .h(px(18.))
                 .rounded(px(4.))
                 .border_2()
-                .border_color(if is_attached { rgb(0xffffff) } else { theme.border })
-                .bg(if is_attached { rgb(0xffffff) } else { theme.background })
+                .border_color(if is_attached {
+                    rgb(0xffffff)
+                } else {
+                    theme.border
+                })
+                .bg(if is_attached {
+                    rgb(0xffffff)
+                } else {
+                    theme.background
+                })
                 .flex()
                 .items_center()
                 .justify_center()
@@ -263,7 +296,11 @@ fn render_mcp_checkbox(
         .child(
             div()
                 .text_size(px(13.))
-                .text_color(if is_attached { rgb(0xffffff) } else { theme.text })
+                .text_color(if is_attached {
+                    rgb(0xffffff)
+                } else {
+                    theme.text
+                })
                 .child(mcp_name_display),
         )
 }

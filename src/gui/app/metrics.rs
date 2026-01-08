@@ -113,6 +113,39 @@ impl ChatApp {
         self.is_streaming_active = false;
     }
 
+    /// Called by animation timer to keep throughput display fresh even when no data arriving.
+    /// Removes old samples and recalculates current throughput.
+    pub(super) fn tick_throughput(&mut self) {
+        let now = std::time::Instant::now();
+
+        // Remove old samples (older than 2 seconds)
+        let cutoff = now - std::time::Duration::from_secs(2);
+        self.throughput_samples.retain(|(_, ts)| *ts > cutoff);
+
+        // Recalculate throughput
+        if self.throughput_samples.len() >= 2 {
+            let first_ts = self.throughput_samples.first().map(|(_, ts)| *ts).unwrap();
+            let elapsed = now.duration_since(first_ts).as_secs_f64();
+            if elapsed > 0.1 {
+                let total_chars: usize = self.throughput_samples.iter().map(|(c, _)| *c).sum();
+                self.current_throughput_cps = total_chars as f64 / elapsed;
+            }
+        } else if self.throughput_samples.is_empty() {
+            // Decay to zero when no recent samples
+            self.current_throughput_cps = 0.0;
+        }
+
+        // Update history for chart every 250ms
+        if self.last_history_sample.elapsed() > std::time::Duration::from_millis(250) {
+            self.throughput_history
+                .push_back(self.current_throughput_cps);
+            while self.throughput_history.len() > 8 {
+                self.throughput_history.pop_front();
+            }
+            self.last_history_sample = now;
+        }
+    }
+
     /// Get display name for current agent
     pub(super) fn current_agent_display(&self) -> String {
         self.available_agents

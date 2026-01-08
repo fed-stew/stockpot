@@ -24,6 +24,12 @@ pub enum FileError {
     BinaryFile(String),
     #[error("Grep error: {0}")]
     GrepError(String),
+    #[error("File too large: ~{estimated_tokens} tokens ({total_lines} lines). Read in chunks using start_line and num_lines parameters. Suggested: start_line=1, num_lines={suggested_chunk_size}")]
+    TokenLimitExceeded {
+        estimated_tokens: usize,
+        total_lines: usize,
+        suggested_chunk_size: usize,
+    },
 }
 
 /// File entry for directory listing.
@@ -51,6 +57,11 @@ const LIST_FILES_DEFAULT_MAX_ENTRIES: usize = 2_000;
 const LIST_FILES_HARD_MAX_ENTRIES: usize = 10_000;
 const LIST_FILES_DEFAULT_MAX_DEPTH: usize = 10;
 const LIST_FILES_HARD_MAX_DEPTH: usize = 50;
+
+/// Maximum tokens allowed in a single file read to protect context window
+const READ_FILE_MAX_TOKENS: usize = 10_000;
+/// Approximate characters per token (conservative estimate)
+const CHARS_PER_TOKEN: usize = 4;
 
 /// List files in a directory.
 pub fn list_files(
@@ -196,6 +207,7 @@ pub struct ReadFileResult {
     pub path: String,
     pub size: u64,
     pub lines: usize,
+    pub estimated_tokens: usize,
 }
 
 pub fn read_file(
@@ -220,6 +232,19 @@ pub fn read_file(
     let lines: Vec<&str> = content.lines().collect();
     let total_lines = lines.len();
 
+    // Token-based protection (only for full file reads)
+    if start_line.is_none() {
+        let estimated_tokens = content.len() / CHARS_PER_TOKEN;
+        if estimated_tokens > READ_FILE_MAX_TOKENS {
+            let suggested_chunk = total_lines.div_ceil(4).min(500);
+            return Err(FileError::TokenLimitExceeded {
+                estimated_tokens,
+                total_lines,
+                suggested_chunk_size: suggested_chunk,
+            });
+        }
+    }
+
     let content = if let Some(start) = start_line {
         let start_idx = start.saturating_sub(1); // 1-based to 0-based
         let end_idx = num_lines
@@ -231,11 +256,14 @@ pub fn read_file(
         content
     };
 
+    let estimated_tokens = content.len() / CHARS_PER_TOKEN;
+
     Ok(ReadFileResult {
         content,
         path: path.to_string(),
         size: metadata.len(),
         lines: total_lines,
+        estimated_tokens,
     })
 }
 
@@ -576,5 +604,68 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert!(result.truncated);
         assert_eq!(result.max_entries, 1);
+    }
+
+    #[test]
+    fn read_file_rejects_large_token_count() {
+        // Create a temp file with content exceeding token limit
+        // 10,000 tokens * 4 chars = 40,000 chars minimum to trigger
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let file_path = dir.path().join("large.txt");
+
+        // Create content that will exceed 10k tokens (~50k chars)
+        let large_content = "x".repeat(50_000);
+        fs::write(&file_path, &large_content).expect("write failed");
+
+        let result = read_file(file_path.to_str().unwrap(), None, None, None);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, FileError::TokenLimitExceeded { .. }));
+
+        // Verify the error message includes helpful guidance
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("tokens"));
+        assert!(err_msg.contains("start_line"));
+        assert!(err_msg.contains("num_lines"));
+    }
+
+    #[test]
+    fn read_file_allows_chunked_reads_of_large_files() {
+        // Same large file, but reading with start_line should work
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let file_path = dir.path().join("large.txt");
+
+        // Create a file with 1000 lines
+        let lines: Vec<String> = (1..=1000)
+            .map(|i| format!("Line {} content here", i))
+            .collect();
+        let content = lines.join("\n");
+        fs::write(&file_path, &content).expect("write failed");
+
+        // Reading first 100 lines should work even though full file might be large
+        let result = read_file(file_path.to_str().unwrap(), Some(1), Some(100), None);
+
+        assert!(result.is_ok());
+        let read_result = result.unwrap();
+        assert!(read_result.content.contains("Line 1"));
+        assert!(read_result.content.contains("Line 100"));
+        assert!(!read_result.content.contains("Line 101"));
+    }
+
+    #[test]
+    fn read_file_small_file_includes_token_estimate() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let file_path = dir.path().join("small.txt");
+
+        // 100 chars = ~25 tokens
+        let content = "a".repeat(100);
+        fs::write(&file_path, &content).expect("write failed");
+
+        let result = read_file(file_path.to_str().unwrap(), None, None, None);
+
+        assert!(result.is_ok());
+        let read_result = result.unwrap();
+        assert_eq!(read_result.estimated_tokens, 25); // 100 / 4
     }
 }

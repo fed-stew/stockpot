@@ -160,6 +160,6 @@ mod tests {
     fn test_frame_interval() {
         // ~12.5 fps is smooth enough for a spinner
         assert_eq!(FRAME_INTERVAL_MS, 80);
-        assert!(1000 / FRAME_INTERVAL_MS >= 10); // At least 10 fps
+        const _: () = assert!(1000 / FRAME_INTERVAL_MS >= 10); // At least 10 fps
     }
 }

@@ -1,8 +1,8 @@
 //! CompletionContext and try_complete_input for input completion logic.
 
 use super::picker::{
-    pick_agent_completion, pick_command, pick_model_completion, pick_mcp_server,
-    pick_mcp_subcommand, pick_session_completion,
+    pick_agent_completion, pick_command, pick_mcp_server, pick_mcp_subcommand,
+    pick_model_completion, pick_session_completion,
 };
 use super::{is_complete_command, MCP_COMMANDS};
 

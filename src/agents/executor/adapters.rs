@@ -10,12 +10,8 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use serdes_ai_core::{
-    ModelRequest, ModelResponse, ModelSettings, ToolReturnPart,
-};
-use serdes_ai_models::{
-    Model, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse,
-};
+use serdes_ai_core::{ModelRequest, ModelResponse, ModelSettings, ToolReturnPart};
+use serdes_ai_models::{Model, ModelError, ModelProfile, ModelRequestParameters, StreamedResponse};
 use serdes_ai_tools::{RunContext, Tool, ToolError, ToolReturn};
 
 /// Wrapper to make `Arc<dyn Model>` implement `Model`.

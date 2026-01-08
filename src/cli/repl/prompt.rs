@@ -27,6 +27,7 @@ use serdes_ai_core::ModelRequest;
 ///
 /// This is the modern approach where all events flow through the message bus
 /// and are rendered by a subscriber. Much simpler than the legacy approach!
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_prompt_with_bus(
     db: &Database,
     agents: &AgentManager,
@@ -149,7 +150,7 @@ pub async fn handle_prompt_with_bus(
 /// Legacy prompt handling (direct stream processing).
 ///
 /// Kept for reference and fallback if needed.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments, clippy::ptr_arg)]
 pub async fn handle_prompt_legacy(
     db: &Database,
     agents: &AgentManager,
@@ -306,7 +307,7 @@ pub async fn handle_prompt_legacy(
 }
 
 /// Process a single stream event from the legacy handler.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 async fn process_stream_event(
     event: StreamEvent,
     spinner_handle: &mut Option<crate::messaging::SpinnerHandle>,

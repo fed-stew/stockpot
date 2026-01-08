@@ -126,7 +126,11 @@ pub async fn handle_command(
             let settings = Settings::new(db);
             let user_mode = settings.user_mode();
             let agent_list = agents.list_filtered(user_mode);
-            core::cmd_agents(&agent_list, &agents.current_name(), user_mode == UserMode::Developer);
+            core::cmd_agents(
+                &agent_list,
+                &agents.current_name(),
+                user_mode == UserMode::Developer,
+            );
         }
         "mcp" => mcp::handle(mcp_manager, args).await,
         "set" => cmd_set(db, args)?,

@@ -164,10 +164,6 @@ impl SelectableText {
         let text_style = window.text_style();
         let rendered =
             markdown_text::render_markdown(self.content.as_ref(), &text_style, &self.theme);
-        eprintln!(
-            "[SelectableText] markdown rendered, text len={}",
-            rendered.text.len()
-        );
         if rendered.text.is_empty() {
             return 0;
         }
@@ -263,17 +259,9 @@ impl Focusable for SelectableText {
 
 impl Render for SelectableText {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        eprintln!(
-            "[SelectableText] render called, content len={}",
-            self.content.len()
-        );
         let text_style = window.text_style();
         let rendered =
             markdown_text::render_markdown(self.content.as_ref(), &text_style, &self.theme);
-        eprintln!(
-            "[SelectableText] markdown rendered, text len={}",
-            rendered.text.len()
-        );
 
         let selection_color: Hsla = gpui::hsla(0.6, 0.8, 0.5, 0.3);
         let runs = markdown_text::apply_selection_background(
@@ -283,19 +271,10 @@ impl Render for SelectableText {
         );
 
         let styled_text = StyledText::new(rendered.text.clone()).with_runs(runs);
-        let rendered_preview: String = rendered.text.as_ref().chars().take(100).collect();
-        eprintln!(
-            "[SelectableText] StyledText content (first 100): '{}'",
-            rendered_preview
-        );
         let view = cx.entity().clone();
 
         let bounds_tracker = gpui::canvas(
             move |bounds, _window, cx| {
-                eprintln!(
-                    "[SelectableText] bounds_tracker called, bounds={:?}",
-                    bounds
-                );
                 let should_update = view.read(cx).element_bounds != Some(bounds);
                 if should_update {
                     view.update(cx, |this, _| {

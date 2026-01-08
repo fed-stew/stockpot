@@ -21,15 +21,7 @@ pub struct RenderedMarkdown {
 }
 
 pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> RenderedMarkdown {
-    eprintln!(
-        "[markdown] render_markdown called, source len={}",
-        source.len()
-    );
     let segments = parse_markdown(source);
-    eprintln!("[markdown] parsed {} segments:", segments.len());
-    for (i, seg) in segments.iter().take(10).enumerate() {
-        eprintln!("[markdown]   segment {}: {:?}", i, seg);
-    }
 
     let mut text = String::new();
     let mut runs = Vec::new();
@@ -70,13 +62,6 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     }
 
     let runs = merge_adjacent_runs(runs);
-    let preview: String = text.chars().take(100).collect();
-    eprintln!("[markdown] final text (first 100): '{}'", preview);
-    eprintln!(
-        "[markdown] render_markdown complete, text len={}, runs={}",
-        text.len(),
-        runs.len()
-    );
 
     RenderedMarkdown {
         text: SharedString::from(text),
@@ -247,7 +232,6 @@ fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
         if let Some(stripped) = remaining.strip_prefix("**") {
             if let Some(end) = stripped.find("**") {
                 let inner = &stripped[..end];
-                eprintln!("[markdown] found BOLD: '{}'", inner);
                 segments.push(MarkdownSegment::Bold(inner.to_string()));
                 i += 2 + end + 2;
                 continue;

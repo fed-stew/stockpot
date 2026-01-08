@@ -106,9 +106,6 @@ impl ChatApp {
                     .min_h(px(0.))
                     .overflow_y_scroll()
                     .track_scroll(&self.add_model_providers_scroll_handle)
-                    .on_scroll_wheel(cx.listener(|_, _, _, cx| {
-                        cx.notify();
-                    }))
                     .children(
                         self.add_model_providers
                             .iter()

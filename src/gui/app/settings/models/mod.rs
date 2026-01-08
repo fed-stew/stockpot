@@ -228,11 +228,9 @@ impl ChatApp {
                     .text_color(theme.text)
                     .child(type_label),
             )
-            .children(
-                models
-                    .into_iter()
-                    .map(|(model, desc)| self.render_model_item(model, desc, current_default_model, cx)),
-            )
+            .children(models.into_iter().map(|(model, desc)| {
+                self.render_model_item(model, desc, current_default_model, cx)
+            }))
     }
 
     /// Render a single model item.

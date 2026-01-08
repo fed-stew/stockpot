@@ -2,9 +2,10 @@
 //!
 //! This module handles incoming messages and streaming responses:
 //! - `start_message_listener()` - Set up the message bus listener
-//! - `scroll_messages_to_bottom()` - Auto-scroll chat view
 //! - `handle_message()` - Process incoming Message events
 //! - `toggle_agent_section()` - Toggle collapsible agent sections
+//!
+//! NOTE: Auto-scroll is now handled by ListState with ListAlignment::Bottom.
 
 use gpui::{AsyncApp, Context, WeakEntity};
 
@@ -13,6 +14,39 @@ use crate::messaging::{AgentEvent, Message, ToolStatus};
 use super::ChatApp;
 
 impl ChatApp {
+    /// Start animation timer for smooth UI updates during streaming.
+    /// Runs at ~12.5fps (80ms) to match spinner frame rate.
+    /// Automatically stops when is_generating becomes false.
+    pub(super) fn start_animation_timer(cx: &mut Context<Self>) {
+        use std::time::Duration;
+
+        cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(80))
+                    .await;
+
+                let should_continue = this
+                    .update(cx, |app, cx| {
+                        if !app.is_generating {
+                            return false;
+                        }
+                        // Update throughput metrics
+                        app.tick_throughput();
+                        // Trigger UI refresh for spinner animation
+                        cx.notify();
+                        true
+                    })
+                    .unwrap_or(false);
+
+                if !should_continue {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
     pub(super) fn start_message_listener(&self, cx: &mut Context<Self>) {
         let mut receiver = self.message_bus.subscribe();
 
@@ -29,14 +63,8 @@ impl ChatApp {
         .detach();
     }
 
-    /// Scroll the messages view to the bottom
-    pub(super) fn scroll_messages_to_bottom(&self) {
-        let max = self.messages_scroll_handle.max_offset().height;
-        if max > gpui::px(0.) {
-            self.messages_scroll_handle
-                .set_offset(gpui::point(gpui::px(0.), -max));
-        }
-    }
+    // NOTE: scroll_messages_to_bottom() was removed. ListState with ListAlignment::Bottom
+    // handles auto-scroll to bottom behavior automatically.
 
     /// Handle incoming messages from the agent
     pub(super) fn handle_message(&mut self, msg: Message, cx: &mut Context<Self>) {
@@ -66,10 +94,7 @@ impl ChatApp {
                     self.last_context_update = std::time::Instant::now();
                 }
 
-                // Auto-scroll to bottom if user hasn't scrolled away
-                if !self.user_scrolled_away {
-                    self.scroll_messages_to_bottom();
-                }
+                // NOTE: Auto-scroll is handled by ListState with ListAlignment::Bottom
             }
             Message::Thinking(thinking) => {
                 // Display thinking in a muted style
@@ -140,10 +165,12 @@ impl ChatApp {
                     if self.active_agent_stack.is_empty() {
                         // Main agent starting - existing behavior
                         self.conversation.start_assistant_message();
+                        self.sync_messages_list_state();
                         self.is_generating = true;
-                        // Reset scroll state and scroll to bottom for new response
+                        Self::start_animation_timer(cx);
+                        // Reset scroll state for new response
+                        // ListAlignment::Bottom handles auto-scroll automatically
                         self.user_scrolled_away = false;
-                        self.scroll_messages_to_bottom();
                         // Update context at start of conversation
                         self.update_context_usage();
                         // Reset throughput tracking for new response
@@ -177,6 +204,7 @@ impl ChatApp {
                     // Only finish generating if main agent completed (stack empty)
                     if self.active_agent_stack.is_empty() {
                         self.conversation.finish_current_message();
+                        self.sync_messages_list_state();
                         self.is_generating = false;
                         // Stop throughput tracking
                         self.is_streaming_active = false;

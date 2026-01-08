@@ -102,6 +102,11 @@ impl Tool for RunShellCommandTool {
                     output.push_str(&result.stderr);
                 }
 
+                // Indicate if output was truncated
+                if result.stdout_truncated || result.stderr_truncated {
+                    output.push_str("\n\n⚠️ Output was truncated due to size limits.");
+                }
+
                 Ok(ToolReturn::text(output))
             }
             Err(ShellError::NotFound(cmd)) => {

@@ -11,6 +11,9 @@ use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResul
 
 use super::file_ops;
 
+/// Maximum characters in list_files output to protect context window
+const LIST_FILES_MAX_OUTPUT_CHARS: usize = 100_000;
+
 /// Tool for listing files in a directory.
 #[derive(Debug, Clone, Default)]
 pub struct ListFilesTool;
@@ -106,6 +109,16 @@ impl Tool for ListFilesTool {
                     "\n\nSummary: {} files, {} directories, {} bytes total{}",
                     result.total_files, result.total_dirs, result.total_size, truncation_note
                 ));
+
+                // Protect against massive output overwhelming context
+                if output.len() > LIST_FILES_MAX_OUTPUT_CHARS {
+                    output.truncate(LIST_FILES_MAX_OUTPUT_CHARS);
+                    // Find a good break point (newline) to avoid cutting mid-line
+                    if let Some(last_newline) = output.rfind('\n') {
+                        output.truncate(last_newline);
+                    }
+                    output.push_str("\n\n[OUTPUT TRUNCATED - directory listing too large. Use max_entries parameter or recursive=false for smaller results]");
+                }
 
                 Ok(ToolReturn::text(output))
             }

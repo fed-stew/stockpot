@@ -5,12 +5,13 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    actions, div, prelude::*, px, rgb, App, AsyncApp, Context, Entity, ExternalPaths, FocusHandle,
-    Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Styled, WeakEntity, Window,
+    actions, div, list, prelude::*, px, rgb, App, AsyncApp, Context, Entity, ExternalPaths,
+    FocusHandle, Focusable, KeyBinding, ListAlignment, ListState, MouseButton, ScrollHandle,
+    SharedString, Styled, WeakEntity, Window,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
 
-use super::components::ScrollbarDragState;
+use super::components::{ListScrollbarDragState, ScrollbarDragState};
 use super::state::{Conversation, MessageRole};
 use super::theme::Theme;
 use crate::agents::{AgentExecutor, AgentManager, UserMode};
@@ -145,12 +146,14 @@ pub struct ChatApp {
     add_model_models_scroll_handle: ScrollHandle,
     /// Drag state for add model models scrollbar
     add_model_models_scrollbar_drag: Rc<ScrollbarDragState>,
-    /// Scroll handle for chat messages
-    messages_scroll_handle: ScrollHandle,
-    /// Drag state for chat messages scrollbar
-    messages_scrollbar_drag: Rc<ScrollbarDragState>,
+    // NOTE: messages_scroll_handle and messages_scrollbar_drag were removed.
+    // The list() component uses ListState for scrolling, which is incompatible with ScrollHandle.
+    /// List state for virtualized message rendering
+    messages_list_state: ListState,
     /// Whether user has manually scrolled away from bottom (disables auto-scroll)
     user_scrolled_away: bool,
+    /// Drag state for messages list scrollbar
+    messages_list_scrollbar_drag: Rc<ListScrollbarDragState>,
 
     /// Add model dialog state
     show_add_model_dialog: bool,
@@ -289,9 +292,11 @@ impl ChatApp {
             add_model_providers_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
             add_model_models_scroll_handle: ScrollHandle::new(),
             add_model_models_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
-            messages_scroll_handle: ScrollHandle::new(),
-            messages_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
+            // NOTE: messages_scroll_handle and messages_scrollbar_drag removed (ListState handles scrolling)
+            // Initialize with 0 items, bottom alignment (chat style), 200px overdraw for smooth scrolling
+            messages_list_state: ListState::new(0, ListAlignment::Bottom, px(200.0)),
             user_scrolled_away: false,
+            messages_list_scrollbar_drag: Rc::new(ListScrollbarDragState::default()),
 
             show_add_model_dialog: false,
             add_model_providers: Vec::new(),
@@ -327,6 +332,47 @@ impl ChatApp {
         window.focus(&app.focus_handle, cx);
 
         app
+    }
+
+    /// Update the list state when messages change
+    pub(super) fn sync_messages_list_state(&mut self) {
+        let new_count = self.conversation.messages.len();
+
+        // If the user has scrolled away from the bottom, keep their scroll position stable when
+        // messages are added. We use `bounds_for_item` (guarded) to detect whether the last item is
+        // currently visible within the viewport.
+        let prev_offset = self.messages_list_state.scroll_px_offset_for_scrollbar();
+        let viewport = self.messages_list_state.viewport_bounds();
+        let viewport_ready = viewport.size.height > gpui::Pixels::ZERO;
+
+        let last_item_bounds = new_count.checked_sub(1).and_then(|idx| {
+            self.messages_list_state.bounds_for_item(idx).or_else(|| {
+                idx.checked_sub(1)
+                    .and_then(|idx| self.messages_list_state.bounds_for_item(idx))
+            })
+        });
+
+        let at_bottom = if !viewport_ready {
+            true
+        } else if let Some(bounds) = last_item_bounds {
+            let item_bottom = bounds.origin.y + bounds.size.height;
+            let viewport_bottom = viewport.origin.y + viewport.size.height;
+            item_bottom <= viewport_bottom + px(2.0)
+        } else {
+            false
+        };
+
+        self.user_scrolled_away = !at_bottom;
+
+        self.messages_list_state.reset(new_count);
+
+        if self.user_scrolled_away {
+            let max_offset = self.messages_list_state.max_offset_for_scrollbar();
+            let clamped_y = prev_offset.y.clamp(-max_offset.height, gpui::Pixels::ZERO);
+
+            self.messages_list_state
+                .set_offset_from_scrollbar(gpui::point(prev_offset.x, clamped_y));
+        }
     }
 
     /// Start MCP servers
@@ -681,8 +727,6 @@ impl ChatApp {
             cx.propagate();
         }
     }
-
-
 }
 
 impl Focusable for ChatApp {

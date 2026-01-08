@@ -116,9 +116,10 @@ fn run_gui(args: Args) -> anyhow::Result<()> {
     let default_filter = if args.verbose {
         "trace"
     } else if args.debug {
-        "debug"
+        "debug,gpui_component=warn"
     } else {
-        "warn"
+        // Suppress noisy gpui_component markdown warnings while keeping other warnings
+        "warn,gpui_component::text::format::markdown=error"
     };
 
     let filter =
@@ -210,9 +211,10 @@ fn run_cli(args: Args) -> anyhow::Result<()> {
         let default_filter = if args.verbose {
             "trace"
         } else if args.debug {
-            "debug"
+            "debug,gpui_component=warn"
         } else {
-            "warn" // Quiet by default for normal use
+            // Suppress noisy gpui_component markdown warnings while keeping other warnings
+            "warn,gpui_component::text::format::markdown=error"
         };
 
         // Initialize tracing with stderr output

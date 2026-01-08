@@ -94,9 +94,7 @@ impl TerminalRenderer {
 
     /// Render a horizontal divider.
     pub(super) fn render_divider(&self) -> std::io::Result<()> {
-        println!(
-            "───────────────────────────────────────────────────────────────────────────────"
-        );
+        println!("───────────────────────────────────────────────────────────────────────────────");
         Ok(())
     }
 

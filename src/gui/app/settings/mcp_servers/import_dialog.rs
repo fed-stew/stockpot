@@ -55,7 +55,12 @@ fn render_dialog_content(
             cx.stop_propagation();
         })
         .child(render_dialog_header(&theme, cx))
-        .child(render_dialog_body(&theme, cx, &import_json_owned, import_error))
+        .child(render_dialog_body(
+            &theme,
+            cx,
+            &import_json_owned,
+            import_error,
+        ))
 }
 
 /// Renders the dialog header with title and close button.
@@ -162,7 +167,11 @@ fn render_json_preview(theme: &Theme, import_json: &str) -> impl IntoElement {
             div()
                 .text_size(px(12.))
                 .font_family("monospace")
-                .text_color(if has_content { theme.text } else { theme.text_muted })
+                .text_color(if has_content {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
                 .child(display_text),
         )
 }

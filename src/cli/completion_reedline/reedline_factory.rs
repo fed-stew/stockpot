@@ -1,11 +1,10 @@
 //! Factory function for creating Reedline with completion menu.
 
+use nu_ansi_term::Color;
 use nu_ansi_term::Style;
 use reedline::{
-    ColumnarMenu, Emacs, KeyCode, KeyModifiers, MenuBuilder, Reedline, ReedlineEvent,
-    ReedlineMenu,
+    ColumnarMenu, Emacs, KeyCode, KeyModifiers, MenuBuilder, Reedline, ReedlineEvent, ReedlineMenu,
 };
-use nu_ansi_term::Color;
 
 use super::completer::SpotCompleter;
 use super::prompt::SpotHighlighter;
