@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 use gpui::{
     div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, MouseButton,
     SharedString, StatefulInteractiveElement, Styled,
@@ -7,16 +5,6 @@ use gpui::{
 use gpui_component::text::markdown;
 
 use super::ChatApp;
-
-/// Compute a simple hash of content for use in element IDs.
-/// This enables GPUI's internal caching by making element IDs content-based,
-/// so unchanged elements can be skipped during re-rendering.
-#[inline]
-fn hash_content(content: &str) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    content.hash(&mut hasher);
-    hasher.finish()
-}
 use crate::gui::components::{
     collapsible_display, current_spinner_frame, list_scrollbar, CollapsibleProps,
 };
@@ -100,31 +88,21 @@ impl ChatApp {
                                 } else {
                                     theme.assistant_bubble
                                 };
-                                let is_streaming = msg.is_streaming;
-
                                 let msg_id = msg.id.clone();
                                 let content_elements: Vec<gpui::AnyElement> = app
                                     .render_message_content(
                                         &msg.sections,
                                         &msg.content,
-                                        idx,
-                                        is_streaming,
                                         &msg_id,
                                         &theme,
                                         &view,
                                         cx,
                                     );
 
-                                // Use STABLE ID during streaming to prevent flickering.
-                                // Content changes every ~8ms during streaming - if we hash it,
-                                // GPUI treats each change as a NEW element (destroy + recreate).
-                                // After streaming completes, use content-based hash for caching.
-                                let element_id = if is_streaming {
-                                    SharedString::from(format!("msg-{}", msg_id))
-                                } else {
-                                    let content_hash = hash_content(&msg.content);
-                                    SharedString::from(format!("msg-{}-{:x}", idx, content_hash))
-                                };
+                                // ALWAYS use stable UUID-based IDs.
+                                // This prevents element ID changes when streaming finishes,
+                                // which would cause GPUI to treat it as a new element.
+                                let element_id = SharedString::from(format!("msg-{}", msg_id));
 
                                 div()
                                     .id(element_id)
@@ -180,8 +158,6 @@ impl ChatApp {
         &self,
         sections: &[MessageSection],
         content: &str,
-        msg_idx: usize,
-        is_streaming: bool,
         msg_id: &str,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
@@ -193,29 +169,13 @@ impl ChatApp {
                 .iter()
                 .enumerate()
                 .map(|(sec_idx, section)| {
-                    self.render_section(
-                        section,
-                        msg_idx,
-                        sec_idx,
-                        is_streaming,
-                        msg_id,
-                        theme,
-                        view,
-                        cx,
-                    )
+                    self.render_section(section, sec_idx, msg_id, theme, view, cx)
                 })
                 .collect()
         } else {
             // Legacy: render content directly as markdown
-            // Clone to owned String for markdown renderer's 'static requirement
-            // Use STABLE ID during streaming to prevent flickering,
-            // content-based ID after completion for caching
-            let element_id = if is_streaming {
-                SharedString::from(format!("msg-{}-content", msg_id))
-            } else {
-                let content_hash = hash_content(content);
-                SharedString::from(format!("msg-{}-content-{:x}", msg_idx, content_hash))
-            };
+            // Always use stable UUID-based ID to prevent re-renders
+            let element_id = SharedString::from(format!("msg-{}-content", msg_id));
             let owned_content = content.to_string();
             vec![div()
                 .id(element_id)
@@ -230,9 +190,7 @@ impl ChatApp {
     fn render_section(
         &self,
         section: &MessageSection,
-        msg_idx: usize,
         sec_idx: usize,
-        is_streaming: bool,
         msg_id: &str,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
@@ -241,14 +199,8 @@ impl ChatApp {
         match section {
             MessageSection::Text(text) => {
                 // Text sections render as markdown
-                // Use STABLE ID during streaming to prevent flickering,
-                // content-based ID after completion for caching
-                let element_id = if is_streaming {
-                    SharedString::from(format!("msg-{}-sec-{}", msg_id, sec_idx))
-                } else {
-                    let text_hash = hash_content(text);
-                    SharedString::from(format!("msg-{}-sec-{}-{:x}", msg_idx, sec_idx, text_hash))
-                };
+                // Always use stable UUID-based ID to prevent re-renders
+                let element_id = SharedString::from(format!("msg-{}-sec-{}", msg_id, sec_idx));
                 div()
                     .id(element_id)
                     .w_full()
@@ -258,15 +210,8 @@ impl ChatApp {
             }
             MessageSection::NestedAgent(agent_section) => {
                 // Nested agent sections render as collapsible with click handler
-                // Note: agent_section.id is already a stable UUID, so we use that directly
-                self.render_agent_section_clickable(
-                    agent_section,
-                    msg_idx,
-                    sec_idx,
-                    theme,
-                    view,
-                    cx,
-                )
+                // agent_section.id is already a stable UUID
+                self.render_agent_section_clickable(agent_section, theme, view, cx)
             }
         }
     }
@@ -276,8 +221,6 @@ impl ChatApp {
     fn render_agent_section_clickable(
         &self,
         agent_section: &crate::gui::state::AgentSection,
-        _msg_idx: usize,
-        _sec_idx: usize,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
         _cx: &App,
