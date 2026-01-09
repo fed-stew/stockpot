@@ -161,7 +161,6 @@ pub fn truncate_to_token_limit(text: String, max_tokens: usize) -> (String, bool
     (truncated, true)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

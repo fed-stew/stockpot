@@ -227,14 +227,18 @@ impl ChatApp {
                                                     .rounded(px(2.)),
                                             ),
                                     )
-                                    // Token count text
-                                    .child(div().text_size(px(11.)).text_color(label_color).child(
-                                        format!(
-                                            "{}/{}",
-                                            format_tokens_with_separator(context_tokens_used),
-                                            format_tokens_with_separator(context_window_size)
-                                        ),
-                                    )),
+                                    // Token count text - fixed width to prevent layout shift
+                                    .child(
+                                        div()
+                                            .min_w(px(95.)) // Fits "999 999/999 999"
+                                            .text_size(px(11.))
+                                            .text_color(label_color)
+                                            .child(format!(
+                                                "{}/{}",
+                                                format_tokens_with_separator(context_tokens_used),
+                                                format_tokens_with_separator(context_window_size)
+                                            )),
+                                    ),
                             )
                             // Throughput chart
                             .child(

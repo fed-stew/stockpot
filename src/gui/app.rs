@@ -48,6 +48,7 @@ mod messages;
 mod metrics;
 mod model_dropdown;
 mod model_management;
+mod scroll_animation;
 mod settings;
 mod streaming;
 mod toolbar;
@@ -105,8 +106,7 @@ pub struct ChatApp {
     is_streaming_active: bool,
     /// Historical throughput values for chart display (last 8 values, sampled every 250ms)
     throughput_history: VecDeque<f64>,
-    /// Last time we triggered a UI render (for throttling during streaming)
-    last_render_notify: std::time::Instant,
+
     /// Last time we added a history sample
     last_history_sample: std::time::Instant,
     /// Available agents list
@@ -189,6 +189,11 @@ pub struct ChatApp {
 
     /// Map from agent_name to section_id for currently active nested sections
     active_section_ids: HashMap<String, String>,
+
+    // ── Smooth scroll animation state ──────────────────────────────────────────
+    /// Target scroll offset for smooth animation (None = not animating)
+    /// Uses lerp-based "chase" interpolation - the actual target (bottom) is computed per tick
+    scroll_animation_target: Option<gpui::Point<gpui::Pixels>>,
 }
 
 impl ChatApp {
@@ -271,7 +276,6 @@ impl ChatApp {
             current_throughput_cps: 0.0,
             is_streaming_active: false,
             throughput_history: VecDeque::new(),
-            last_render_notify: std::time::Instant::now(),
             last_history_sample: std::time::Instant::now(),
             available_agents,
             available_models,
@@ -293,8 +297,11 @@ impl ChatApp {
             add_model_models_scroll_handle: ScrollHandle::new(),
             add_model_models_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
             // NOTE: messages_scroll_handle and messages_scrollbar_drag removed (ListState handles scrolling)
-            // Initialize with 0 items, bottom alignment (chat style), 200px overdraw for smooth scrolling
-            messages_list_state: ListState::new(0, ListAlignment::Bottom, px(200.0)),
+            // Initialize with 0 items, TOP alignment (we handle scroll-to-bottom manually with smooth animation),
+            // 800px overdraw for smooth scrolling (increased from 200px to reduce markdown re-parsing
+            // when scrolling into new territory). Using Top instead of Bottom prevents GPUI from
+            // auto-snapping to bottom on every render, allowing our lerp animation to work.
+            messages_list_state: ListState::new(0, ListAlignment::Top, px(800.0)),
             user_scrolled_away: false,
             messages_list_scrollbar_drag: Rc::new(ListScrollbarDragState::default()),
 
@@ -320,6 +327,9 @@ impl ChatApp {
 
             active_agent_stack: Vec::new(),
             active_section_ids: HashMap::new(),
+
+            // Smooth scroll animation (None = not animating)
+            scroll_animation_target: None,
         };
 
         // Start message listener
@@ -367,12 +377,18 @@ impl ChatApp {
         self.messages_list_state.reset(new_count);
 
         if self.user_scrolled_away {
+            // User has scrolled up - preserve their position
             let max_offset = self.messages_list_state.max_offset_for_scrollbar();
             let clamped_y = prev_offset.y.clamp(-max_offset.height, gpui::Pixels::ZERO);
 
             self.messages_list_state
                 .set_offset_from_scrollbar(gpui::point(prev_offset.x, clamped_y));
+        } else if self.is_generating {
+            // At bottom during streaming - trigger smooth scroll animation
+            // This prevents the "jumpy" instant scroll when content grows
+            self.start_smooth_scroll_to_bottom();
         }
+        // When not generating and at bottom, no animation needed - stay at current position
     }
 
     /// Start MCP servers

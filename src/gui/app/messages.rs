@@ -1,10 +1,22 @@
+use std::hash::{Hash, Hasher};
+
 use gpui::{
-    div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, SharedString,
-    StatefulInteractiveElement, Styled,
+    div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, MouseButton,
+    SharedString, StatefulInteractiveElement, Styled,
 };
 use gpui_component::text::markdown;
 
 use super::ChatApp;
+
+/// Compute a simple hash of content for use in element IDs.
+/// This enables GPUI's internal caching by making element IDs content-based,
+/// so unchanged elements can be skipped during re-rendering.
+#[inline]
+fn hash_content(content: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
 use crate::gui::components::{
     collapsible_display, current_spinner_frame, list_scrollbar, CollapsibleProps,
 };
@@ -90,17 +102,32 @@ impl ChatApp {
                                 };
                                 let is_streaming = msg.is_streaming;
 
+                                let msg_id = msg.id.clone();
                                 let content_elements: Vec<gpui::AnyElement> = app
                                     .render_message_content(
                                         &msg.sections,
                                         &msg.content,
                                         idx,
+                                        is_streaming,
+                                        &msg_id,
                                         &theme,
+                                        &view,
                                         cx,
                                     );
 
+                                // Use STABLE ID during streaming to prevent flickering.
+                                // Content changes every ~8ms during streaming - if we hash it,
+                                // GPUI treats each change as a NEW element (destroy + recreate).
+                                // After streaming completes, use content-based hash for caching.
+                                let element_id = if is_streaming {
+                                    SharedString::from(format!("msg-{}", msg_id))
+                                } else {
+                                    let content_hash = hash_content(&msg.content);
+                                    SharedString::from(format!("msg-{}-{:x}", idx, content_hash))
+                                };
+
                                 div()
-                                    .id(SharedString::from(format!("msg-{}", idx)))
+                                    .id(element_id)
                                     .flex()
                                     .flex_col()
                                     .w_full()
@@ -124,15 +151,7 @@ impl ChatApp {
                                             .min_w_0()
                                             .when(is_user, |d| d.max_w(px(600.)))
                                             .when(!is_user, |d| d.w_full().min_w_0())
-                                            .children(content_elements)
-                                            .when(is_streaming, |d| {
-                                                d.child(
-                                                    div()
-                                                        .ml(px(2.))
-                                                        .text_color(theme.accent)
-                                                        .child(current_spinner_frame()),
-                                                )
-                                            }),
+                                            .children(content_elements),
                                     )
                                     .into_any_element()
                             })
@@ -162,21 +181,44 @@ impl ChatApp {
         sections: &[MessageSection],
         content: &str,
         msg_idx: usize,
+        is_streaming: bool,
+        msg_id: &str,
         theme: &crate::gui::theme::Theme,
-        _cx: &App,
+        view: &Entity<ChatApp>,
+        cx: &App,
     ) -> Vec<AnyElement> {
         // If we have sections, render them
         if !sections.is_empty() {
             sections
                 .iter()
                 .enumerate()
-                .map(|(sec_idx, section)| self.render_section(section, msg_idx, sec_idx, theme))
+                .map(|(sec_idx, section)| {
+                    self.render_section(
+                        section,
+                        msg_idx,
+                        sec_idx,
+                        is_streaming,
+                        msg_id,
+                        theme,
+                        view,
+                        cx,
+                    )
+                })
                 .collect()
         } else {
             // Legacy: render content directly as markdown
             // Clone to owned String for markdown renderer's 'static requirement
+            // Use STABLE ID during streaming to prevent flickering,
+            // content-based ID after completion for caching
+            let element_id = if is_streaming {
+                SharedString::from(format!("msg-{}-content", msg_id))
+            } else {
+                let content_hash = hash_content(content);
+                SharedString::from(format!("msg-{}-content-{:x}", msg_idx, content_hash))
+            };
             let owned_content = content.to_string();
             vec![div()
+                .id(element_id)
                 .w_full()
                 .overflow_x_hidden()
                 .child(markdown(&owned_content).selectable(true))
@@ -190,42 +232,64 @@ impl ChatApp {
         section: &MessageSection,
         msg_idx: usize,
         sec_idx: usize,
+        is_streaming: bool,
+        msg_id: &str,
         theme: &crate::gui::theme::Theme,
+        view: &Entity<ChatApp>,
+        cx: &App,
     ) -> AnyElement {
         match section {
             MessageSection::Text(text) => {
                 // Text sections render as markdown
+                // Use STABLE ID during streaming to prevent flickering,
+                // content-based ID after completion for caching
+                let element_id = if is_streaming {
+                    SharedString::from(format!("msg-{}-sec-{}", msg_id, sec_idx))
+                } else {
+                    let text_hash = hash_content(text);
+                    SharedString::from(format!("msg-{}-sec-{}-{:x}", msg_idx, sec_idx, text_hash))
+                };
                 div()
-                    .id(SharedString::from(format!(
-                        "msg-{}-sec-{}",
-                        msg_idx, sec_idx
-                    )))
+                    .id(element_id)
                     .w_full()
                     .overflow_x_hidden()
                     .child(markdown(text).selectable(true))
                     .into_any_element()
             }
             MessageSection::NestedAgent(agent_section) => {
-                // Nested agent sections render as collapsible
-                self.render_agent_section_static(agent_section, msg_idx, sec_idx, theme)
+                // Nested agent sections render as collapsible with click handler
+                // Note: agent_section.id is already a stable UUID, so we use that directly
+                self.render_agent_section_clickable(
+                    agent_section,
+                    msg_idx,
+                    sec_idx,
+                    theme,
+                    view,
+                    cx,
+                )
             }
         }
     }
 
-    /// Render a nested agent section as a collapsible container (static, no click handler).
-    /// Click handlers for collapsibles inside virtualized lists need special handling.
-    fn render_agent_section_static(
+    /// Render a nested agent section as a collapsible container with click handler.
+    /// The click handler toggles the collapsed state via the Entity<ChatApp> reference.
+    fn render_agent_section_clickable(
         &self,
         agent_section: &crate::gui::state::AgentSection,
-        msg_idx: usize,
-        sec_idx: usize,
+        _msg_idx: usize,
+        _sec_idx: usize,
         theme: &crate::gui::theme::Theme,
+        view: &Entity<ChatApp>,
+        _cx: &App,
     ) -> AnyElement {
         let is_collapsed = agent_section.is_collapsed;
 
-        // Build collapsible props from theme and agent section state
+        // Use agent_section.id (a stable UUID) for element IDs.
+        // This prevents flickering during streaming - the ID doesn't change
+        // even as content updates every ~8ms.
+        let stable_id = &agent_section.id;
         let props = CollapsibleProps::with_theme(theme)
-            .id(format!("msg-{}-agent-{}", msg_idx, sec_idx))
+            .id(format!("agent-{}", stable_id))
             .title(agent_section.display_name.clone())
             .icon("🤖")
             .collapsed(is_collapsed)
@@ -246,19 +310,24 @@ impl ChatApp {
                 .into_any_element()
         };
 
-        // Create the collapsible in display-only mode
-        // NOTE: Click handlers for toggling are not supported in virtualized list items
-        // The collapsible will display properly but won't toggle on click
-        // This is a trade-off for virtualization performance
+        // Create the collapsible in display-only mode (we handle clicks on the container)
         let collapsible_element = collapsible_display(props, content);
 
+        // Clone section_id and view for the click handler closure
+        let section_id = agent_section.id.clone();
+        let view = view.clone();
+
         div()
-            .id(SharedString::from(format!(
-                "msg-{}-sec-{}-container",
-                msg_idx, sec_idx
-            )))
+            .id(SharedString::from(format!("agent-{}-container", stable_id)))
             .w_full()
             .my(px(8.)) // Vertical margin for visual separation
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                view.update(cx, |app, cx| {
+                    app.conversation.toggle_section_collapsed(&section_id);
+                    cx.notify();
+                });
+            })
             .child(collapsible_element)
             .into_any_element()
     }

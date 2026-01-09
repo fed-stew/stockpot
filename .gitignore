@@ -41,3 +41,8 @@ run_with_proxy.sh
 node_modules/
 package.json
 package-lock.json
+
+# Claude debug files
+logs_claude/
+mitmproxy_logger_claude.py
+run_with_proxy_claude.sh

@@ -5,7 +5,8 @@
 //! - `handle_message()` - Process incoming Message events
 //! - `toggle_agent_section()` - Toggle collapsible agent sections
 //!
-//! NOTE: Auto-scroll is now handled by ListState with ListAlignment::Bottom.
+//! NOTE: Auto-scroll is handled manually with smooth animation (see scroll_animation.rs).
+//! We use ListAlignment::Top to prevent GPUI from auto-snapping to bottom.
 
 use gpui::{AsyncApp, Context, WeakEntity};
 
@@ -15,7 +16,8 @@ use super::ChatApp;
 
 impl ChatApp {
     /// Start animation timer for smooth UI updates during streaming.
-    /// Runs at ~12.5fps (80ms) to match spinner frame rate.
+    /// Runs at ~120fps (8ms) for butter-smooth scroll animation on high refresh displays.
+    /// Also handles spinner animation and throughput metrics.
     /// Automatically stops when is_generating becomes false.
     pub(super) fn start_animation_timer(cx: &mut Context<Self>) {
         use std::time::Duration;
@@ -23,7 +25,7 @@ impl ChatApp {
         cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
             loop {
                 cx.background_executor()
-                    .timer(Duration::from_millis(80))
+                    .timer(Duration::from_millis(8))
                     .await;
 
                 let should_continue = this
@@ -33,6 +35,8 @@ impl ChatApp {
                         }
                         // Update throughput metrics
                         app.tick_throughput();
+                        // Tick smooth scroll animation (if active)
+                        app.tick_scroll_animation();
                         // Trigger UI refresh for spinner animation
                         cx.notify();
                         true
@@ -63,8 +67,8 @@ impl ChatApp {
         .detach();
     }
 
-    // NOTE: scroll_messages_to_bottom() was removed. ListState with ListAlignment::Bottom
-    // handles auto-scroll to bottom behavior automatically.
+    // NOTE: scroll_messages_to_bottom() was removed. We now use smooth scroll animation
+    // via start_smooth_scroll_to_bottom() with ListAlignment::Top for manual control.
 
     /// Handle incoming messages from the agent
     pub(super) fn handle_message(&mut self, msg: Message, cx: &mut Context<Self>) {
@@ -94,7 +98,11 @@ impl ChatApp {
                     self.last_context_update = std::time::Instant::now();
                 }
 
-                // NOTE: Auto-scroll is handled by ListState with ListAlignment::Bottom
+                // Smooth scroll to bottom when content grows (if user hasn't scrolled away)
+                // This prevents the "jumpy" instant scroll, especially with newlines
+                if !self.user_scrolled_away {
+                    self.start_smooth_scroll_to_bottom();
+                }
             }
             Message::Thinking(thinking) => {
                 // Display thinking in a muted style
@@ -169,8 +177,9 @@ impl ChatApp {
                         self.is_generating = true;
                         Self::start_animation_timer(cx);
                         // Reset scroll state for new response
-                        // ListAlignment::Bottom handles auto-scroll automatically
                         self.user_scrolled_away = false;
+                        // Trigger smooth scroll to show the new assistant message
+                        self.start_smooth_scroll_to_bottom();
                         // Update context at start of conversation
                         self.update_context_usage();
                         // Reset throughput tracking for new response
@@ -238,17 +247,12 @@ impl ChatApp {
             _ => {}
         }
 
-        // Throttle notifications during streaming to ~60fps (16ms)
+        // Animation timer already calls cx.notify() at 8ms during streaming.
+        // TextDelta events just update state - no need to trigger additional renders.
+        // This prevents double-rendering and reduces GPU pressure.
         let should_notify = match &msg {
-            Message::TextDelta(_) => {
-                if self.last_render_notify.elapsed() > std::time::Duration::from_millis(16) {
-                    self.last_render_notify = std::time::Instant::now();
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => true, // All other message types notify immediately
+            Message::TextDelta(_) => false, // Animation timer handles render
+            _ => true,                      // Other message types still notify immediately
         };
 
         if should_notify {
