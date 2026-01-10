@@ -74,6 +74,8 @@ pub struct ChatApp {
     user_mode: UserMode,
     /// PDF processing mode (image vs text extraction)
     pdf_mode: PdfMode,
+    /// Whether to show agent reasoning in the UI
+    show_reasoning: bool,
     /// Color theme
     theme: Theme,
     /// Whether we're currently generating a response
@@ -223,6 +225,7 @@ impl ChatApp {
         let current_model = settings.model();
         let user_mode = settings.user_mode();
         let pdf_mode = settings.pdf_mode();
+        let show_reasoning = settings.get_bool("show_reasoning").unwrap_or(false);
 
         // Initialize model registry
         let model_registry = Arc::new(ModelRegistry::load_from_db(&db).unwrap_or_default());
@@ -270,6 +273,7 @@ impl ChatApp {
             current_model,
             user_mode,
             pdf_mode,
+            show_reasoning,
             theme,
             is_generating: false,
             message_bus,
@@ -290,7 +294,7 @@ impl ChatApp {
             available_agents,
             available_models,
             show_settings: false,
-            settings_tab: settings::SettingsTab::PinnedAgents,
+            settings_tab: settings::SettingsTab::General,
             settings_selected_agent,
             show_agent_dropdown: false,
             agent_dropdown_bounds: None,

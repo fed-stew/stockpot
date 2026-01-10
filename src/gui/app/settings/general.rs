@@ -228,5 +228,60 @@ impl ChatApp {
                             }),
                     ),
             )
+            // Show Reasoning Toggle
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.text)
+                            .child("Show Agent Reasoning"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(theme.text_muted)
+                            .mb(px(4.))
+                            .child("Display the AI's thought process and planned steps"),
+                    )
+                    .child({
+                        let is_enabled = self.show_reasoning;
+                        div()
+                            .id("show-reasoning-toggle")
+                            .px(px(12.))
+                            .py(px(10.))
+                            .rounded(px(8.))
+                            .bg(if is_enabled {
+                                theme.accent
+                            } else {
+                                theme.tool_card
+                            })
+                            .text_color(if is_enabled {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text
+                            })
+                            .text_size(px(13.))
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.9))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    this.show_reasoning = !this.show_reasoning;
+                                    let settings = Settings::new(&this.db);
+                                    let value = if this.show_reasoning { "true" } else { "false" };
+                                    if let Err(e) = settings.set("show_reasoning", value) {
+                                        tracing::warn!("Failed to save show_reasoning: {}", e);
+                                    }
+                                    cx.notify();
+                                }),
+                            )
+                            .child(if is_enabled { "✓ Enabled" } else { "Disabled" })
+                    }),
+            )
     }
 }
