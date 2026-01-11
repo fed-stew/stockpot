@@ -10,7 +10,7 @@ use gpui::{
     Styled,
 };
 use image::codecs::png::PngDecoder;
-use image::{DynamicImage, Frame, ImageDecoder};
+use image::{DynamicImage, Frame};
 
 use crate::gui::app::{PendingAttachment, PendingFile, PendingImage, PendingPdf, MAX_ATTACHMENTS};
 use crate::gui::theme::Theme;

@@ -45,7 +45,7 @@ impl ChatApp {
         self.add_model_providers.clear();
 
         cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
-            match crate::cli::add_model::fetch_providers().await {
+            match crate::models::catalog::fetch_providers().await {
                 Ok(providers) => {
                     this.update(cx, |app, cx| {
                         app.add_model_providers = providers.into_values().collect();

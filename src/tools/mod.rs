@@ -34,22 +34,8 @@ mod shell_tool;
 pub mod registry;
 
 // Re-export low-level operations (for direct use)
-pub use agent_tools::{
-    InvokeAgentTool, ListAgentsTool, ShareReasoningTool as AgentShareReasoningTool,
-};
-pub use common::{should_ignore, IGNORE_PATTERNS};
-pub use diff::{apply_unified_diff, is_unified_diff, UnifiedDiff};
-pub use file_ops::{apply_diff, grep, list_files, read_file, write_file};
-pub use shell::{CommandResult, CommandRunner};
 
 // Re-export tool types for convenience
-pub use delete_file_tool::DeleteFileTool;
-pub use edit_file_tool::EditFileTool;
-pub use grep_tool::GrepTool;
-pub use list_files_tool::ListFilesTool;
-pub use read_file_tool::ReadFileTool;
-pub use reasoning_tool::ShareReasoningTool;
-pub use shell_tool::RunShellCommandTool;
 
 // Re-export registry types
-pub use registry::{ArcTool, SpotToolRegistry};
+pub use registry::SpotToolRegistry;

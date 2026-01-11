@@ -111,11 +111,6 @@ impl<'a> ChatGptAuth<'a> {
         }
     }
 
-    /// Check if authenticated.
-    pub fn is_authenticated(&self) -> Result<bool, ChatGptAuthError> {
-        Ok(self.storage.is_authenticated(PROVIDER)?)
-    }
-
     /// Get stored tokens.
     pub fn get_tokens(&self) -> Result<Option<StoredTokens>, ChatGptAuthError> {
         Ok(self.storage.load(PROVIDER)?)
@@ -168,11 +163,6 @@ impl<'a> ChatGptAuth<'a> {
         Ok(tokens.access_token)
     }
 
-    /// Delete stored tokens (logout).
-    pub fn logout(&self) -> Result<(), ChatGptAuthError> {
-        self.storage.delete(PROVIDER)?;
-        Ok(())
-    }
 }
 
 // ============================================================================

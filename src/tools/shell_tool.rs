@@ -9,7 +9,7 @@ use tracing::{debug, warn};
 
 use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
-use super::shell::{self, ShellError};
+use super::shell;
 
 /// Tool for executing shell commands.
 #[derive(Debug, Clone, Default)]
@@ -109,13 +109,6 @@ impl Tool for RunShellCommandTool {
 
                 Ok(ToolReturn::text(output))
             }
-            Err(ShellError::NotFound(cmd)) => {
-                Ok(ToolReturn::error(format!("Command not found: {}", cmd)))
-            }
-            Err(ShellError::Timeout(secs)) => Ok(ToolReturn::error(format!(
-                "Command timed out after {} seconds",
-                secs
-            ))),
             Err(e) => Ok(ToolReturn::error(format!(
                 "Command execution failed: {}",
                 e

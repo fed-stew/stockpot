@@ -18,9 +18,9 @@ mod types;
 
 // Re-export public API
 pub use model_factory::get_model;
-pub use types::{ExecutorError, ExecutorResult, ExecutorStreamReceiver};
+pub use types::{ExecuteContext, ExecutorError, ExecutorResult, ExecutorStreamReceiver};
 
-use crate::agents::{AgentManager, SpotAgent};
+use crate::agents::SpotAgent;
 use crate::config::Settings;
 use crate::db::Database;
 use crate::mcp::McpManager;
@@ -29,23 +29,21 @@ use crate::models::settings::ModelSettings as SpotModelSettings;
 use crate::models::ModelRegistry;
 use crate::tools::SpotToolRegistry;
 
-use adapters::{ArcModel, RecordingToolExecutor, ToolExecutorAdapter};
+use adapters::{ArcModel, ToolExecutorAdapter};
 use mcp::McpToolExecutor;
 use sub_agents::{InvokeAgentExecutor, ListAgentsExecutor};
 
 use serdes_ai_agent::{agent, RunOptions};
-use serdes_ai_core::messages::ToolCallArgs;
 use serdes_ai_core::messages::{ImageMediaType, UserContent, UserContentPart};
 use serdes_ai_core::{
-    ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart, TextPart, ToolCallPart,
+    ModelRequest,
     ToolReturnPart,
 };
 use serdes_ai_tools::{Tool, ToolDefinition};
 
-use futures::StreamExt;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, error, info, warn};
+use tokio::sync::Mutex;
+use tracing::{debug, info};
 
 // Re-export stream event
 pub use serdes_ai_agent::AgentStreamEvent as StreamEvent;
@@ -270,14 +268,17 @@ impl<'a> AgentExecutor<'a> {
         messages.push(user_req);
 
         // Use internal streaming execution
+        let exec_context = ExecuteContext {
+            tool_registry,
+            mcp_manager,
+        };
         let mut stream = self
             .execute_stream_internal(
                 spot_agent,
                 model_name,
                 UserContent::text(prompt),
                 message_history,
-                tool_registry,
-                mcp_manager,
+                &exec_context,
                 Some(Arc::clone(&tool_return_recorder)),
             )
             .await?;
@@ -311,7 +312,6 @@ impl<'a> AgentExecutor<'a> {
     ///
     /// Similar to `execute_with_bus` but accepts image data alongside text.
     /// Images are sent as base64-encoded PNG data to vision-capable models.
-    #[allow(clippy::too_many_arguments)]
     pub async fn execute_with_images(
         &self,
         spot_agent: &dyn SpotAgent,
@@ -319,8 +319,7 @@ impl<'a> AgentExecutor<'a> {
         prompt: &str,
         images: &[(Vec<u8>, ImageMediaType)],
         message_history: Option<Vec<ModelRequest>>,
-        tool_registry: &SpotToolRegistry,
-        mcp_manager: &McpManager,
+        context: &ExecuteContext<'_>,
     ) -> Result<ExecutorResult, ExecutorError> {
         let bus = self.bus.as_ref().ok_or(ExecutorError::Config(
             "No message bus configured. Use with_bus() first.".into(),
@@ -389,8 +388,7 @@ impl<'a> AgentExecutor<'a> {
                 model_name,
                 user_content,
                 message_history,
-                tool_registry,
-                mcp_manager,
+                context,
                 Some(Arc::clone(&tool_return_recorder)),
             )
             .await?;
@@ -435,13 +433,16 @@ impl<'a> AgentExecutor<'a> {
         tool_registry: &SpotToolRegistry,
         mcp_manager: &McpManager,
     ) -> Result<ExecutorStreamReceiver, ExecutorError> {
+        let context = ExecuteContext {
+            tool_registry,
+            mcp_manager,
+        };
         self.execute_stream_internal(
             spot_agent,
             model_name,
             UserContent::text(prompt),
             message_history,
-            tool_registry,
-            mcp_manager,
+            &context,
             None,
         )
         .await
@@ -526,45 +527,6 @@ impl<'a> AgentExecutor<'a> {
 // Private implementation details in a separate impl block
 mod streaming;
 
-/// Legacy execute_agent function for backwards compatibility.
-///
-/// Prefer using `AgentExecutor` directly for new code.
-#[deprecated(since = "0.2.0", note = "Use AgentExecutor::execute() instead")]
-pub async fn execute_agent(
-    db: &Database,
-    agent: &dyn SpotAgent,
-    model_name: &str,
-    prompt: &str,
-    message_history: &mut Vec<ModelRequest>,
-) -> Result<String, ExecutorError> {
-    let model_registry = ModelRegistry::load_from_db(db).unwrap_or_default();
-    let executor = AgentExecutor::new(db, &model_registry);
-    let tool_registry = SpotToolRegistry::new();
-    let mcp_manager = McpManager::new();
-
-    // Convert mutable history to owned
-    let history = if message_history.is_empty() {
-        None
-    } else {
-        Some(message_history.clone())
-    };
-
-    let result = executor
-        .execute(
-            agent,
-            model_name,
-            prompt,
-            history,
-            &tool_registry,
-            &mcp_manager,
-        )
-        .await?;
-
-    // Update the caller's history
-    *message_history = result.messages;
-
-    Ok(result.output)
-}
 
 #[cfg(test)]
 mod tests {
@@ -832,6 +794,10 @@ mod tests {
         let agent = MockAgent { name: "test" };
         let tool_registry = SpotToolRegistry::new();
         let mcp_manager = McpManager::new();
+        let context = ExecuteContext {
+            tool_registry: &tool_registry,
+            mcp_manager: &mcp_manager,
+        };
 
         let result = executor
             .execute_with_images(
@@ -840,8 +806,7 @@ mod tests {
                 "test prompt",
                 &[],
                 None,
-                &tool_registry,
-                &mcp_manager,
+                &context,
             )
             .await;
 

@@ -45,11 +45,14 @@
 //! use stockpot::messaging::{MessageBus, EventBridge, TerminalRenderer};
 //!
 //! let bus = MessageBus::new();
+//! let renderer = TerminalRenderer::new();
 //!
-//! // Spawn renderer
-//! let receiver = bus.subscribe();
+//! // Subscribe and render messages
+//! let mut receiver = bus.subscribe();
 //! tokio::spawn(async move {
-//!     TerminalRenderer::new().run_loop(receiver).await;
+//!     while let Ok(message) = receiver.recv().await {
+//!         let _ = renderer.render(&message);
+//!     }
 //! });
 //!
 //! // Create executor with bus
@@ -69,12 +72,8 @@
 
 mod bus;
 mod event_bridge;
-mod renderer;
-mod spinner;
 mod types;
 
-pub use bus::{MessageBus, MessageReceiver, MessageSender};
+pub use bus::{MessageBus, MessageSender};
 pub use event_bridge::EventBridge;
-pub use renderer::{RenderStyle, TerminalRenderer};
-pub use spinner::{Spinner, SpinnerConfig, SpinnerHandle};
 pub use types::*;

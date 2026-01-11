@@ -2,12 +2,12 @@
 name = "stockpot"
 version = "0.18.0"
 edition = "2021"
-description = "AI-powered coding assistant with GUI, CLI, and TUI modes"
+description = "AI-powered coding assistant with native GUI"
 license = "MIT"
 authors = ["Stockpot Contributors"]
 repository = "https://github.com/fed-stew/stockpot"
-keywords = ["ai", "gui", "cli", "coding", "assistant", "llm"]
-categories = ["command-line-utilities", "development-tools", "gui"]
+keywords = ["ai", "gui", "coding", "assistant", "llm"]
+categories = ["development-tools", "gui"]
 
 [[bin]]
 name = "spot"
@@ -28,14 +28,10 @@ streamdown-parser = { git = "https://github.com/fed-stew/streamdown-rs" }
 streamdown-render = { git = "https://github.com/fed-stew/streamdown-rs" }
 streamdown-config = { git = "https://github.com/fed-stew/streamdown-rs" }
 
-# CLI
+# Core
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
-reedline = "0.37"
 nu-ansi-term = "0.50"
-
-# Terminal UI
 crossterm = "0.28"
-ratatui = "0.29"
 syntect = "5.2"
 
 # Database
@@ -82,11 +78,8 @@ base64 = "0.22"
 # Browser
 webbrowser = "1.0"
 
-# Interactive terminal
-dialoguer = { version = "0.11", features = ["fuzzy-select"] }
-console = "0.15"
+# Shell utilities
 shellexpand = "3.1"
-terminal_size = "0.4"
 
 # GUI (optional - for stockpot-gui binary)
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", optional = true }

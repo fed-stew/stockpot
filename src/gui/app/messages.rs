@@ -6,7 +6,7 @@ use gpui_component::text::markdown;
 
 use super::ChatApp;
 use crate::gui::components::{
-    collapsible_display, current_spinner_frame, list_scrollbar, CollapsibleProps, MarkdownTooltip,
+    collapsible_display, list_scrollbar, CollapsibleProps, MarkdownTooltip,
 };
 use crate::gui::state::{
     AgentContentItem, MessageRole, MessageSection, ThinkingSection, ToolCallSection,

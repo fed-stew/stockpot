@@ -1,6 +1,6 @@
 //! Claude Code OAuth authentication.
 
-use super::storage::{StoredTokens, TokenStorage, TokenStorageError};
+use super::storage::{TokenStorage, TokenStorageError};
 use crate::db::Database;
 use crate::models::{ModelConfig, ModelType};
 use serde::Deserialize;
@@ -38,16 +38,6 @@ impl<'a> ClaudeCodeAuth<'a> {
         Self {
             storage: TokenStorage::new(db),
         }
-    }
-
-    /// Check if authenticated.
-    pub fn is_authenticated(&self) -> Result<bool, ClaudeCodeAuthError> {
-        Ok(self.storage.is_authenticated(PROVIDER)?)
-    }
-
-    /// Get stored tokens.
-    pub fn get_tokens(&self) -> Result<Option<StoredTokens>, ClaudeCodeAuthError> {
-        Ok(self.storage.load(PROVIDER)?)
     }
 
     /// Save tokens from OAuth response.
@@ -107,11 +97,6 @@ impl<'a> ClaudeCodeAuth<'a> {
         Ok(tokens.access_token)
     }
 
-    /// Delete stored tokens (logout).
-    pub fn logout(&self) -> Result<(), ClaudeCodeAuthError> {
-        self.storage.delete(PROVIDER)?;
-        Ok(())
-    }
 }
 
 // ============================================================================
@@ -122,8 +107,6 @@ impl<'a> ClaudeCodeAuth<'a> {
 #[derive(Debug, Deserialize)]
 struct ModelInfo {
     id: String,
-    #[serde(default)]
-    display_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

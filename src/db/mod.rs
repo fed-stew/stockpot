@@ -2,13 +2,11 @@
 
 mod migrations;
 mod schema;
-mod session_repository;
 
 use rusqlite::Connection;
 use std::path::PathBuf;
 
 pub use schema::*;
-pub use session_repository::SessionRepository;
 
 /// Database connection wrapper.
 pub struct Database {

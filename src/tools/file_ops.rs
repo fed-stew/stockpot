@@ -16,12 +16,8 @@ pub enum FileError {
     Io(#[from] std::io::Error),
     #[error("Path not found: {0}")]
     NotFound(String),
-    #[error("Permission denied: {0}")]
-    PermissionDenied(String),
     #[error("File too large: {0} bytes (max: {1})")]
     TooLarge(u64, u64),
-    #[error("Binary file: {0}")]
-    BinaryFile(String),
     #[error("Grep error: {0}")]
     GrepError(String),
     #[error("File too large: ~{estimated_tokens} tokens ({total_lines} lines). Read in chunks using start_line and num_lines parameters. Suggested: start_line=1, num_lines={suggested_chunk_size}")]
@@ -58,6 +54,16 @@ const LIST_FILES_HARD_MAX_ENTRIES: usize = 10_000;
 const LIST_FILES_DEFAULT_MAX_DEPTH: usize = 10;
 const LIST_FILES_HARD_MAX_DEPTH: usize = 50;
 
+/// Context for recursive file listing.
+struct ListFilesContext<'a> {
+    base: &'a Path,
+    entries: &'a mut Vec<FileEntry>,
+    recursive: bool,
+    max_depth: usize,
+    max_entries: usize,
+    truncated: &'a mut bool,
+}
+
 /// Maximum tokens allowed in a single file read to protect context window
 const READ_FILE_MAX_TOKENS: usize = 10_000;
 /// Approximate characters per token (conservative estimate)
@@ -89,16 +95,15 @@ pub fn list_files(
         .unwrap_or(LIST_FILES_DEFAULT_MAX_DEPTH)
         .min(LIST_FILES_HARD_MAX_DEPTH);
 
-    list_files_recursive(
-        path,
-        path,
-        &mut entries,
+    let mut ctx = ListFilesContext {
+        base: path,
+        entries: &mut entries,
         recursive,
         max_depth,
-        0,
         max_entries,
-        &mut truncated,
-    )?;
+        truncated: &mut truncated,
+    };
+    list_files_recursive(&mut ctx, path, 0)?;
 
     for entry in &entries {
         if entry.is_dir {
@@ -119,23 +124,17 @@ pub fn list_files(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn list_files_recursive(
-    base: &Path,
+    ctx: &mut ListFilesContext,
     dir: &Path,
-    entries: &mut Vec<FileEntry>,
-    recursive: bool,
-    max_depth: usize,
     depth: usize,
-    max_entries: usize,
-    truncated: &mut bool,
 ) -> Result<(), FileError> {
-    if depth > max_depth {
+    if depth > ctx.max_depth {
         return Ok(());
     }
 
-    if entries.len() >= max_entries {
-        *truncated = true;
+    if ctx.entries.len() >= ctx.max_entries {
+        *ctx.truncated = true;
         return Ok(());
     }
 
@@ -149,13 +148,13 @@ fn list_files_recursive(
     dir_entries.sort_by_key(|a| a.file_name());
 
     for entry in dir_entries {
-        if entries.len() >= max_entries {
-            *truncated = true;
+        if ctx.entries.len() >= ctx.max_entries {
+            *ctx.truncated = true;
             break;
         }
 
         let path = entry.path();
-        let relative = path.strip_prefix(base).unwrap_or(&path);
+        let relative = path.strip_prefix(ctx.base).unwrap_or(&path);
         let relative_str = relative.to_string_lossy().to_string();
 
         if should_ignore(&relative_str) {
@@ -175,7 +174,7 @@ fn list_files_recursive(
         let is_dir = file_type.is_dir();
         let name = entry.file_name().to_string_lossy().to_string();
 
-        entries.push(FileEntry {
+        ctx.entries.push(FileEntry {
             path: relative_str.clone(),
             name,
             is_dir,
@@ -183,17 +182,8 @@ fn list_files_recursive(
             depth,
         });
 
-        if is_dir && recursive {
-            list_files_recursive(
-                base,
-                &path,
-                entries,
-                recursive,
-                max_depth,
-                depth + 1,
-                max_entries,
-                truncated,
-            )?;
+        if is_dir && ctx.recursive {
+            list_files_recursive(ctx, &path, depth + 1)?;
         }
     }
 
@@ -482,57 +472,6 @@ pub fn grep(
 }
 
 /// Apply a unified diff to a file.
-///
-/// Parses the unified diff format and applies it to the file:
-/// ```text
-/// --- a/file.txt
-/// +++ b/file.txt
-/// @@ -1,3 +1,4 @@
-///  context line
-/// -removed line
-/// +added line
-/// ```
-pub fn apply_diff(path: &str, diff_text: &str) -> Result<(), FileError> {
-    use super::diff::{apply_unified_diff, UnifiedDiff};
-
-    // Parse the diff to check if it's a new file
-    let parsed = UnifiedDiff::parse(diff_text).map_err(|e| {
-        FileError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            e.to_string(),
-        ))
-    })?;
-
-    // Read original content (or empty for new files)
-    let original = if parsed.is_new_file {
-        String::new()
-    } else if Path::new(path).exists() {
-        fs::read_to_string(path)?
-    } else {
-        String::new()
-    };
-
-    // Handle file deletion
-    if parsed.is_delete {
-        if Path::new(path).exists() {
-            fs::remove_file(path)?;
-        }
-        return Ok(());
-    }
-
-    // Apply the diff
-    let patched = apply_unified_diff(&original, diff_text).map_err(|e| {
-        FileError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            e.to_string(),
-        ))
-    })?;
-
-    // Write back
-    write_file(path, &patched, true)?;
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {

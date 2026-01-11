@@ -211,21 +211,16 @@ impl serdes_ai_agent::ToolExecutor<()> for InvokeAgentExecutor {
 }
 
 /// Executor for list_agents that returns available agents.
-pub(super) struct ListAgentsExecutor {
-    #[allow(dead_code)]
-    db_path: PathBuf,
-}
+pub(super) struct ListAgentsExecutor;
 
 impl ListAgentsExecutor {
-    pub fn new(db: &Database) -> Self {
-        Self {
-            db_path: db.path().to_path_buf(),
-        }
+    pub fn new(_db: &Database) -> Self {
+        Self
     }
 
     /// Create executor from a path (used in spawned tasks where Database isn't Send).
-    pub fn new_with_path(db_path: PathBuf) -> Self {
-        Self { db_path }
+    pub fn new_with_path(_db_path: PathBuf) -> Self {
+        Self
     }
 
     pub fn definition() -> ToolDefinition {
@@ -329,9 +324,8 @@ mod tests {
     #[test]
     fn test_list_agents_executor_new_with_path() {
         let db_path = PathBuf::from("/tmp/test.db");
-        let executor = ListAgentsExecutor::new_with_path(db_path.clone());
-
-        assert_eq!(executor.db_path, db_path);
+        let _executor = ListAgentsExecutor::new_with_path(db_path);
+        // ListAgentsExecutor is a unit struct - creation is the test
     }
 
     #[test]

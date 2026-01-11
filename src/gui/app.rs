@@ -5,23 +5,21 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    actions, div, list, prelude::*, px, rgb, App, AsyncApp, Context, Entity, ExternalPaths,
-    FocusHandle, Focusable, KeyBinding, ListAlignment, ListState, MouseButton, ScrollHandle,
-    SharedString, Styled, WeakEntity, Window,
+    actions, div, prelude::*, px, App, AsyncApp, Context, Entity, ExternalPaths,
+    FocusHandle, Focusable, KeyBinding, ListAlignment, ListState, ScrollHandle, Styled, WeakEntity, Window,
 };
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::{InputEvent, InputState};
 
 use super::components::{ListScrollbarDragState, ScrollbarDragState};
-use super::state::{Conversation, MessageRole};
+use super::state::Conversation;
 use super::theme::Theme;
-use crate::agents::{AgentExecutor, AgentManager, UserMode};
+use crate::agents::{AgentManager, UserMode};
 use crate::config::{PdfMode, Settings};
 use crate::db::Database;
 use crate::mcp::McpManager;
-use crate::messaging::{AgentEvent, Message, MessageBus, ToolStatus};
+use crate::messaging::MessageBus;
 use crate::models::ModelRegistry;
 use crate::tools::SpotToolRegistry;
-use serdes_ai_core::messages::ImageMediaType;
 
 actions!(
     stockpot_gui,
@@ -169,9 +167,9 @@ pub struct ChatApp {
 
     /// Add model dialog state
     show_add_model_dialog: bool,
-    add_model_providers: Vec<crate::cli::add_model::ProviderInfo>,
+    add_model_providers: Vec<crate::models::catalog::ProviderInfo>,
     add_model_selected_provider: Option<String>,
-    add_model_models: Vec<crate::cli::add_model::ModelInfo>,
+    add_model_models: Vec<crate::models::catalog::ModelInfo>,
     add_model_selected_model: Option<String>,
     /// Text input for API key in add model dialog
     add_model_api_key_input_entity: Option<Entity<InputState>>,

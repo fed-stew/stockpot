@@ -17,15 +17,9 @@ mod executor;
 pub mod json_agent;
 mod manager;
 
-pub use base::{BoxedAgent, SpotAgent};
-pub use builtin::*;
-#[allow(deprecated)]
-pub use executor::execute_agent;
-pub use executor::{
-    get_model, AgentExecutor, ExecutorError, ExecutorResult, ExecutorStreamReceiver, StreamEvent,
-};
-pub use json_agent::{load_json_agents, JsonAgent, JsonAgentDef};
-pub use manager::{AgentError, AgentInfo, AgentManager};
+pub use base::SpotAgent;
+pub use executor::{AgentExecutor, ExecuteContext};
+pub use manager::{AgentInfo, AgentManager};
 
 /// Agent capability flags.
 #[derive(Debug, Clone, Default)]

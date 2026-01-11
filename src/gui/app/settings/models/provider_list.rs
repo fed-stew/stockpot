@@ -123,7 +123,7 @@ impl ChatApp {
     /// Render a single provider item.
     fn render_provider_item(
         &self,
-        provider: &crate::cli::add_model::ProviderInfo,
+        provider: &crate::models::catalog::ProviderInfo,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme.clone();

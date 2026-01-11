@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_component::input::Input;
 use image::codecs::png::PngDecoder;
-use image::{DynamicImage, Frame, ImageDecoder};
+use image::{DynamicImage, Frame};
 
 use super::{ChatApp, PendingAttachment, MAX_ATTACHMENTS};
 use crate::gui::components::current_spinner_frame;

@@ -31,11 +31,9 @@ pub struct InvokeAgentTool;
 struct InvokeAgentArgs {
     /// Name of the agent to invoke.
     agent_name: String,
-    /// The prompt to send to the agent.
-    prompt: String,
-    /// Optional session ID for conversation continuity.
-    #[serde(default)]
-    session_id: Option<String>,
+    // Note: prompt and session_id are part of the JSON schema but not used
+    // in this fallback implementation. The real implementation is in
+    // executor/sub_agents.rs which has its own args parsing.
 }
 
 #[async_trait]
@@ -72,12 +70,14 @@ impl Tool for InvokeAgentTool {
             ToolError::execution_failed(format!("Invalid arguments: {e}. Got: {args}"))
         })?;
 
-        // TODO: Full implementation requires access to Database and executor context
-        // For now, return an error explaining the limitation
+        // Note: This code path should not be reached in normal operation.
+        // The AgentExecutor intercepts invoke_agent calls and routes them through
+        // InvokeAgentExecutor (in executor/sub_agents.rs) which has proper context.
+        // This fallback exists for direct tool testing or edge cases.
         let name = &args.agent_name;
         Err(ToolError::execution_failed(format!(
-            "Sub-agent invocation is not yet fully implemented. \
-             To use the '{name}' agent, switch to it with /agent {name} and ask your question directly."
+            "Sub-agent '{name}' cannot be invoked directly through this tool. \
+             Use the agent executor's sub-agent support instead."
         )))
     }
 }
@@ -221,6 +221,7 @@ pub async fn invoke_agent_with_executor(
     manager: &AgentManager,
     agent_name: &str,
     prompt: &str,
+    model_name: &str,
 ) -> Result<InvokeAgentResult, AgentToolError> {
     let agent = manager
         .get(agent_name)
@@ -234,7 +235,7 @@ pub async fn invoke_agent_with_executor(
     match executor
         .execute(
             agent,
-            "gpt-4o", // TODO: Get from context
+            model_name,
             prompt,
             None,
             &tool_registry,
@@ -294,7 +295,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("not yet fully implemented"));
+        assert!(err.to_string().contains("cannot be invoked directly"));
     }
 
     #[tokio::test]
@@ -319,7 +320,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invoke_agent_tool_missing_prompt() {
+    async fn test_invoke_agent_tool_only_agent_name_required() {
+        // InvokeAgentArgs only requires agent_name for the fallback error path
         let tool = InvokeAgentTool;
         let ctx = RunContext::minimal("test");
 
@@ -332,11 +334,12 @@ mod tests {
             )
             .await;
 
+        // Should succeed in parsing but return the "cannot invoke directly" error
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Invalid arguments"));
+            .contains("cannot be invoked directly"));
     }
 
     #[tokio::test]
@@ -774,7 +777,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invoke_agent_tool_wrong_type_prompt() {
+    async fn test_invoke_agent_tool_ignores_invalid_extra_fields() {
+        // Extra fields like prompt are ignored even if wrong type
         let tool = InvokeAgentTool;
         let ctx = RunContext::minimal("test");
 
@@ -788,11 +792,12 @@ mod tests {
             )
             .await;
 
+        // Parsing succeeds (extra fields ignored), returns invoke error
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Invalid arguments"));
+            .contains("cannot be invoked directly"));
     }
 
     #[tokio::test]
@@ -909,7 +914,9 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_invoke_agent_args_deserialize_full() {
+    fn test_invoke_agent_args_deserialize() {
+        // InvokeAgentArgs only extracts agent_name for the fallback error path.
+        // The full implementation in executor/sub_agents.rs parses all fields.
         let json = serde_json::json!({
             "agent_name": "planner",
             "prompt": "plan this",
@@ -918,29 +925,12 @@ mod tests {
 
         let args: InvokeAgentArgs = serde_json::from_value(json).unwrap();
         assert_eq!(args.agent_name, "planner");
-        assert_eq!(args.prompt, "plan this");
-        assert_eq!(args.session_id, Some("sess-123".to_string()));
-    }
-
-    #[test]
-    fn test_invoke_agent_args_deserialize_minimal() {
-        let json = serde_json::json!({
-            "agent_name": "reviewer",
-            "prompt": "review code"
-        });
-
-        let args: InvokeAgentArgs = serde_json::from_value(json).unwrap();
-        assert_eq!(args.agent_name, "reviewer");
-        assert_eq!(args.prompt, "review code");
-        assert!(args.session_id.is_none());
     }
 
     #[test]
     fn test_invoke_agent_args_debug() {
         let args = InvokeAgentArgs {
             agent_name: "test".to_string(),
-            prompt: "prompt".to_string(),
-            session_id: None,
         };
 
         let debug_str = format!("{:?}", args);
@@ -1017,7 +1007,8 @@ mod tests {
     // =========================================================================
 
     #[tokio::test]
-    async fn test_invoke_agent_tool_null_session_id() {
+    async fn test_invoke_agent_tool_ignores_extra_fields() {
+        // Extra fields like prompt and session_id are ignored by the fallback
         let tool = InvokeAgentTool;
         let ctx = RunContext::minimal("test");
 
@@ -1032,12 +1023,12 @@ mod tests {
             )
             .await;
 
-        // null is valid for optional field
+        // Should succeed in parsing and return the "cannot invoke directly" error
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("not yet fully implemented"));
+            .contains("cannot be invoked directly"));
     }
 
     #[tokio::test]
@@ -1440,7 +1431,7 @@ mod tests {
     // =========================================================================
 
     #[tokio::test]
-    async fn test_invoke_agent_tool_extra_fields_ignored() {
+    async fn test_invoke_agent_tool_extra_fields_still_ignored() {
         let tool = InvokeAgentTool;
         let ctx = RunContext::minimal("test");
 
@@ -1461,7 +1452,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("not yet fully implemented"));
+            .contains("cannot be invoked directly"));
     }
 
     #[tokio::test]

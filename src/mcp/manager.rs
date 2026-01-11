@@ -31,22 +31,8 @@ pub enum McpManagerError {
 
 /// Handle to a running MCP server.
 pub struct McpServerHandle {
-    /// Server name.
-    pub name: String,
     /// The connected client.
     pub client: Arc<McpClient>,
-}
-
-impl McpServerHandle {
-    /// Get the server name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Check if connected.
-    pub fn is_connected(&self) -> bool {
-        self.client.is_connected()
-    }
 }
 
 /// Manager for MCP server connections.
@@ -291,7 +277,6 @@ impl McpManager {
         }
 
         Ok(McpServerHandle {
-            name: name.to_string(),
             client: Arc::new(client),
         })
     }
@@ -496,17 +481,6 @@ mod tests {
         assert!(debug.contains("ServerNotFound"));
     }
 
-    // =========================================================================
-    // McpServerHandle Tests
-    // =========================================================================
-
-    #[test]
-    fn test_server_handle_name() {
-        // Can't easily test is_connected without a real client,
-        // but we can verify the struct layout is correct
-        // by checking that name() method exists via trait bounds
-        let _: fn(&McpServerHandle) -> &str = McpServerHandle::name;
-    }
 
     // =========================================================================
     // Error Conversion Tests
@@ -1195,16 +1169,6 @@ mod tests {
         }
     }
 
-    // =========================================================================
-    // Server Handle Method Existence Tests
-    // =========================================================================
-
-    #[test]
-    fn test_server_handle_methods_exist() {
-        // Verify the struct has expected methods via function pointer extraction
-        let _name_fn: fn(&McpServerHandle) -> &str = McpServerHandle::name;
-        let _is_connected_fn: fn(&McpServerHandle) -> bool = McpServerHandle::is_connected;
-    }
 
     // =========================================================================
     // Config Accessor After Mutation Tests

@@ -9,9 +9,9 @@ mod chatgpt;
 mod claude_code;
 mod storage;
 
-pub use chatgpt::{get_chatgpt_model, run_chatgpt_auth, ChatGptAuth};
-pub use claude_code::{get_claude_code_model, run_claude_code_auth, ClaudeCodeAuth};
-pub use storage::{TokenStorage, TokenStorageError};
+pub use chatgpt::{get_chatgpt_model, run_chatgpt_auth};
+pub use claude_code::{get_claude_code_model, run_claude_code_auth};
+pub use storage::TokenStorage;
 
 /// Supported OAuth providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

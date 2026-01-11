@@ -5,11 +5,23 @@
 //! - `ExecutorStreamReceiver`: Wrapper for receiving stream events
 //! - `ExecutorError`: Error types for executor operations
 
+use crate::mcp::McpManager;
+use crate::tools::SpotToolRegistry;
 use serdes_ai_core::ModelRequest;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
 use super::StreamEvent;
+
+/// Execution context containing tool registry and MCP manager.
+///
+/// Groups the context parameters needed for agent execution.
+pub struct ExecuteContext<'a> {
+    /// Tool registry with available tools.
+    pub tool_registry: &'a SpotToolRegistry,
+    /// MCP server manager for additional tools.
+    pub mcp_manager: &'a McpManager,
+}
 
 /// Result of agent execution.
 #[derive(Debug)]

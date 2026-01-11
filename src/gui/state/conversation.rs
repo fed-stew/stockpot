@@ -2,8 +2,8 @@
 //!
 //! Manages chat messages and tool calls for the GUI.
 
-use super::message::{ChatMessage, MessageRole, ToolCall, ToolCallState};
-use super::sections::{AgentSection, MessageSection, ToolCallSection};
+use super::message::{ChatMessage, ToolCall, ToolCallState};
+use super::sections::{MessageSection, ToolCallSection};
 use super::tool_display::get_tool_display_info;
 
 /// A conversation (list of messages)

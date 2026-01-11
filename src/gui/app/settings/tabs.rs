@@ -4,7 +4,7 @@
 //! that dispatches to individual tab renderers.
 
 use gpui::{
-    anchored, deferred, div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString,
+    div, prelude::*, px, rgb, Context, MouseButton, SharedString,
     StatefulInteractiveElement, Styled,
 };
 

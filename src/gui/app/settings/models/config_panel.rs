@@ -208,7 +208,7 @@ impl ChatApp {
     /// Render a single model item in the list.
     fn render_model_list_item(
         &self,
-        model: &crate::cli::add_model::ModelInfo,
+        model: &crate::models::catalog::ModelInfo,
         provider_id: &str,
         env_var: &str,
         can_add: bool,

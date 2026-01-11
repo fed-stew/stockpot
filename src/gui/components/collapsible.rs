@@ -20,7 +20,7 @@
 //! ```
 
 use gpui::{
-    div, prelude::*, px, Hsla, MouseButton, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    div, prelude::*, px, Hsla, MouseButton, Rgba, SharedString, Styled,
 };
 
 use super::current_spinner_frame;

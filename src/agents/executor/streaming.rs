@@ -19,17 +19,13 @@ use serdes_ai_core::{
 };
 use serdes_ai_tools::{Tool, ToolDefinition};
 
-use crate::db::Database;
-use crate::mcp::McpManager;
 use crate::messaging::EventBridge;
 use crate::models::settings::ModelSettings as SpotModelSettings;
-use crate::tools::SpotToolRegistry;
 
 use super::adapters::{ArcModel, RecordingToolExecutor, ToolExecutorAdapter};
-use super::mcp::McpToolExecutor;
 use super::model_factory::get_model;
 use super::sub_agents::{InvokeAgentExecutor, ListAgentsExecutor};
-use super::types::{ExecutorError, ExecutorStreamReceiver};
+use super::types::{ExecuteContext, ExecutorError, ExecutorStreamReceiver};
 use super::{AgentExecutor, SpotAgent, StreamEvent};
 
 /// Helper struct to track in-progress tool calls during streaming.
@@ -228,15 +224,13 @@ impl<'a> AgentExecutor<'a> {
     }
 
     /// Internal streaming execution with full control over user content.
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn execute_stream_internal(
         &self,
         spot_agent: &dyn SpotAgent,
         model_name: &str,
         prompt: UserContent,
         message_history: Option<Vec<ModelRequest>>,
-        tool_registry: &SpotToolRegistry,
-        mcp_manager: &McpManager,
+        context: &ExecuteContext<'_>,
         tool_return_recorder: Option<Arc<Mutex<Vec<ToolReturnPart>>>>,
     ) -> Result<ExecutorStreamReceiver, ExecutorError> {
         // Load model settings for thinking configuration
@@ -252,7 +246,7 @@ impl<'a> AgentExecutor<'a> {
 
         // Get the tools this agent should have access to (filtered by settings)
         let tool_names = self.filter_tools(original_tools);
-        let tools = tool_registry.tools_by_name(&tool_names);
+        let tools = context.tool_registry.tools_by_name(&tool_names);
 
         // Collect tool definitions and Arc references
         let mut tool_data: Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> =
@@ -260,7 +254,7 @@ impl<'a> AgentExecutor<'a> {
 
         // Collect MCP tools from running servers (filtered by agent attachments)
         let mcp_tool_calls = self
-            .collect_mcp_tools(mcp_manager, Some(spot_agent.name()))
+            .collect_mcp_tools(context.mcp_manager, Some(spot_agent.name()))
             .await;
         tool_data.extend(mcp_tool_calls);
 

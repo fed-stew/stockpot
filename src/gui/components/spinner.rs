@@ -78,27 +78,6 @@ impl Spinner {
         .detach();
     }
 
-    /// Stop the animation.
-    #[allow(dead_code)]
-    pub fn stop(&mut self) {
-        self.is_running = false;
-    }
-
-    /// Resume the animation.
-    #[allow(dead_code)]
-    pub fn resume(&mut self, cx: &mut Context<Self>) {
-        if !self.is_running {
-            self.is_running = true;
-            Self::start_animation(cx);
-        }
-    }
-
-    /// Update the spinner color.
-    #[allow(dead_code)]
-    pub fn set_color(&mut self, color: Rgba, cx: &mut Context<Self>) {
-        self.color = color;
-        cx.notify();
-    }
 
     /// Get the current frame character.
     fn current_frame(&self) -> &'static str {

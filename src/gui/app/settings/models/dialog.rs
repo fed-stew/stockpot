@@ -2,7 +2,7 @@
 //!
 //! Modal dialog for adding API key based models.
 
-use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, Styled};
+use gpui::{div, prelude::*, px, rgba, Context, MouseButton, Styled};
 
 use crate::gui::app::ChatApp;
 
@@ -142,7 +142,6 @@ impl ChatApp {
 
     /// Render the config panel container on the right.
     fn render_config_panel_container(&self, cx: &Context<Self>) -> impl IntoElement {
-        #[allow(clippy::let_and_return)]
         div()
             .flex_1()
             .min_h(px(0.))

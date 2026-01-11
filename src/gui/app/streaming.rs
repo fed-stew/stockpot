@@ -3,7 +3,7 @@
 //! This module handles incoming messages and streaming responses:
 //! - `start_ui_event_loop()` - Unified event loop handling both messages and animation ticks
 //! - `handle_message()` - Process incoming Message events
-//! - `toggle_agent_section()` - Toggle collapsible agent sections
+
 //!
 //! NOTE: Auto-scroll is handled manually with smooth animation (see scroll_animation.rs).
 //! We use ListAlignment::Top to prevent GPUI from auto-snapping to bottom.
@@ -310,10 +310,4 @@ impl ChatApp {
         }
     }
 
-    /// Toggle a nested agent section's collapsed state
-    #[allow(dead_code)]
-    pub(super) fn toggle_agent_section(&mut self, section_id: &str, cx: &mut Context<Self>) {
-        self.conversation.toggle_section_collapsed(section_id);
-        cx.notify();
-    }
 }

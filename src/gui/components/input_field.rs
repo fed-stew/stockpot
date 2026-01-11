@@ -1,7 +1,5 @@
 //! Input field component for message entry
 
-use gpui::{div, prelude::*, px, Styled};
-
 /// Text input field for composing messages
 pub struct InputField {
     pub text: String,

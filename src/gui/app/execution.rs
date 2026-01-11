@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use gpui::{AsyncApp, Context, WeakEntity, Window};
 
-use crate::agents::{AgentExecutor, AgentManager};
+use crate::agents::{AgentExecutor, AgentManager, ExecuteContext};
 use crate::config::{PdfMode, Settings};
 use crate::db::Database;
 use crate::mcp::McpManager;
@@ -348,6 +348,10 @@ impl ChatApp {
                     )
                     .await
             } else {
+                let context = ExecuteContext {
+                    tool_registry: &tool_registry,
+                    mcp_manager: &mcp_manager,
+                };
                 executor
                     .execute_with_images(
                         agent,
@@ -355,8 +359,7 @@ impl ChatApp {
                         &prompt,
                         &images,
                         history,
-                        &tool_registry,
-                        &mcp_manager,
+                        &context,
                     )
                     .await
             };

@@ -13,7 +13,7 @@ use rusqlite::params;
 use crate::db::Database;
 
 use super::model_config::ModelConfig;
-use super::types::{CustomEndpoint, ModelConfigError, ModelType};
+use super::types::{ModelConfigError, ModelType};
 use super::utils::{build_custom_endpoint, has_api_key, has_oauth_tokens, parse_model_type};
 
 /// Registry of available models loaded from configuration files.
@@ -28,13 +28,6 @@ impl ModelRegistry {
         Self::default()
     }
 
-    /// Load models with in-memory defaults only.
-    /// **Deprecated**: Use `load_from_db()` instead for database-backed storage.
-    #[deprecated(note = "Use load_from_db() instead")]
-    pub fn load() -> Result<Self, ModelConfigError> {
-        // Returns empty registry - models come from database now
-        Ok(Self::new())
-    }
 
     /// Load models from the database.
     ///
@@ -245,14 +238,6 @@ impl ModelRegistry {
         self.models.len()
     }
 
-    /// Reload the registry with in-memory defaults only.
-    /// **Deprecated**: Use `reload_from_db()` instead for database-backed storage.
-    #[deprecated(note = "Use reload_from_db() instead")]
-    pub fn reload(&mut self) -> Result<(), ModelConfigError> {
-        // Just clear - models come from database now
-        self.models.clear();
-        Ok(())
-    }
 
     /// Get the config directory path.
     pub fn config_dir() -> Result<PathBuf, ModelConfigError> {
@@ -343,6 +328,7 @@ impl ModelRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::types::CustomEndpoint;
     use std::collections::HashMap;
     use tempfile::TempDir;
 
@@ -1020,27 +1006,6 @@ mod tests {
         assert_eq!(available, vec!["alpha", "monkey", "zebra"]);
     }
 
-    // =========================================================================
-    // Deprecated Method Tests
-    // =========================================================================
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_deprecated_load_returns_empty() {
-        let registry = ModelRegistry::load().unwrap();
-        assert!(registry.is_empty());
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_deprecated_reload_clears_registry() {
-        let mut registry = ModelRegistry::new();
-        registry.add(create_test_model("will-be-cleared"));
-        assert!(!registry.is_empty());
-
-        registry.reload().unwrap();
-        assert!(registry.is_empty());
-    }
 
     // =========================================================================
     // Edge Cases Tests

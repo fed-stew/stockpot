@@ -105,15 +105,4 @@ impl ChatApp {
         true // Animation still in progress
     }
 
-    /// Check if a scroll animation is currently active.
-    #[allow(dead_code)]
-    pub(super) fn is_scroll_animating(&self) -> bool {
-        self.scroll_animation_target.is_some()
-    }
-
-    /// Cancel any active scroll animation.
-    #[allow(dead_code)]
-    pub(super) fn cancel_scroll_animation(&mut self) {
-        self.scroll_animation_target = None;
-    }
 }
