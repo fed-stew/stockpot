@@ -35,68 +35,97 @@
 //! Previously, the loop always used 8ms polling which caused scroll jank when
 //! idle because the constant `cx.notify()` calls interfered with GPUI's vsync.
 
-use std::time::Duration;
+use gpui::{AppContext, AsyncApp, Context, WeakEntity};
+use gpui_component::text::TextViewState;
 
-use gpui::{AsyncApp, Context, WeakEntity};
-use tokio::time::timeout;
-
+use crate::gui::state::MessageSection;
 use crate::messaging::{AgentEvent, Message, ToolStatus};
 
 use super::ChatApp;
 
 impl ChatApp {
+    fn update_text_view_cache(
+        &mut self,
+        element_id: String,
+        full_text: &str,
+        delta: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(state) = self.text_view_cache.borrow().get(&element_id).cloned() {
+            state.update(cx, |text, cx| {
+                if let Some(delta) = delta {
+                    text.push_str(delta, cx);
+                } else {
+                    text.set_text(full_text, cx);
+                }
+            });
+            return;
+        }
+
+        let state = cx.new(|cx| TextViewState::markdown(full_text, cx));
+        self.text_view_cache.borrow_mut().insert(element_id, state);
+    }
+
     /// Start the unified UI event loop.
     ///
-    /// This is the ONLY place where `this.update()` is called from async tasks,
-    /// ensuring no race conditions. The loop:
-    /// - Runs for the entire app lifetime
-    /// - During streaming: uses 8ms timeout for smooth animation ticks (~120fps)
-    /// - When idle: waits indefinitely for messages, letting GPUI control frame timing
-    ///
-    /// This two-mode approach is critical for scroll performance:
-    /// - During streaming: we need fast ticks for throughput/scroll animation
-    /// - When idle: GPUI's native vsync handles scrolling smoothly
-    ///   (constant 8ms polling would interfere with vsync and cause jank)
+    /// Uses `tokio::select!` to handle messages and animation ticks independently:
+    /// - Animation runs at ~240fps (4ms) for buttery smooth scrolling
+    /// - Messages are processed as they arrive without blocking animation
+    /// - When idle (not generating), animation timer is disabled to save CPU
     pub(super) fn start_ui_event_loop(&self, cx: &mut Context<Self>) {
         let mut receiver = self.message_bus.subscribe();
 
         cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
+            use tokio::time::{interval, Duration};
+
+            // 8ms = 120fps - smooth enough for scrolling, reduces render pressure
+            let mut animation_interval = interval(Duration::from_millis(8));
+            animation_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
             loop {
-                // Check if we're actively generating (need fast animation ticks)
+                // Check if we're actively generating (need animation ticks)
                 let is_active = this.update(cx, |app, _| app.is_generating).unwrap_or(false);
 
                 if is_active {
-                    // During streaming: use 8ms timeout for smooth animation ticks
-                    let tick_duration = Duration::from_millis(8);
+                    // During streaming: run animation and messages in parallel with select!
+                    tokio::select! {
+                        biased; // Prioritize in order listed
 
-                    match timeout(tick_duration, receiver.recv()).await {
-                        // Message received - process it
-                        Ok(Ok(msg)) => {
+                        // Animation tick - runs at consistent 120fps
+                        _ = animation_interval.tick() => {
                             let result = this.update(cx, |app, cx| {
-                                app.handle_message(msg, cx);
+                                app.tick_throughput();
+                                let scroll_moved = app.tick_scroll_animation();
+                                // Only trigger re-render if scroll position changed
+                                // This prevents render thrashing when sitting at bottom
+                                if scroll_moved {
+                                    cx.notify();
+                                }
                             });
                             if result.is_err() {
                                 break; // Entity dropped
                             }
                         }
-                        // Channel closed - exit loop
-                        Ok(Err(_)) => {
-                            break;
-                        }
-                        // Timeout - animation tick
-                        Err(_) => {
-                            let result = this.update(cx, |app, cx| {
-                                app.tick_throughput();
-                                app.tick_scroll_animation();
-                                cx.notify();
-                            });
-                            if result.is_err() {
-                                break; // Entity dropped
+
+                        // Message received - process it (no animation here)
+                        msg = receiver.recv() => {
+                            match msg {
+                                Ok(msg) => {
+                                    let result = this.update(cx, |app, cx| {
+                                        app.handle_message(msg, cx);
+                                    });
+                                    if result.is_err() {
+                                        break; // Entity dropped
+                                    }
+                                }
+                                Err(_) => {
+                                    break; // Channel closed
+                                }
                             }
                         }
                     }
                 } else {
-                    // When idle: wait indefinitely for messages
+                    // When idle: wait indefinitely for messages, no animation needed
                     // Let GPUI handle ALL frame timing natively for smooth scrolling
                     match receiver.recv().await {
                         Ok(msg) => {
@@ -142,19 +171,38 @@ impl ChatApp {
                 // Track throughput
                 self.update_throughput(delta.text.len());
 
+                if let Some(msg) = self.conversation.messages.last() {
+                    let (element_id, full_text) = if let Some((idx, text)) = msg
+                        .sections
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find_map(|(idx, section)| match section {
+                            MessageSection::Text(text) => Some((idx, text)),
+                            _ => None,
+                        }) {
+                        (format!("msg-{}-sec-{}", msg.id, idx), text.to_string())
+                    } else {
+                        (format!("msg-{}-content", msg.id), msg.content.clone())
+                    };
+                    let delta_text = delta.text.clone();
+                    self.update_text_view_cache(
+                        element_id,
+                        &full_text,
+                        Some(delta_text.as_str()),
+                        cx,
+                    );
+                }
+
                 // Throttled context usage update (every 500ms during streaming)
                 if self.last_context_update.elapsed() > std::time::Duration::from_millis(500) {
                     self.update_context_usage();
                     self.last_context_update = std::time::Instant::now();
                 }
 
-                // Smooth scroll to bottom when content grows (if user hasn't scrolled away)
-                // This prevents the "jumpy" instant scroll, especially with newlines
+                // Mark that we want to scroll to bottom - the independent animation loop handles the actual scrolling
                 if !self.user_scrolled_away {
                     self.start_smooth_scroll_to_bottom();
-                    // Tick animation on every TextDelta since messages come faster than
-                    // the 8ms timeout during streaming - this keeps delta_secs small
-                    self.tick_scroll_animation();
                 }
             }
             Message::Thinking(thinking) => {

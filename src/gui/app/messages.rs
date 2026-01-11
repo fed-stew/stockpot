@@ -1,8 +1,8 @@
 use gpui::{
-    div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, MouseButton,
-    SharedString, StatefulInteractiveElement, Styled,
+    div, list, prelude::*, px, AnyElement, App, Context, ElementId, Entity, IntoElement,
+    MouseButton, SharedString, StatefulInteractiveElement, Styled,
 };
-use gpui_component::text::markdown;
+use gpui_component::text::TextView;
 
 use super::ChatApp;
 use crate::gui::components::{collapsible_display, list_scrollbar, CollapsibleProps};
@@ -11,6 +11,14 @@ use crate::gui::state::{
 };
 
 impl ChatApp {
+    fn markdown_text_view(&self, element_id: &SharedString, content: &str) -> TextView {
+        if let Some(state) = self.text_view_cache.borrow().get(element_id.as_ref()) {
+            TextView::new(state)
+        } else {
+            TextView::markdown(ElementId::Name(element_id.clone()), content.to_string())
+        }
+    }
+
     pub(super) fn render_messages(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = self.theme.clone();
         let has_messages = !self.conversation.messages.is_empty();
@@ -77,61 +85,62 @@ impl ChatApp {
                                 // Read FRESH data from the entity each time!
                                 // This fixes the stale closure capture bug where streaming
                                 // updates weren't visible because messages was cloned at render time.
-                                let app = view.read(cx);
-                                let Some(msg) = app.conversation.messages.get(idx) else {
-                                    return div().into_any_element();
-                                };
+                                view.update(cx, |app, cx| {
+                                    let Some(msg) = app.conversation.messages.get(idx) else {
+                                        return div().into_any_element();
+                                    };
 
-                                let is_user = msg.role == MessageRole::User;
-                                let bubble_bg = if is_user {
-                                    theme.user_bubble
-                                } else {
-                                    theme.assistant_bubble
-                                };
-                                let msg_id = msg.id.clone();
-                                let content_elements: Vec<gpui::AnyElement> = app
-                                    .render_message_content(
-                                        &msg.sections,
-                                        &msg.content,
-                                        &msg_id,
-                                        &theme,
-                                        &view,
-                                        cx,
-                                    );
+                                    let is_user = msg.role == MessageRole::User;
+                                    let bubble_bg = if is_user {
+                                        theme.user_bubble
+                                    } else {
+                                        theme.assistant_bubble
+                                    };
+                                    let msg_id = msg.id.clone();
+                                    let content_elements: Vec<gpui::AnyElement> = app
+                                        .render_message_content(
+                                            &msg.sections,
+                                            &msg.content,
+                                            &msg_id,
+                                            &theme,
+                                            &view,
+                                            cx,
+                                        );
 
-                                // ALWAYS use stable UUID-based IDs.
-                                // This prevents element ID changes when streaming finishes,
-                                // which would cause GPUI to treat it as a new element.
-                                let element_id = SharedString::from(format!("msg-{}", msg_id));
+                                    // ALWAYS use stable UUID-based IDs.
+                                    // This prevents element ID changes when streaming finishes,
+                                    // which would cause GPUI to treat it as a new element.
+                                    let element_id = SharedString::from(format!("msg-{}", msg_id));
 
-                                div()
-                                    .id(element_id)
-                                    .flex()
-                                    .flex_col()
-                                    .w_full()
-                                    .pb(px(16.)) // Gap between messages
-                                    .when(is_user, |d| d.items_end())
-                                    .when(!is_user, |d| d.items_start())
-                                    .child(
-                                        div()
-                                            .text_size(px(11.))
-                                            .text_color(theme.text_muted)
-                                            .mb(px(4.))
-                                            .child(if is_user { "You" } else { "Assistant" }),
-                                    )
-                                    .child(
-                                        div()
-                                            .p(px(12.))
-                                            .rounded(px(8.))
-                                            .bg(bubble_bg)
-                                            .text_color(theme.text)
-                                            .overflow_hidden()
-                                            .min_w_0()
-                                            .when(is_user, |d| d.max_w(px(600.)))
-                                            .when(!is_user, |d| d.w_full().min_w_0())
-                                            .children(content_elements),
-                                    )
-                                    .into_any_element()
+                                    div()
+                                        .id(element_id)
+                                        .flex()
+                                        .flex_col()
+                                        .w_full()
+                                        .pb(px(16.)) // Gap between messages
+                                        .when(is_user, |d| d.items_end())
+                                        .when(!is_user, |d| d.items_start())
+                                        .child(
+                                            div()
+                                                .text_size(px(11.))
+                                                .text_color(theme.text_muted)
+                                                .mb(px(4.))
+                                                .child(if is_user { "You" } else { "Assistant" }),
+                                        )
+                                        .child(
+                                            div()
+                                                .p(px(12.))
+                                                .rounded(px(8.))
+                                                .bg(bubble_bg)
+                                                .text_color(theme.text)
+                                                .overflow_hidden()
+                                                .min_w_0()
+                                                .when(is_user, |d| d.max_w(px(600.)))
+                                                .when(!is_user, |d| d.w_full().min_w_0())
+                                                .children(content_elements),
+                                        )
+                                        .into_any_element()
+                                })
                             })
                             .size_full(),
                         )
@@ -161,7 +170,7 @@ impl ChatApp {
         msg_id: &str,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
-        cx: &App,
+        cx: &mut App,
     ) -> Vec<AnyElement> {
         // If we have sections, render them
         if !sections.is_empty() {
@@ -177,11 +186,12 @@ impl ChatApp {
             // Always use stable UUID-based ID to prevent re-renders
             let element_id = SharedString::from(format!("msg-{}-content", msg_id));
             let owned_content = content.to_string();
+            let text_view = self.markdown_text_view(&element_id, &owned_content);
             vec![div()
-                .id(element_id)
+                .id(element_id.clone())
                 .w_full()
                 .overflow_x_hidden()
-                .child(markdown(&owned_content).selectable(true))
+                .child(text_view.selectable(true))
                 .into_any_element()]
         }
     }
@@ -194,18 +204,19 @@ impl ChatApp {
         msg_id: &str,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
-        cx: &App,
+        cx: &mut App,
     ) -> AnyElement {
         match section {
             MessageSection::Text(text) => {
                 // Text sections render as markdown
                 // Always use stable UUID-based ID to prevent re-renders
                 let element_id = SharedString::from(format!("msg-{}-sec-{}", msg_id, sec_idx));
+                let text_view = self.markdown_text_view(&element_id, text);
                 div()
-                    .id(element_id)
+                    .id(element_id.clone())
                     .w_full()
                     .overflow_x_hidden()
-                    .child(markdown(text).selectable(true))
+                    .child(text_view.selectable(true))
                     .into_any_element()
             }
             MessageSection::NestedAgent(agent_section) => {
@@ -232,7 +243,7 @@ impl ChatApp {
         _msg_id: &str,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
-        _cx: &App,
+        _cx: &mut App,
     ) -> AnyElement {
         let is_collapsed = thinking.is_collapsed;
         let stable_id = &thinking.id;
@@ -253,7 +264,7 @@ impl ChatApp {
             .id(format!("thinking-{}", stable_id))
             .title(title)
             .collapsed(is_collapsed)
-            .loading(!thinking.is_complete);
+            .loading(false);
 
         // LAZY EVALUATION: Only render content when section is expanded!
         let content = if is_collapsed {
@@ -262,11 +273,12 @@ impl ChatApp {
         } else {
             // Full markdown content when expanded
             let element_id = SharedString::from(format!("thinking-{}-content", stable_id));
+            let text_view = self.markdown_text_view(&element_id, &thinking.content);
             div()
-                .id(element_id)
+                .id(element_id.clone())
                 .w_full()
                 .overflow_x_hidden()
-                .child(markdown(&thinking.content).selectable(true))
+                .child(text_view.selectable(true))
                 .into_any_element()
         };
 
@@ -286,7 +298,7 @@ impl ChatApp {
             .my(px(8.)) // Vertical margin for visual separation
             .cursor_pointer()
             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                view.update(cx, |app, cx| {
+                view.update(cx, |app, cx: &mut Context<ChatApp>| {
                     app.conversation.toggle_thinking_collapsed(&section_id);
                     cx.notify();
                 });
@@ -353,7 +365,7 @@ impl ChatApp {
         agent_section: &crate::gui::state::AgentSection,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
-        _cx: &App,
+        _cx: &mut App,
     ) -> AnyElement {
         let is_collapsed = agent_section.is_collapsed;
 
@@ -383,11 +395,12 @@ impl ChatApp {
                     AgentContentItem::Text(text) => {
                         let element_id =
                             SharedString::from(format!("agent-{}-text-{}", stable_id, idx));
+                        let text_view = self.markdown_text_view(&element_id, text);
                         div()
-                            .id(element_id)
+                            .id(element_id.clone())
                             .w_full()
                             .overflow_x_hidden()
-                            .child(markdown(text).selectable(true))
+                            .child(text_view.selectable(true))
                             .into_any_element()
                     }
                     AgentContentItem::ToolCall {
@@ -504,7 +517,7 @@ impl ChatApp {
             .my(px(8.)) // Vertical margin for visual separation
             .cursor_pointer()
             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                view.update(cx, |app, cx| {
+                view.update(cx, |app, cx: &mut Context<ChatApp>| {
                     app.conversation.toggle_section_collapsed(&section_id);
                     cx.notify();
                 });

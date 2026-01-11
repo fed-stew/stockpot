@@ -27,6 +27,9 @@ pub struct SelectableText {
     drag_start_offset: usize,
     drag_start_position: Option<Point<gpui::Pixels>>,
     element_bounds: Option<gpui::Bounds<gpui::Pixels>>,
+    cached_rendered: Option<markdown_text::RenderedMarkdown>,
+    cached_content: SharedString,
+    cached_font_size: gpui::Pixels,
 }
 
 impl SelectableText {
@@ -40,6 +43,9 @@ impl SelectableText {
             drag_start_offset: 0,
             drag_start_position: None,
             element_bounds: None,
+            cached_rendered: None,
+            cached_content: SharedString::from(""),
+            cached_font_size: gpui::Pixels::ZERO,
         }
     }
 
@@ -50,6 +56,8 @@ impl SelectableText {
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = content.into();
         self.selected_range = 0..0;
+        self.cached_rendered = None;
+        self.cached_content = SharedString::from("");
         cx.notify();
     }
 
@@ -260,8 +268,24 @@ impl Focusable for SelectableText {
 impl Render for SelectableText {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text_style = window.text_style();
-        let rendered =
-            markdown_text::render_markdown(self.content.as_ref(), &text_style, &self.theme);
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let needs_rebuild = match &self.cached_rendered {
+            Some(_) => self.cached_content != self.content || self.cached_font_size != font_size,
+            None => true,
+        };
+        if needs_rebuild {
+            self.cached_rendered = Some(markdown_text::render_markdown(
+                self.content.as_ref(),
+                &text_style,
+                &self.theme,
+            ));
+            self.cached_content = self.content.clone();
+            self.cached_font_size = font_size;
+        }
+        let rendered = self
+            .cached_rendered
+            .as_ref()
+            .expect("rendered markdown cached");
 
         let selection_color: Hsla = gpui::hsla(0.6, 0.8, 0.5, 0.3);
         let runs = markdown_text::apply_selection_background(

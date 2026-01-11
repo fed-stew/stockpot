@@ -1,5 +1,6 @@
 //! Main application state and rendering
 
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -199,6 +200,8 @@ pub struct ChatApp {
 
     /// Map from agent_name to section_id for currently active nested sections
     active_section_ids: HashMap<String, String>,
+    /// Cache of TextViewState entities keyed by element id
+    text_view_cache: RefCell<HashMap<String, Entity<gpui_component::text::TextViewState>>>,
 
     // ── Smooth scroll animation state ──────────────────────────────────────────
     /// Target scroll offset for smooth animation (None = not animating)
@@ -206,6 +209,8 @@ pub struct ChatApp {
     scroll_animation_target: Option<gpui::Point<gpui::Pixels>>,
     /// Last tick time for delta-time based scroll animation
     last_animation_tick: std::time::Instant,
+    /// Current scroll velocity for momentum-based smoothing (pixels per second)
+    current_scroll_velocity: f32,
 }
 
 impl ChatApp {
@@ -346,10 +351,12 @@ impl ChatApp {
 
             active_agent_stack: Vec::new(),
             active_section_ids: HashMap::new(),
+            text_view_cache: RefCell::new(HashMap::new()),
 
             // Smooth scroll animation (None = not animating)
             scroll_animation_target: None,
             last_animation_tick: std::time::Instant::now(),
+            current_scroll_velocity: 0.0,
         };
 
         // Start the unified UI event loop (handles both messages and animation ticks)
