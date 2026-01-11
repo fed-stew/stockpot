@@ -265,7 +265,7 @@ mod tests {
             .expect("Section should exist");
         assert_eq!(section.agent_name, "sub-agent");
         assert_eq!(section.display_name, "Sub Agent");
-        assert_eq!(section.content, "");
+        assert_eq!(section.content(), "");
         assert!(!section.is_complete);
 
         // Append content
@@ -276,7 +276,7 @@ mod tests {
         let section = msg
             .get_nested_section(&section_id)
             .expect("Section should exist");
-        assert_eq!(section.content, "Line 1\nLine 2");
+        assert_eq!(section.content(), "Line 1\nLine 2");
         assert!(!section.is_complete);
 
         // Finish section
@@ -356,13 +356,13 @@ mod tests {
 
         // Modify via mutable reference
         if let Some(section) = msg.get_nested_section_mut(&section_id) {
-            section.content = "Modified directly".to_string();
+            section.append("Modified via append");
             section.is_collapsed = true;
         }
 
         // Verify changes
         let section = msg.get_nested_section(&section_id).unwrap();
-        assert_eq!(section.content, "Modified directly");
+        assert_eq!(section.content(), "Modified via append");
         assert!(section.is_collapsed);
     }
 

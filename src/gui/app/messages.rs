@@ -8,7 +8,9 @@ use super::ChatApp;
 use crate::gui::components::{
     collapsible_display, current_spinner_frame, list_scrollbar, CollapsibleProps, MarkdownTooltip,
 };
-use crate::gui::state::{MessageRole, MessageSection, ThinkingSection};
+use crate::gui::state::{
+    AgentContentItem, MessageRole, MessageSection, ThinkingSection, ToolCallSection,
+};
 
 impl ChatApp {
     pub(super) fn render_messages(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -217,10 +219,15 @@ impl ChatApp {
                 // Thinking sections render as compact preview with hover tooltip
                 self.render_thinking_section(thinking_section, msg_id, theme)
             }
+            MessageSection::ToolCall(tool_section) => {
+                // Tool call sections render as styled inline elements
+                self.render_tool_call_section(tool_section, msg_id, theme)
+            }
         }
     }
 
-    /// Render a thinking section as a compact preview with markdown tooltip on hover.
+    /// Render a thinking section as a styled inline element with tooltip.
+    /// Format: • Thinking preview...
     fn render_thinking_section(
         &self,
         thinking: &ThinkingSection,
@@ -236,20 +243,76 @@ impl ChatApp {
             .flex()
             .items_center()
             .gap(px(6.))
-            .px(px(8.))
-            .py(px(4.))
-            .my(px(4.))
-            .rounded(px(4.))
-            .bg(theme.tool_card)
-            .text_size(px(12.))
-            .text_color(theme.text_muted)
+            .py(px(3.))
+            .my(px(2.))
+            .text_size(px(13.))
             .cursor_default()
-            // Thinking emoji
-            .child("💭")
-            // Compact preview text
-            .child(format!("thinking: {}", preview))
+            // Muted bullet
+            .child(div().text_color(theme.tool_bullet).child("•"))
+            // Semi-bold colored "Thinking" (matches markdown styling)
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(theme.tool_verb)
+                    .child("Thinking"),
+            )
+            // Preview text
+            .when(!preview.is_empty(), |el| {
+                el.child(div().text_color(theme.text_muted).child(preview))
+            })
             // Hover tooltip with full markdown content
             .tooltip(MarkdownTooltip::markdown(full_content))
+            .into_any_element()
+    }
+
+    /// Render a tool call section as a styled inline element.
+    /// Format: • Verb subject ✓
+    fn render_tool_call_section(
+        &self,
+        tool_section: &ToolCallSection,
+        msg_id: &str,
+        theme: &crate::gui::theme::Theme,
+    ) -> AnyElement {
+        let element_id = SharedString::from(format!("tool-{}-{}", msg_id, tool_section.id));
+
+        // Status indicator at the end
+        let status = if tool_section.is_running {
+            None // No indicator while running, could add spinner later
+        } else if tool_section.succeeded == Some(true) {
+            Some(("✓", theme.success))
+        } else {
+            Some(("✗", theme.error))
+        };
+
+        div()
+            .id(element_id)
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .py(px(3.))
+            .my(px(2.))
+            .text_size(px(13.))
+            // Muted bullet
+            .child(div().text_color(theme.tool_bullet).child("•"))
+            // Semi-bold colored verb (matches markdown bold styling)
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(theme.tool_verb)
+                    .child(tool_section.info.verb.clone()),
+            )
+            // Subject (if any)
+            .when(!tool_section.info.subject.is_empty(), |el| {
+                el.child(
+                    div()
+                        .text_color(theme.text)
+                        .child(tool_section.info.subject.clone()),
+                )
+            })
+            // Status indicator at end
+            .when_some(status, |el, (icon, color)| {
+                el.child(div().text_color(color).child(icon))
+            })
             .into_any_element()
     }
 
@@ -271,22 +334,130 @@ impl ChatApp {
         let props = CollapsibleProps::with_theme(theme)
             .id(format!("agent-{}", stable_id))
             .title(agent_section.display_name.clone())
-            .icon("🤖")
             .collapsed(is_collapsed)
             .loading(!agent_section.is_complete);
 
-        // LAZY EVALUATION: Only parse markdown when section is expanded!
+        // LAZY EVALUATION: Only render content when section is expanded!
         // This is critical for performance - markdown parsing is expensive and
         // was causing 5+ second delays when toggling sections with large content.
         let content = if is_collapsed {
             // Fast path: empty placeholder when collapsed (content won't be shown anyway)
             div().into_any_element()
         } else {
-            // Slow path: only parse markdown when actually visible
+            // Render each content item appropriately
+            let children: Vec<AnyElement> = agent_section
+                .items
+                .iter()
+                .enumerate()
+                .map(|(idx, item)| match item {
+                    AgentContentItem::Text(text) => {
+                        let element_id =
+                            SharedString::from(format!("agent-{}-text-{}", stable_id, idx));
+                        div()
+                            .id(element_id)
+                            .w_full()
+                            .overflow_x_hidden()
+                            .child(markdown(text).selectable(true))
+                            .into_any_element()
+                    }
+                    AgentContentItem::ToolCall {
+                        id,
+                        info,
+                        is_running,
+                        succeeded,
+                    } => {
+                        // Render tool call with same styling as top-level tool calls
+                        let element_id = SharedString::from(format!("nested-tool-{}", id));
+                        let status = if *is_running {
+                            None
+                        } else if *succeeded == Some(true) {
+                            Some(("✓", theme.success))
+                        } else {
+                            Some(("✗", theme.error))
+                        };
+
+                        div()
+                            .id(element_id)
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .py(px(3.))
+                            .my(px(2.))
+                            .text_size(px(13.))
+                            // Muted bullet
+                            .child(div().text_color(theme.tool_bullet).child("•"))
+                            // Semi-bold colored verb
+                            .child(
+                                div()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(theme.tool_verb)
+                                    .child(info.verb.clone()),
+                            )
+                            // Subject (if any)
+                            .when(!info.subject.is_empty(), |el| {
+                                el.child(div().text_color(theme.text).child(info.subject.clone()))
+                            })
+                            // Status indicator at end
+                            .when_some(status, |el, (icon, color)| {
+                                el.child(div().text_color(color).child(icon))
+                            })
+                            .into_any_element()
+                    }
+                    AgentContentItem::Thinking {
+                        id,
+                        content,
+                        is_complete,
+                    } => {
+                        // Render thinking section with same styling as top-level thinking
+                        let element_id = SharedString::from(format!("nested-thinking-{}", id));
+
+                        // Get preview (first line, max 50 chars)
+                        let preview = if content.is_empty() {
+                            String::new()
+                        } else {
+                            let first_line = content.lines().next().unwrap_or("");
+                            let truncated: String = first_line.chars().take(50).collect();
+                            if truncated.len() < first_line.len() || content.contains('\n') {
+                                format!("{}...", truncated)
+                            } else {
+                                truncated
+                            }
+                        };
+
+                        div()
+                            .id(element_id)
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .py(px(3.))
+                            .my(px(2.))
+                            .text_size(px(13.))
+                            // Muted bullet
+                            .child(div().text_color(theme.tool_bullet).child("•"))
+                            // Semi-bold colored "Thinking"
+                            .child(
+                                div()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(theme.tool_verb)
+                                    .child("Thinking"),
+                            )
+                            // Preview text
+                            .when(!preview.is_empty(), |el| {
+                                el.child(div().text_color(theme.text_muted).child(preview))
+                            })
+                            // Completion indicator
+                            .when(*is_complete, |el| {
+                                el.child(div().text_color(theme.success).child("✓"))
+                            })
+                            .into_any_element()
+                    }
+                })
+                .collect();
+
             div()
                 .w_full()
                 .overflow_x_hidden()
-                .child(markdown(&agent_section.content).selectable(true))
+                .children(children)
                 .into_any_element()
         };
 

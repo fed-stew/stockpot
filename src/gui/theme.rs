@@ -23,6 +23,10 @@ pub struct Theme {
     pub assistant_bubble: Rgba,
     /// Tool call card background
     pub tool_card: Rgba,
+    /// Tool call bullet/dot color (muted)
+    pub tool_bullet: Rgba,
+    /// Tool call verb color (bold verb like "Edited", "Read")
+    pub tool_verb: Rgba,
     /// Success color (green)
     pub success: Rgba,
     /// Error color (red)
@@ -50,6 +54,8 @@ impl Theme {
             user_bubble: rgb(0x2d2d30),
             assistant_bubble: rgb(0x1e1e1e),
             tool_card: rgb(0x2d2d30),
+            tool_bullet: rgb(0x6e6e6e),
+            tool_verb: rgb(0x0078d4),
             success: rgb(0x4ec9b0),
             error: rgb(0xf14c4c),
             warning: rgb(0xdcdcaa),
@@ -68,6 +74,8 @@ impl Theme {
             user_bubble: rgb(0xe8e8e8),
             assistant_bubble: rgb(0xf5f5f5),
             tool_card: rgb(0xf0f0f0),
+            tool_bullet: rgb(0x9e9e9e),
+            tool_verb: rgb(0x0078d4),
             success: rgb(0x16825d),
             error: rgb(0xd32f2f),
             warning: rgb(0xf9a825),

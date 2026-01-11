@@ -3,8 +3,8 @@
 //! Manages chat messages and tool calls for the GUI.
 
 use super::message::{ChatMessage, MessageRole, ToolCall, ToolCallState};
-use super::sections::{AgentSection, MessageSection};
-use super::tool_display::format_tool_call_display;
+use super::sections::{AgentSection, MessageSection, ToolCallSection};
+use super::tool_display::get_tool_display_info;
 
 /// A conversation (list of messages)
 #[derive(Debug, Clone, Default)]
@@ -188,70 +188,99 @@ impl Conversation {
         self.is_generating = false;
     }
 
-    /// Append a tool call marker to the current message
-    pub fn append_tool_call(&mut self, name: &str, args: Option<serde_json::Value>) {
+    /// Append a tool call section to the current message
+    /// Returns the section ID for later completion tracking
+    pub fn append_tool_call(
+        &mut self,
+        name: &str,
+        args: Option<serde_json::Value>,
+    ) -> Option<String> {
         let args = args.unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-        let display = format_tool_call_display(name, &args);
-        let marker = format!("\n{}\n", display);
-        self.append_to_main_content(&marker);
+        let info = get_tool_display_info(name, &args);
+
+        if let Some(msg) = self.messages.last_mut() {
+            let section = ToolCallSection::new(info);
+            let id = section.id.clone();
+            msg.sections.push(MessageSection::ToolCall(section));
+            Some(id)
+        } else {
+            None
+        }
     }
 
-    /// Append a tool call marker to a specific nested section
+    /// Append a tool call to a specific nested section (structured for consistent styling)
+    /// Returns the tool ID for later completion
     pub fn append_tool_call_to_section(
         &mut self,
         section_id: &str,
         name: &str,
         args: Option<serde_json::Value>,
-    ) {
+    ) -> Option<String> {
         let args = args.unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-        let display = format_tool_call_display(name, &args);
-        let marker = format!("\n{}\n", display);
-        self.append_to_nested_agent(section_id, &marker);
+        let info = get_tool_display_info(name, &args);
+        if let Some(msg) = self.messages.last_mut() {
+            if let Some(section) = msg.get_nested_section_mut(section_id) {
+                return Some(section.append_tool_call(info));
+            }
+        }
+        None
     }
 
-    /// Mark the last tool call as completed with optional result indicator
+    /// Mark the most recent tool call as completed
     pub fn complete_tool_call(&mut self, _name: &str, success: bool) {
-        let indicator = if success { " ✓" } else { " ✗" };
-        // Find the last line and append indicator
         if let Some(msg) = self.messages.last_mut() {
-            if msg.content.ends_with('\n') {
-                msg.content.pop();
-            }
-            msg.content.push_str(indicator);
-            msg.content.push('\n');
-
-            // Also update the last Text section if it exists
+            // Find the last ToolCall section that's still running
             for section in msg.sections.iter_mut().rev() {
-                if let MessageSection::Text(ref mut text) = section {
-                    if text.ends_with('\n') {
-                        text.pop();
+                if let MessageSection::ToolCall(ref mut tool) = section {
+                    if tool.is_running {
+                        tool.complete(success);
+                        return;
                     }
-                    text.push_str(indicator);
-                    text.push('\n');
-                    break;
                 }
             }
         }
     }
 
     /// Complete a tool call in a specific nested section
-    pub fn complete_tool_call_in_section(&mut self, section_id: &str, _name: &str, success: bool) {
-        let indicator = if success { " ✓" } else { " ✗" };
+    pub fn complete_tool_call_in_section(
+        &mut self,
+        section_id: &str,
+        tool_id: &str,
+        success: bool,
+    ) {
         if let Some(msg) = self.messages.last_mut() {
-            // Update the nested section content
             if let Some(section) = msg.get_nested_section_mut(section_id) {
-                if section.content.ends_with('\n') {
-                    section.content.pop();
-                }
-                section.content.push_str(indicator);
-                section.content.push('\n');
+                section.complete_tool_call(tool_id, success);
             }
-            // Also update legacy content for consistency
-            if msg.content.ends_with('\n') {
-                msg.content.pop();
+        }
+    }
+
+    /// Start a thinking section in a specific nested agent section
+    /// Returns the thinking section ID
+    pub fn start_thinking_in_section(&mut self, section_id: &str) -> Option<String> {
+        if let Some(msg) = self.messages.last_mut() {
+            if let Some(section) = msg.get_nested_section_mut(section_id) {
+                return Some(section.start_thinking());
             }
-            msg.content.push_str(indicator);
-            msg.content.push('\n');
+        }
+        None
+    }
+
+    /// Append to a thinking section in a specific nested agent section
+    pub fn append_to_thinking_in_section(&mut self, section_id: &str, text: &str) {
+        if let Some(msg) = self.messages.last_mut() {
+            if let Some(section) = msg.get_nested_section_mut(section_id) {
+                section.append_to_thinking(text);
+            }
+        }
+    }
+
+    /// Complete a thinking section in a specific nested agent section
+    pub fn complete_thinking_in_section(&mut self, section_id: &str) {
+        if let Some(msg) = self.messages.last_mut() {
+            if let Some(section) = msg.get_nested_section_mut(section_id) {
+                section.complete_thinking();
+            }
         }
     }
 }
@@ -278,7 +307,7 @@ mod tests {
         // Verify content is in the message
         let msg = conv.messages.last().unwrap();
         let section = msg.get_nested_section(&section_id).unwrap();
-        assert_eq!(section.content, "Nested content");
+        assert_eq!(section.content(), "Nested content");
         assert!(!section.is_complete);
 
         // Finish nested agent
@@ -314,7 +343,7 @@ mod tests {
 
         let msg = conv.messages.last().unwrap();
         let section = msg.get_nested_section(&section_id).unwrap();
-        assert_eq!(section.content, "Goes to nested");
+        assert_eq!(section.content(), "Goes to nested");
     }
 
     #[test]
@@ -366,7 +395,119 @@ mod tests {
     }
 
     // ==========================================================================
-    // Section-specific tool call tests
+    // Tool call section tests
+    // ==========================================================================
+
+    #[test]
+    fn test_append_tool_call_creates_section() {
+        let mut conv = Conversation::new();
+        conv.start_assistant_message();
+
+        // Append tool call
+        let args = serde_json::json!({"file_path": "src/main.rs"});
+        let section_id = conv.append_tool_call("read_file", Some(args));
+
+        assert!(section_id.is_some(), "Should return section ID");
+
+        // Verify a ToolCall section was created
+        let msg = conv.messages.last().unwrap();
+        let tool_section = msg.sections.iter().find(|s| s.is_tool_call());
+        assert!(tool_section.is_some(), "Should have a ToolCall section");
+
+        if let MessageSection::ToolCall(tool) = tool_section.unwrap() {
+            assert_eq!(tool.id, section_id.unwrap());
+            assert_eq!(tool.info.verb, "Read");
+            assert_eq!(tool.info.subject, "src/main.rs");
+            assert!(tool.is_running);
+            assert!(tool.succeeded.is_none());
+        } else {
+            panic!("Expected ToolCall section");
+        }
+    }
+
+    #[test]
+    fn test_append_tool_call_no_message() {
+        let mut conv = Conversation::new();
+
+        // No messages exist, should return None
+        let result = conv.append_tool_call("read_file", None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_complete_tool_call() {
+        let mut conv = Conversation::new();
+        conv.start_assistant_message();
+
+        // Append tool call
+        let args = serde_json::json!({"file_path": "test.rs"});
+        conv.append_tool_call("read_file", Some(args));
+
+        // Complete with success
+        conv.complete_tool_call("read_file", true);
+
+        // Verify the section is marked complete
+        let msg = conv.messages.last().unwrap();
+        if let Some(MessageSection::ToolCall(tool)) = msg.sections.iter().find(|s| s.is_tool_call())
+        {
+            assert!(!tool.is_running);
+            assert_eq!(tool.succeeded, Some(true));
+        } else {
+            panic!("Expected ToolCall section");
+        }
+    }
+
+    #[test]
+    fn test_complete_tool_call_failure() {
+        let mut conv = Conversation::new();
+        conv.start_assistant_message();
+
+        conv.append_tool_call("edit_file", None);
+        conv.complete_tool_call("edit_file", false);
+
+        let msg = conv.messages.last().unwrap();
+        if let Some(MessageSection::ToolCall(tool)) = msg.sections.iter().find(|s| s.is_tool_call())
+        {
+            assert!(!tool.is_running);
+            assert_eq!(tool.succeeded, Some(false));
+        } else {
+            panic!("Expected ToolCall section");
+        }
+    }
+
+    #[test]
+    fn test_complete_tool_call_finds_most_recent_running() {
+        let mut conv = Conversation::new();
+        conv.start_assistant_message();
+
+        // Add two tool calls
+        conv.append_tool_call("read_file", None);
+        conv.complete_tool_call("read_file", true); // Complete first one
+        conv.append_tool_call("edit_file", None);
+
+        // Now complete_tool_call should find the second one
+        conv.complete_tool_call("edit_file", true);
+
+        let msg = conv.messages.last().unwrap();
+        let tool_calls: Vec<_> = msg
+            .sections
+            .iter()
+            .filter_map(|s| {
+                if let MessageSection::ToolCall(tool) = s {
+                    Some(tool)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(tool_calls.len(), 2);
+        assert!(!tool_calls[0].is_running);
+        assert!(!tool_calls[1].is_running);
+    }
+
+    // ==========================================================================
+    // Section-specific tool call tests (nested sections)
     // ==========================================================================
 
     #[test]
@@ -379,14 +520,17 @@ mod tests {
 
         // Append tool call to that section
         let args = serde_json::json!({"file_path": "test.rs"});
-        conv.append_tool_call_to_section(&section_id, "read_file", Some(args));
+        let tool_id = conv.append_tool_call_to_section(&section_id, "read_file", Some(args));
+        assert!(tool_id.is_some(), "Should return tool ID");
 
-        // Verify it went to the nested section
+        // Verify content() includes the tool call formatted as markdown
         let msg = conv.messages.last().unwrap();
         let section = msg.get_nested_section(&section_id).unwrap();
+        let content = section.content();
         assert!(
-            section.content.contains("📄 `test.rs`"),
-            "Tool call should appear in nested section"
+            content.contains("**Read**") && content.contains("test.rs"),
+            "Tool call should appear in nested section content: {}",
+            content
         );
     }
 
@@ -397,16 +541,18 @@ mod tests {
 
         // Start a nested section and add a tool call
         let section_id = conv.start_nested_agent("sub-agent", "Sub Agent").unwrap();
-        conv.append_tool_call_to_section(&section_id, "read_file", None);
+        let tool_id = conv
+            .append_tool_call_to_section(&section_id, "read_file", None)
+            .unwrap();
 
         // Complete the tool call with success
-        conv.complete_tool_call_in_section(&section_id, "read_file", true);
+        conv.complete_tool_call_in_section(&section_id, &tool_id, true);
 
         // Verify the checkmark was added
         let msg = conv.messages.last().unwrap();
         let section = msg.get_nested_section(&section_id).unwrap();
         assert!(
-            section.content.contains("✓"),
+            section.content().contains("✓"),
             "Success indicator should appear in nested section"
         );
     }
@@ -418,16 +564,18 @@ mod tests {
 
         // Start a nested section and add a tool call
         let section_id = conv.start_nested_agent("sub-agent", "Sub Agent").unwrap();
-        conv.append_tool_call_to_section(&section_id, "read_file", None);
+        let tool_id = conv
+            .append_tool_call_to_section(&section_id, "read_file", None)
+            .unwrap();
 
         // Complete the tool call with failure
-        conv.complete_tool_call_in_section(&section_id, "read_file", false);
+        conv.complete_tool_call_in_section(&section_id, &tool_id, false);
 
         // Verify the X mark was added
         let msg = conv.messages.last().unwrap();
         let section = msg.get_nested_section(&section_id).unwrap();
         assert!(
-            section.content.contains("✗"),
+            section.content().contains("✗"),
             "Failure indicator should appear in nested section"
         );
     }

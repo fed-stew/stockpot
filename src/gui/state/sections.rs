@@ -2,6 +2,51 @@
 //!
 //! Provides section abstractions for collapsible nested agent output.
 
+use super::tool_display::ToolDisplayInfo;
+
+/// Content item within a nested agent section
+#[derive(Debug, Clone)]
+pub enum AgentContentItem {
+    /// Plain text/markdown content
+    Text(String),
+    /// A tool call with display info
+    ToolCall {
+        id: String,
+        info: ToolDisplayInfo,
+        is_running: bool,
+        succeeded: Option<bool>,
+    },
+    /// A thinking/reasoning section
+    Thinking {
+        id: String,
+        content: String,
+        is_complete: bool,
+    },
+}
+
+impl AgentContentItem {
+    pub fn text(content: impl Into<String>) -> Self {
+        Self::Text(content.into())
+    }
+
+    pub fn tool_call(info: ToolDisplayInfo) -> Self {
+        Self::ToolCall {
+            id: uuid::Uuid::new_v4().to_string(),
+            info,
+            is_running: true,
+            succeeded: None,
+        }
+    }
+
+    pub fn thinking() -> Self {
+        Self::Thinking {
+            id: uuid::Uuid::new_v4().to_string(),
+            content: String::new(),
+            is_complete: false,
+        }
+    }
+}
+
 /// A collapsible section containing output from a nested agent
 #[derive(Debug, Clone)]
 pub struct AgentSection {
@@ -11,8 +56,8 @@ pub struct AgentSection {
     pub agent_name: String,
     /// Agent's display name (shown in header)
     pub display_name: String,
-    /// Content accumulated from this agent
-    pub content: String,
+    /// Content items (text and tool calls)
+    pub items: Vec<AgentContentItem>,
     /// Whether the section is collapsed in UI
     pub is_collapsed: bool,
     /// Whether the agent has completed
@@ -25,14 +70,129 @@ impl AgentSection {
             id: uuid::Uuid::new_v4().to_string(),
             agent_name: agent_name.into(),
             display_name: display_name.into(),
-            content: String::new(),
+            items: Vec::new(),
             is_collapsed: false,
             is_complete: false,
         }
     }
 
+    /// Append text content - merges with last text item if possible
     pub fn append(&mut self, text: &str) {
-        self.content.push_str(text);
+        if let Some(AgentContentItem::Text(existing)) = self.items.last_mut() {
+            existing.push_str(text);
+        } else {
+            self.items.push(AgentContentItem::text(text));
+        }
+    }
+
+    /// Append a tool call
+    pub fn append_tool_call(&mut self, info: ToolDisplayInfo) -> String {
+        let item = AgentContentItem::tool_call(info);
+        let id = match &item {
+            AgentContentItem::ToolCall { id, .. } => id.clone(),
+            _ => unreachable!(),
+        };
+        self.items.push(item);
+        id
+    }
+
+    /// Complete a tool call by ID
+    pub fn complete_tool_call(&mut self, tool_id: &str, success: bool) {
+        for item in &mut self.items {
+            if let AgentContentItem::ToolCall {
+                id,
+                is_running,
+                succeeded,
+                ..
+            } = item
+            {
+                if id == tool_id && *is_running {
+                    *is_running = false;
+                    *succeeded = Some(success);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Start a new thinking section, returns the section ID
+    pub fn start_thinking(&mut self) -> String {
+        let item = AgentContentItem::thinking();
+        let id = match &item {
+            AgentContentItem::Thinking { id, .. } => id.clone(),
+            _ => unreachable!(),
+        };
+        self.items.push(item);
+        id
+    }
+
+    /// Append to the most recent thinking section
+    pub fn append_to_thinking(&mut self, text: &str) {
+        // Find the last Thinking item and append
+        for item in self.items.iter_mut().rev() {
+            if let AgentContentItem::Thinking {
+                content,
+                is_complete,
+                ..
+            } = item
+            {
+                if !*is_complete {
+                    content.push_str(text);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Complete the most recent thinking section
+    pub fn complete_thinking(&mut self) {
+        for item in self.items.iter_mut().rev() {
+            if let AgentContentItem::Thinking { is_complete, .. } = item {
+                if !*is_complete {
+                    *is_complete = true;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Get combined content as string (for backwards compatibility / plain text export)
+    pub fn content(&self) -> String {
+        self.items
+            .iter()
+            .map(|item| match item {
+                AgentContentItem::Text(s) => s.clone(),
+                AgentContentItem::ToolCall {
+                    info, succeeded, ..
+                } => {
+                    let status = match succeeded {
+                        Some(true) => " ✓",
+                        Some(false) => " ✗",
+                        None => "",
+                    };
+                    if info.subject.is_empty() {
+                        format!("• **{}**{}\n", info.verb, status)
+                    } else {
+                        format!("• **{}** {}{}\n", info.verb, info.subject, status)
+                    }
+                }
+                AgentContentItem::Thinking { content, .. } => {
+                    if content.is_empty() {
+                        String::new()
+                    } else {
+                        // Get first line preview
+                        let preview: String = content
+                            .lines()
+                            .next()
+                            .unwrap_or("")
+                            .chars()
+                            .take(50)
+                            .collect();
+                        format!("• **Thinking** {}...\n", preview)
+                    }
+                }
+            })
+            .collect()
     }
 
     pub fn finish(&mut self) {
@@ -104,6 +264,35 @@ impl Default for ThinkingSection {
     }
 }
 
+/// A tool call display section
+#[derive(Debug, Clone)]
+pub struct ToolCallSection {
+    /// Unique ID for this section
+    pub id: String,
+    /// The tool display info (verb + subject)
+    pub info: ToolDisplayInfo,
+    /// Whether the tool call is still running
+    pub is_running: bool,
+    /// Whether the tool call succeeded (None if still running)
+    pub succeeded: Option<bool>,
+}
+
+impl ToolCallSection {
+    pub fn new(info: ToolDisplayInfo) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            info,
+            is_running: true,
+            succeeded: None,
+        }
+    }
+
+    pub fn complete(&mut self, success: bool) {
+        self.is_running = false;
+        self.succeeded = Some(success);
+    }
+}
+
 /// A section within an assistant message
 #[derive(Debug, Clone)]
 pub enum MessageSection {
@@ -113,6 +302,8 @@ pub enum MessageSection {
     NestedAgent(AgentSection),
     /// Model thinking/reasoning (collapsible)
     Thinking(ThinkingSection),
+    /// Tool call display (styled)
+    ToolCall(ToolCallSection),
 }
 
 impl MessageSection {
@@ -146,6 +337,19 @@ impl MessageSection {
             _ => None,
         }
     }
+
+    /// Returns true if this is a ToolCall section
+    pub fn is_tool_call(&self) -> bool {
+        matches!(self, MessageSection::ToolCall(_))
+    }
+
+    /// Get the section ID if it's a tool call section
+    pub fn tool_call_section_id(&self) -> Option<&str> {
+        match self {
+            MessageSection::ToolCall(section) => Some(&section.id),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -161,7 +365,8 @@ mod tests {
         let section = AgentSection::new("test-agent", "Test Agent");
         assert_eq!(section.agent_name, "test-agent");
         assert_eq!(section.display_name, "Test Agent");
-        assert_eq!(section.content, "");
+        assert_eq!(section.content(), "");
+        assert!(section.items.is_empty());
         assert!(!section.is_collapsed);
         assert!(!section.is_complete);
         assert!(!section.id.is_empty(), "ID should be generated");
@@ -172,7 +377,31 @@ mod tests {
         let mut section = AgentSection::new("agent", "Agent");
         section.append("Hello ");
         section.append("World");
-        assert_eq!(section.content, "Hello World");
+        assert_eq!(section.content(), "Hello World");
+        // Text should be merged into a single item
+        assert_eq!(section.items.len(), 1);
+    }
+
+    #[test]
+    fn test_agent_section_tool_call() {
+        let mut section = AgentSection::new("agent", "Agent");
+        section.append("Starting...\n");
+        let tool_id = section.append_tool_call(ToolDisplayInfo::new("Edited", "main.rs"));
+        section.append("Done!\n");
+
+        // Should have 3 items: text, tool call, text
+        assert_eq!(section.items.len(), 3);
+
+        // Complete the tool call
+        section.complete_tool_call(&tool_id, true);
+
+        // Check content() output includes the tool call
+        let content = section.content();
+        assert!(content.contains("Starting..."));
+        assert!(content.contains("Edited"));
+        assert!(content.contains("main.rs"));
+        assert!(content.contains("✓"));
+        assert!(content.contains("Done!"));
     }
 
     #[test]
@@ -320,5 +549,35 @@ mod tests {
             thinking_section.thinking_section_id(),
             Some(expected_id.as_str())
         );
+    }
+
+    // ==========================================================================
+    // ToolCallSection tests
+    // ==========================================================================
+
+    #[test]
+    fn test_tool_call_section_new() {
+        let info = ToolDisplayInfo::new("Edited", "src/main.rs");
+        let section = ToolCallSection::new(info);
+        assert!(!section.id.is_empty());
+        assert!(section.is_running);
+        assert!(section.succeeded.is_none());
+        assert_eq!(section.info.verb, "Edited");
+        assert_eq!(section.info.subject, "src/main.rs");
+    }
+
+    #[test]
+    fn test_tool_call_section_complete() {
+        let info = ToolDisplayInfo::new("Read", "file.rs");
+        let mut section = ToolCallSection::new(info);
+
+        section.complete(true);
+        assert!(!section.is_running);
+        assert_eq!(section.succeeded, Some(true));
+
+        let info2 = ToolDisplayInfo::new("Deleted", "old.rs");
+        let mut section2 = ToolCallSection::new(info2);
+        section2.complete(false);
+        assert_eq!(section2.succeeded, Some(false));
     }
 }

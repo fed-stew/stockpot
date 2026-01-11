@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use gpui::{font, hsla, Hsla, SharedString, TextRun, TextStyle};
+use gpui::{font, hsla, FontWeight, Hsla, SharedString, TextRun, TextStyle};
 
 use crate::gui::theme::Theme;
 
@@ -42,7 +42,11 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                 (s, base_font.clone().bold().italic(), base_color, None)
             }
             MarkdownSegment::Code(s) => (s, code_font.clone(), base_color, Some(code_bg)),
-            MarkdownSegment::Header(_level, s) => (s, base_font.clone().bold(), header_color, None),
+            MarkdownSegment::Header(_level, s) => {
+                let mut header_font = base_font.clone();
+                header_font.weight = FontWeight::SEMIBOLD;
+                (s, header_font, header_color, None)
+            }
         };
 
         if segment_text.is_empty() {

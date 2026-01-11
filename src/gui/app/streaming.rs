@@ -1,66 +1,116 @@
 //! Message handling and streaming for ChatApp
 //!
 //! This module handles incoming messages and streaming responses:
-//! - `start_message_listener()` - Set up the message bus listener
+//! - `start_ui_event_loop()` - Unified event loop handling both messages and animation ticks
 //! - `handle_message()` - Process incoming Message events
 //! - `toggle_agent_section()` - Toggle collapsible agent sections
 //!
 //! NOTE: Auto-scroll is handled manually with smooth animation (see scroll_animation.rs).
 //! We use ListAlignment::Top to prevent GPUI from auto-snapping to bottom.
+//!
+//! ## Race Condition Prevention
+//!
+//! Previously, we had TWO separate spawned tasks:
+//! 1. `start_animation_timer()` - every 8ms calling `this.update()`
+//! 2. `start_message_listener()` - on each message calling `this.update()`
+//!
+//! This caused `RefCell already borrowed` panics when both called update() simultaneously.
+//!
+//! The solution is a unified event loop that:
+//! - Processes EITHER a tick OR a message per iteration
+//! - Has only ONE `this.update()` call per loop iteration
+//! - Eliminates all race conditions
+//!
+//! ## Two-Mode Event Loop (Scroll Performance Fix)
+//!
+//! The event loop has two modes based on `is_generating` state:
+//!
+//! 1. **Active (streaming)**: Uses 8ms timeout for animation ticks (~120fps).
+//!    Needed for smooth throughput display and scroll-to-bottom animation.
+//!
+//! 2. **Idle (not streaming)**: Waits indefinitely for messages with NO timeout.
+//!    This lets GPUI's native vsync handle all frame timing, enabling smooth
+//!    60fps scrolling without interference from our polling loop.
+//!
+//! Previously, the loop always used 8ms polling which caused scroll jank when
+//! idle because the constant `cx.notify()` calls interfered with GPUI's vsync.
+
+use std::time::Duration;
 
 use gpui::{AsyncApp, Context, WeakEntity};
+use tokio::time::timeout;
 
 use crate::messaging::{AgentEvent, Message, ToolStatus};
 
 use super::ChatApp;
 
 impl ChatApp {
-    /// Start animation timer for smooth UI updates during streaming.
-    /// Runs at ~120fps (8ms) for butter-smooth scroll animation on high refresh displays.
-    /// Also handles spinner animation and throughput metrics.
-    /// Automatically stops when is_generating becomes false.
-    pub(super) fn start_animation_timer(cx: &mut Context<Self>) {
-        use std::time::Duration;
-
-        cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(8))
-                    .await;
-
-                let should_continue = this
-                    .update(cx, |app, cx| {
-                        if !app.is_generating {
-                            return false;
-                        }
-                        // Update throughput metrics
-                        app.tick_throughput();
-                        // Tick smooth scroll animation (if active)
-                        app.tick_scroll_animation();
-                        // Trigger UI refresh for spinner animation
-                        cx.notify();
-                        true
-                    })
-                    .unwrap_or(false);
-
-                if !should_continue {
-                    break;
-                }
-            }
-        })
-        .detach();
-    }
-
-    pub(super) fn start_message_listener(&self, cx: &mut Context<Self>) {
+    /// Start the unified UI event loop.
+    ///
+    /// This is the ONLY place where `this.update()` is called from async tasks,
+    /// ensuring no race conditions. The loop:
+    /// - Runs for the entire app lifetime
+    /// - During streaming: uses 8ms timeout for smooth animation ticks (~120fps)
+    /// - When idle: waits indefinitely for messages, letting GPUI control frame timing
+    ///
+    /// This two-mode approach is critical for scroll performance:
+    /// - During streaming: we need fast ticks for throughput/scroll animation
+    /// - When idle: GPUI's native vsync handles scrolling smoothly
+    ///   (constant 8ms polling would interfere with vsync and cause jank)
+    pub(super) fn start_ui_event_loop(&self, cx: &mut Context<Self>) {
         let mut receiver = self.message_bus.subscribe();
 
         cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
-            while let Ok(msg) = receiver.recv().await {
-                let result = this.update(cx, |app, cx| {
-                    app.handle_message(msg, cx);
-                });
-                if result.is_err() {
-                    break; // Entity dropped
+            loop {
+                // Check if we're actively generating (need fast animation ticks)
+                let is_active = this.update(cx, |app, _| app.is_generating).unwrap_or(false);
+
+                if is_active {
+                    // During streaming: use 8ms timeout for smooth animation ticks
+                    let tick_duration = Duration::from_millis(8);
+
+                    match timeout(tick_duration, receiver.recv()).await {
+                        // Message received - process it
+                        Ok(Ok(msg)) => {
+                            let result = this.update(cx, |app, cx| {
+                                app.handle_message(msg, cx);
+                            });
+                            if result.is_err() {
+                                break; // Entity dropped
+                            }
+                        }
+                        // Channel closed - exit loop
+                        Ok(Err(_)) => {
+                            break;
+                        }
+                        // Timeout - animation tick
+                        Err(_) => {
+                            let result = this.update(cx, |app, cx| {
+                                app.tick_throughput();
+                                app.tick_scroll_animation();
+                                cx.notify();
+                            });
+                            if result.is_err() {
+                                break; // Entity dropped
+                            }
+                        }
+                    }
+                } else {
+                    // When idle: wait indefinitely for messages
+                    // Let GPUI handle ALL frame timing natively for smooth scrolling
+                    match receiver.recv().await {
+                        Ok(msg) => {
+                            let result = this.update(cx, |app, cx| {
+                                app.handle_message(msg, cx);
+                            });
+                            if result.is_err() {
+                                break; // Entity dropped
+                            }
+                        }
+                        Err(_) => {
+                            break; // Channel closed
+                        }
+                    }
                 }
             }
         })
@@ -174,7 +224,8 @@ impl ChatApp {
                         self.conversation.start_assistant_message();
                         self.sync_messages_list_state();
                         self.is_generating = true;
-                        Self::start_animation_timer(cx);
+                        // NOTE: We no longer call start_animation_timer() here!
+                        // The unified event loop handles ticks automatically when is_generating is true.
                         // Reset scroll state for new response
                         self.user_scrolled_away = false;
                         // Trigger smooth scroll to show the new assistant message

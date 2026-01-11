@@ -41,7 +41,7 @@ macro_rules! define_reviewer {
 define_reviewer!(
     CodeReviewerAgent,
     "code-reviewer",
-    "Code Reviewer 🔍",
+    "Code Reviewer",
     "Thorough code reviewer for any language - focusing on quality, security, and best practices",
     "prompts/code_reviewer.md"
 );
@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn test_code_reviewer_display_name() {
         let agent = CodeReviewerAgent;
-        assert_eq!(agent.display_name(), "Code Reviewer 🔍");
+        assert_eq!(agent.display_name(), "Code Reviewer");
     }
 
     #[test]
@@ -265,18 +265,6 @@ mod tests {
             desc.contains("review") || desc.contains("code"),
             "Description should describe reviewing role: {}",
             agent.description()
-        );
-    }
-
-    #[test]
-    fn test_code_reviewer_display_name_has_emoji() {
-        let agent = CodeReviewerAgent;
-        let display = agent.display_name();
-        // All reviewers have emoji in display name
-        assert!(
-            display.contains('🔍'),
-            "Display name should have magnifying glass emoji: {}",
-            display
         );
     }
 

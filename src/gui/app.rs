@@ -351,8 +351,9 @@ impl ChatApp {
             scroll_animation_target: None,
         };
 
-        // Start message listener
-        app.start_message_listener(cx);
+        // Start the unified UI event loop (handles both messages and animation ticks)
+        // This is a single loop to avoid race conditions from multiple async tasks
+        app.start_ui_event_loop(cx);
 
         // Start MCP servers in background
         app.start_mcp_servers(cx);

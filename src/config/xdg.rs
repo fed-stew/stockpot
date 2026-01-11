@@ -72,6 +72,7 @@ mod tests {
     //! - Legacy path handling
 
     use super::*;
+    use serial_test::serial;
     use std::env;
     use tempfile::TempDir;
 
@@ -112,6 +113,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_xdg_dirs_ends_with_stockpot() {
         let dirs = XdgDirs::new();
 
@@ -139,6 +141,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_dirs_default_paths_contain_expected_segments() {
         // Clear XDG vars to test defaults
         let _guard = EnvGuard::new(&[]);
@@ -186,6 +189,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_xdg_config_home_override() {
         let temp = TempDir::new().unwrap();
         let custom_config = temp.path().join("custom_config");
@@ -197,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_data_home_override() {
         let temp = TempDir::new().unwrap();
         let custom_data = temp.path().join("custom_data");
@@ -208,6 +213,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_cache_home_override() {
         let temp = TempDir::new().unwrap();
         let custom_cache = temp.path().join("custom_cache");
@@ -219,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_state_home_override() {
         let temp = TempDir::new().unwrap();
         let custom_state = temp.path().join("custom_state");
@@ -230,6 +237,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_all_xdg_vars_override() {
         let temp = TempDir::new().unwrap();
 
@@ -259,6 +267,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_ensure_dirs_creates_all_directories() {
         let temp = TempDir::new().unwrap();
 
@@ -300,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_ensure_dirs_idempotent() {
         let temp = TempDir::new().unwrap();
 
@@ -327,6 +337,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_ensure_dirs_creates_nested_paths() {
         let temp = TempDir::new().unwrap();
         let deeply_nested = temp.path().join("a").join("b").join("c").join("d");
@@ -346,6 +357,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_legacy_path_ends_with_stockpot() {
         let legacy = XdgDirs::legacy();
         assert!(
@@ -356,6 +368,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_legacy_path_is_in_home() {
         let legacy = XdgDirs::legacy();
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -374,6 +387,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_default_trait() {
         let dirs1 = XdgDirs::new();
         let dirs2 = XdgDirs::default();
@@ -390,6 +404,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_paths_are_absolute_or_relative_to_home() {
         let dirs = XdgDirs::new();
 
@@ -410,6 +425,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_paths_are_distinct() {
         let dirs = XdgDirs::new();
 
@@ -427,6 +443,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[serial]
     fn test_xdg_vars_with_spaces_in_path() {
         let temp = TempDir::new().unwrap();
         let path_with_spaces = temp.path().join("path with spaces");
@@ -442,6 +459,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_vars_with_unicode_in_path() {
         let temp = TempDir::new().unwrap();
         let unicode_path = temp.path().join("配置目录");
@@ -457,6 +475,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_ensure_dirs_fails_when_path_is_file() {
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("not_a_dir");
@@ -473,6 +492,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_partial_xdg_override() {
         // Only override some vars, leave others as default
         let temp = TempDir::new().unwrap();
@@ -505,6 +525,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_vars_with_trailing_slash() {
         let temp = TempDir::new().unwrap();
         let path_with_slash = format!("{}/", temp.path().display());
@@ -519,6 +540,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_vars_with_relative_path() {
         // XDG spec says these should be absolute, but we handle relative gracefully
         let _guard = EnvGuard::new(&[("XDG_CONFIG_HOME", "relative/path")]);
@@ -529,6 +551,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_ensure_dirs_with_existing_files_in_path() {
         let temp = TempDir::new().unwrap();
 
@@ -566,6 +589,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_legacy_path_distinct_from_xdg_paths() {
         let dirs = XdgDirs::new();
         let legacy = XdgDirs::legacy();
@@ -578,6 +602,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_dirs_struct_fields_accessible() {
         // Verify struct fields are public and accessible
         let temp = TempDir::new().unwrap();
@@ -602,6 +627,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_concurrent_ensure_dirs() {
         use std::sync::Arc;
         use std::thread;
@@ -643,6 +669,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_xdg_paths_are_canonical_form() {
         let temp = TempDir::new().unwrap();
         // Use path with .. that should still work

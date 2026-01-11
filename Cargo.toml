@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.17.0"
+version = "0.18.0"
 edition = "2021"
 description = "AI-powered coding assistant with GUI, CLI, and TUI modes"
 license = "MIT"
@@ -108,6 +108,7 @@ tempfile = "3.10"
 tokio-test = "0.4"
 assert_cmd = "2.0"
 predicates = "3.1"
+serial_test = "3"
 
 [features]
 default = ["gui"]

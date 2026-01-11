@@ -2,7 +2,7 @@
 
 use crate::agents::{AgentCapabilities, SpotAgent};
 
-/// Planning Agent - Breaks down complex tasks into actionable steps 📋
+/// Planning Agent - Breaks down complex tasks into actionable steps
 pub struct PlanningAgent;
 
 impl SpotAgent for PlanningAgent {
@@ -11,7 +11,7 @@ impl SpotAgent for PlanningAgent {
     }
 
     fn display_name(&self) -> &str {
-        "Planning Agent 📋"
+        "Planning Agent"
     }
 
     fn description(&self) -> &str {
@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn test_planning_display_name() {
         let agent = PlanningAgent;
-        assert_eq!(agent.display_name(), "Planning Agent 📋");
+        assert_eq!(agent.display_name(), "Planning Agent");
     }
 
     #[test]

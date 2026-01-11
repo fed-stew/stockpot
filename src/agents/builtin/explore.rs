@@ -2,7 +2,7 @@
 
 use crate::agents::{AgentCapabilities, AgentVisibility, SpotAgent};
 
-/// Explore Agent - Fast, read-only codebase exploration and search 🔍
+/// Explore Agent - Fast, read-only codebase exploration and search
 pub struct ExploreAgent;
 
 impl SpotAgent for ExploreAgent {
@@ -11,7 +11,7 @@ impl SpotAgent for ExploreAgent {
     }
 
     fn display_name(&self) -> &str {
-        "Explore Agent 🔍"
+        "Explore Agent"
     }
 
     fn description(&self) -> &str {
@@ -44,7 +44,7 @@ mod tests {
         let agent = ExploreAgent;
 
         assert_eq!(agent.name(), "explore");
-        assert_eq!(agent.display_name(), "Explore Agent 🔍");
+        assert_eq!(agent.display_name(), "Explore Agent");
         assert!(!agent.description().is_empty());
     }
 
