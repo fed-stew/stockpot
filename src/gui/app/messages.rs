@@ -12,8 +12,10 @@ use crate::gui::state::{
 
 impl ChatApp {
     fn markdown_text_view(&self, element_id: &SharedString, content: &str) -> TextView {
-        if let Some(state) = self.text_view_cache.borrow().get(element_id.as_ref()) {
-            TextView::new(state)
+        // Clone the Entity to release the RefCell borrow immediately
+        // This prevents "RefCell already borrowed" errors when dialogs block the UI
+        if let Some(state) = self.text_view_cache.borrow().get(element_id.as_ref()).cloned() {
+            TextView::new(&state)
         } else {
             TextView::markdown(ElementId::Name(element_id.clone()), content.to_string())
         }
@@ -36,6 +38,7 @@ impl ChatApp {
                     .id("messages-scroll")
                     .flex_1()
                     .w_full()
+                    .min_w_0()
                     .min_h(px(0.))
                     .p(px(16.))
                     .when(!has_messages, |d| {
@@ -136,7 +139,7 @@ impl ChatApp {
                                                 .overflow_hidden()
                                                 .min_w_0()
                                                 .when(is_user, |d| d.max_w(px(600.)))
-                                                .when(!is_user, |d| d.w_full().min_w_0())
+                                                .when(!is_user, |d| d.w_full().min_w_0().max_w_full())
                                                 .children(content_elements),
                                         )
                                         .into_any_element()
@@ -190,6 +193,8 @@ impl ChatApp {
             vec![div()
                 .id(element_id.clone())
                 .w_full()
+                .min_w_0()
+                .max_w_full()
                 .overflow_x_hidden()
                 .child(text_view.selectable(true))
                 .into_any_element()]
@@ -215,6 +220,8 @@ impl ChatApp {
                 div()
                     .id(element_id.clone())
                     .w_full()
+                    .min_w_0()
+                    .max_w_full()
                     .overflow_x_hidden()
                     .child(text_view.selectable(true))
                     .into_any_element()
@@ -277,6 +284,8 @@ impl ChatApp {
             div()
                 .id(element_id.clone())
                 .w_full()
+                .min_w_0()
+                .max_w_full()
                 .overflow_x_hidden()
                 .child(text_view.selectable(true))
                 .into_any_element()
@@ -399,6 +408,8 @@ impl ChatApp {
                         div()
                             .id(element_id.clone())
                             .w_full()
+                            .min_w_0()
+                            .max_w_full()
                             .overflow_x_hidden()
                             .child(text_view.selectable(true))
                             .into_any_element()
@@ -499,6 +510,8 @@ impl ChatApp {
 
             div()
                 .w_full()
+                .min_w_0()
+                .max_w_full()
                 .overflow_x_hidden()
                 .children(children)
                 .into_any_element()
