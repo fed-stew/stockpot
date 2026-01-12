@@ -327,8 +327,8 @@ impl ChatApp {
                     // Only finish generating if main agent completed (stack empty)
                     if self.active_agent_stack.is_empty() {
                         self.conversation.finish_current_message();
-                        self.sync_messages_list_state();
                         self.is_generating = false;
+                        self.sync_messages_list_state();
                         // Stop throughput tracking
                         self.is_streaming_active = false;
                     }

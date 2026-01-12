@@ -211,6 +211,8 @@ pub struct ChatApp {
     last_animation_tick: std::time::Instant,
     /// Current scroll velocity for momentum-based smoothing (pixels per second)
     current_scroll_velocity: f32,
+    /// Last scroll offset Y for detecting user scroll during streaming
+    last_scroll_offset_y: gpui::Pixels,
 }
 
 impl ChatApp {
@@ -357,6 +359,7 @@ impl ChatApp {
             scroll_animation_target: None,
             last_animation_tick: std::time::Instant::now(),
             current_scroll_velocity: 0.0,
+            last_scroll_offset_y: px(0.0),
         };
 
         // Start the unified UI event loop (handles both messages and animation ticks)
@@ -411,8 +414,11 @@ impl ChatApp {
             self.messages_list_state
                 .set_offset_from_scrollbar(gpui::point(prev_offset.x, clamped_y));
         } else if self.is_generating {
-            // At bottom during streaming - trigger smooth scroll animation
-            // This prevents the "jumpy" instant scroll when content grows
+            // At bottom during streaming - immediately set to bottom, then animate
+            // This prevents visual jump to top when reset() is called
+            let max_offset = self.messages_list_state.max_offset_for_scrollbar();
+            self.messages_list_state
+                .set_offset_from_scrollbar(gpui::point(prev_offset.x, -max_offset.height));
             self.start_smooth_scroll_to_bottom();
         } else {
             // At bottom, not generating (streaming just ended or static view)
