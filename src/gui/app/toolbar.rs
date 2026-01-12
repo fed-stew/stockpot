@@ -1,5 +1,5 @@
 use gpui::{div, prelude::*, px, rgb, Context, MouseButton, Styled};
-use rfd::FileDialog;
+use rfd::AsyncFileDialog;
 
 use super::super::components::{throughput_chart, ThroughputChartProps};
 use super::{ChatApp, NewConversation};
@@ -303,23 +303,32 @@ impl ChatApp {
                     })
                     .on_mouse_up(
                         MouseButton::Left,
-                        cx.listener(|this, _, _, cx| {
-                            let Some(folder) = FileDialog::new().pick_folder() else {
-                                return;
-                            };
+                        cx.listener(|_this, _, _, cx| {
+                            // Spawn async task to open folder dialog without blocking UI
+                            cx.spawn(async move |this, cx| {
+                                let folder = AsyncFileDialog::new().pick_folder().await;
+                                
+                                let Some(folder) = folder else {
+                                    return;
+                                };
+                                
+                                let folder_path = folder.path().to_path_buf();
+                                
+                                let _ = this.update(cx, |this, cx| {
+                                    if let Err(e) = std::env::set_current_dir(&folder_path) {
+                                        this.error_message =
+                                            Some(format!("Failed to change directory: {}", e));
+                                        cx.notify();
+                                        return;
+                                    }
 
-                            if let Err(e) = std::env::set_current_dir(&folder) {
-                                this.error_message =
-                                    Some(format!("Failed to change directory: {}", e));
-                                cx.notify();
-                                return;
-                            }
-
-                            this.error_message = None;
-                            this.show_agent_dropdown = false;
-                            this.show_model_dropdown = false;
-                            this.show_settings = false;
-                            cx.notify();
+                                    this.error_message = None;
+                                    this.show_agent_dropdown = false;
+                                    this.show_model_dropdown = false;
+                                    this.show_settings = false;
+                                    cx.notify();
+                                });
+                            }).detach();
                         }),
                     )
                     .child(format!("📁 {}", cwd_display)),
