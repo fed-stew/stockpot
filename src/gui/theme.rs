@@ -82,3 +82,16 @@ impl Theme {
         }
     }
 }
+
+/// Typography scale for consistent text sizing across the UI.
+#[allow(dead_code)]
+pub mod typography {
+    pub const PAGE_TITLE: f32 = 16.0;
+    pub const DIALOG_TITLE: f32 = 15.0;
+    pub const SECTION_HEADER: f32 = 14.0;
+    pub const HEADING: f32 = 13.0;
+    pub const BODY: f32 = 13.0;
+    pub const DESCRIPTION: f32 = 12.0;
+    pub const CAPTION: f32 = 11.0;
+    pub const MICRO: f32 = 10.0;
+}

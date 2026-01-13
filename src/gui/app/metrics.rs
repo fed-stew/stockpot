@@ -157,10 +157,6 @@ impl ChatApp {
 
     /// Truncate model name for display
     pub(super) fn truncate_model_name(name: &str) -> String {
-        if name.len() > 25 {
-            format!("{}...", &name[..22])
-        } else {
-            name.to_string()
-        }
+        name.to_string()
     }
 }

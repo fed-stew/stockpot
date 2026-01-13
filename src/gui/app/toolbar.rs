@@ -307,13 +307,13 @@ impl ChatApp {
                             // Spawn async task to open folder dialog without blocking UI
                             cx.spawn(async move |this, cx| {
                                 let folder = AsyncFileDialog::new().pick_folder().await;
-                                
+
                                 let Some(folder) = folder else {
                                     return;
                                 };
-                                
+
                                 let folder_path = folder.path().to_path_buf();
-                                
+
                                 let _ = this.update(cx, |this, cx| {
                                     if let Err(e) = std::env::set_current_dir(&folder_path) {
                                         this.error_message =
@@ -328,7 +328,8 @@ impl ChatApp {
                                     this.show_settings = false;
                                     cx.notify();
                                 });
-                            }).detach();
+                            })
+                            .detach();
                         }),
                     )
                     .child(format!("📁 {}", cwd_display)),

@@ -165,8 +165,8 @@ impl ChatApp {
             .justify_between()
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(14.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(theme.text)
                     .child("Available Models"),
             )
@@ -225,7 +225,7 @@ impl ChatApp {
             .gap(px(6.))
             .child(
                 div()
-                    .text_size(px(12.))
+                    .text_size(px(13.))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .child(type_label),
@@ -294,6 +294,7 @@ impl ChatApp {
                     } else {
                         theme.text
                     })
+                    .overflow_hidden()
                     .cursor_pointer()
                     .hover(|s| s.opacity(0.9))
                     .flex()
@@ -378,7 +379,13 @@ impl ChatApp {
             .flex_col()
             .gap(px(2.))
             .flex_1()
-            .child(Self::truncate_model_name(model));
+            .overflow_hidden()
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .overflow_hidden()
+                    .child(Self::truncate_model_name(model)),
+            );
 
         if !desc.is_empty() {
             inner = inner.child(

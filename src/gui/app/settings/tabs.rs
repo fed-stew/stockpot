@@ -137,7 +137,7 @@ impl ChatApp {
                                             } else {
                                                 theme.text
                                             })
-                                            .text_size(px(12.))
+                                            .text_size(px(13.))
                                             .cursor_pointer()
                                             .hover(|s| s.opacity(0.9))
                                             .on_mouse_up(

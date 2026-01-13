@@ -6,6 +6,8 @@ mod app;
 pub mod components;
 pub mod image_processing;
 pub mod pdf_processing;
+pub mod render_test;
+pub mod render_test_app;
 pub mod state;
 mod theme;
 

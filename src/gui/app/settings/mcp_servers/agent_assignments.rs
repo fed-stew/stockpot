@@ -87,7 +87,7 @@ fn render_agent_list(
         .gap(px(4.))
         .child(
             div()
-                .text_size(px(11.))
+                .text_size(px(12.))
                 .text_color(theme.text_muted)
                 .mb(px(4.))
                 .child("Agents"),
@@ -153,7 +153,7 @@ fn render_agent_item(
                 .flex()
                 .items_center()
                 .justify_between()
-                .child(div().text_size(px(12.)).child(display_name))
+                .child(div().text_size(px(13.)).child(display_name))
                 .when(mcp_count > 0, |d| {
                     d.child(
                         div()
@@ -165,7 +165,7 @@ fn render_agent_item(
                             } else {
                                 theme.background
                             })
-                            .text_size(px(10.))
+                            .text_size(px(11.))
                             .text_color(if is_selected {
                                 rgb(0xffffff)
                             } else {
@@ -195,7 +195,7 @@ fn render_mcp_checkboxes(
         .gap(px(4.))
         .child(
             div()
-                .text_size(px(11.))
+                .text_size(px(12.))
                 .text_color(theme.text_muted)
                 .mb(px(4.))
                 .child(format!("MCPs for {}", selected_agent_owned)),

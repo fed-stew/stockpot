@@ -182,7 +182,7 @@ fn render_server_header(
                 .gap(px(8.))
                 .child(
                     div()
-                        .text_size(px(14.))
+                        .text_size(px(13.))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text)
                         .child(name_owned),
@@ -192,7 +192,7 @@ fn render_server_header(
                         .px(px(6.))
                         .py(px(2.))
                         .rounded(px(4.))
-                        .text_size(px(10.))
+                        .text_size(px(11.))
                         .bg(if enabled {
                             rgba(0x4ade8033)
                         } else {

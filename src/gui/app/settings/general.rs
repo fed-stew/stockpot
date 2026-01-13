@@ -26,14 +26,14 @@ impl ChatApp {
                     .gap(px(8.))
                     .child(
                         div()
-                            .text_size(px(13.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_size(px(14.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.text)
                             .child("PDF Processing Mode"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(px(12.))
                             .text_color(theme.text_muted)
                             .mb(px(4.))
                             .child("Choose how PDFs are sent to the AI model"),
@@ -85,7 +85,7 @@ impl ChatApp {
                                             )
                                             .child(
                                                 div()
-                                                    .text_size(px(11.))
+                                                    .text_size(px(12.))
                                                     .text_color(if is_selected {
                                                         rgba(0xffffffcc)
                                                     } else {
@@ -137,7 +137,7 @@ impl ChatApp {
                                             )
                                             .child(
                                                 div()
-                                                    .text_size(px(11.))
+                                                    .text_size(px(12.))
                                                     .text_color(if is_selected {
                                                         rgba(0xffffffcc)
                                                     } else {
@@ -157,8 +157,8 @@ impl ChatApp {
                     .gap(px(8.))
                     .child(
                         div()
-                            .text_size(px(13.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_size(px(14.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.text)
                             .child("User Mode"),
                     )
@@ -236,14 +236,14 @@ impl ChatApp {
                     .gap(px(8.))
                     .child(
                         div()
-                            .text_size(px(13.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_size(px(14.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.text)
                             .child("Show Agent Reasoning"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(px(12.))
                             .text_color(theme.text_muted)
                             .mb(px(4.))
                             .child("Display the AI's thought process and planned steps"),

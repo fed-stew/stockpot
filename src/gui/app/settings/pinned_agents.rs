@@ -48,8 +48,8 @@ impl ChatApp {
             .border_color(theme.border)
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(14.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(theme.text)
                     .child("Default Model"),
             )
@@ -154,7 +154,8 @@ impl ChatApp {
                                                 } else {
                                                     theme.text
                                                 })
-                                                .text_size(px(12.))
+                                                .text_size(px(13.))
+                                                .overflow_hidden()
                                                 .cursor_pointer()
                                                 .hover(|s| s.bg(theme.tool_card))
                                                 .on_mouse_up(
@@ -184,8 +185,8 @@ impl ChatApp {
             .gap(px(8.))
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(14.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(theme.text)
                     .child("Agents"),
             )
@@ -271,8 +272,8 @@ impl ChatApp {
             .gap(px(10.))
             .child(
                 div()
-                    .text_size(px(13.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_size(px(14.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(theme.text)
                     .child("Models"),
             )
@@ -316,6 +317,8 @@ impl ChatApp {
                             } else {
                                 theme.text
                             })
+                            .text_size(px(13.))
+                            .overflow_hidden()
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.9))
                             .on_mouse_up(
@@ -350,6 +353,8 @@ impl ChatApp {
                                 theme.tool_card
                             })
                             .text_color(if pinned { rgb(0xffffff) } else { theme.text })
+                            .text_size(px(13.))
+                            .overflow_hidden()
                             .cursor_pointer()
                             .hover(|s| s.opacity(0.9))
                             .on_mouse_up(

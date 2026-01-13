@@ -1,6 +1,4 @@
 //! Stockpot - AI-powered coding assistant
-//!
-//! A GUI application for AI-assisted coding.
 
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -11,35 +9,132 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Args {
-    /// Working directory (like git -C)
     #[arg(short = 'C', long, visible_alias = "directory")]
     pub cwd: Option<String>,
-
-    /// Enable debug logging (equivalent to RUST_LOG=debug)
     #[arg(short = 'd', long)]
     pub debug: bool,
-
-    /// Enable verbose logging (equivalent to RUST_LOG=trace)
     #[arg(short = 'v', long)]
     pub verbose: bool,
-
-    /// Skip checking for new versions
+    #[arg(long)]
+    pub tui: bool,
+    #[arg(long)]
+    pub render_test: bool,
     #[arg(long)]
     pub skip_update_check: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-
-    // Change working directory if specified (do this early)
     if let Some(cwd) = &args.cwd {
         std::env::set_current_dir(cwd)?;
     }
 
-    run_gui(args)
+    if args.render_test {
+        run_render_test(args)
+    } else if args.tui {
+        run_tui(args)
+    } else {
+        run_gui(args)
+    }
 }
 
-/// Run the GUI application
+#[cfg(feature = "gui")]
+fn run_render_test(_args: Args) -> anyhow::Result<()> {
+    use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
+    use gpui_component::{Theme, ThemeMode};
+    use std::collections::VecDeque;
+    use stockpot::gui::render_test::standard_test_cases;
+    use stockpot::gui::render_test_app::RenderTestApp;
+
+    let filter = tracing_subscriber::EnvFilter::new("warn,gpui_component=error");
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .init();
+
+    println!("╔═══════════════════════════════════════════════════════════════╗");
+    println!("║         STOCKPOT RENDER PERFORMANCE TEST                      ║");
+    println!("╚═══════════════════════════════════════════════════════════════╝");
+    println!();
+
+    let test_cases = standard_test_cases();
+    println!(
+        "Running {} test cases (300 frames each, with markdown)...\n",
+        test_cases.len()
+    );
+
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    let _guard = runtime.enter();
+
+    Application::new()
+        .with_assets(gpui_component_assets::Assets)
+        .run(move |cx: &mut App| {
+            // Initialize gpui_component (REQUIRED for TextView::markdown)
+            gpui_component::init(cx);
+            Theme::change(ThemeMode::Dark, None, cx);
+
+            let bounds = Bounds::centered(None, size(px(900.), px(700.)), cx);
+            let mut cases: VecDeque<_> = test_cases.into_iter().collect();
+            let first_case = cases.pop_front().expect("No test cases");
+
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: None,
+                    ..Default::default()
+                },
+                move |window, cx| {
+                    cx.new(|cx| {
+                        let mut app = RenderTestApp::new(&first_case, window, cx);
+                        app.set_remaining_cases(cases);
+                        app
+                    })
+                },
+            )
+            .expect("Failed to open test window");
+        });
+
+    Ok(())
+}
+
+#[cfg(not(feature = "gui"))]
+fn run_render_test(_args: Args) -> anyhow::Result<()> {
+    anyhow::bail!("Render test requires GUI feature")
+}
+
+#[cfg(feature = "tui")]
+fn run_tui(args: Args) -> anyhow::Result<()> {
+    let default_filter = if args.verbose {
+        "trace"
+    } else if args.debug {
+        "debug"
+    } else {
+        "warn"
+    };
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_writer(std::io::stderr),
+        )
+        .init();
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    runtime.block_on(async { stockpot::tui::run().await })
+}
+
+#[cfg(not(feature = "tui"))]
+fn run_tui(_args: Args) -> anyhow::Result<()> {
+    anyhow::bail!("TUI feature not enabled")
+}
+
+#[cfg(not(feature = "gui"))]
+fn run_gui(_args: Args) -> anyhow::Result<()> {
+    anyhow::bail!("GUI feature not enabled")
+}
+
 #[cfg(feature = "gui")]
 fn run_gui(args: Args) -> anyhow::Result<()> {
     use gpui::{
@@ -49,45 +144,32 @@ fn run_gui(args: Args) -> anyhow::Result<()> {
     use gpui_component::{Root, Theme, ThemeMode};
     use stockpot::gui;
 
-    // Initialize tracing for GUI mode
     let default_filter = if args.verbose {
         "trace"
     } else if args.debug {
         "debug,gpui_component=warn"
     } else {
-        // Suppress noisy gpui_component markdown warnings while keeping other warnings
         "warn,gpui_component::text::format::markdown=error"
     };
-
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
-
     tracing_subscriber::registry()
         .with(filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
-                .with_thread_ids(false)
                 .with_writer(std::io::stderr),
         )
         .init();
 
-    if args.debug || args.verbose {
-        tracing::info!("Debug logging enabled for GUI mode");
-    }
-
-    // Create a Tokio runtime for async operations
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = runtime.enter();
 
-    // Check for updates in background
     if !args.skip_update_check {
         std::thread::spawn(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 if let Some(release) = stockpot::version_check::check_for_update().await {
-                    // In GUI mode, we could show a notification instead
-                    // For now, just log it
                     tracing::info!(
                         "Update available: {} -> {}",
                         stockpot::version_check::CURRENT_VERSION,
@@ -98,25 +180,15 @@ fn run_gui(args: Args) -> anyhow::Result<()> {
         });
     }
 
-    // Create GPUI application with gpui-component assets
-    // Use LastWindowClosed quit mode so closing the window terminates the app on macOS
     Application::new()
         .with_assets(gpui_component_assets::Assets)
         .with_quit_mode(QuitMode::LastWindowClosed)
         .run(|cx: &mut App| {
-            // Initialize gpui-component (REQUIRED - sets up themes, icons, etc.)
             gpui_component::init(cx);
-
-            // Set dark theme
             Theme::change(ThemeMode::Dark, None, cx);
-
-            // Register keybindings
             gui::register_keybindings(cx);
-
-            // Activate the application
             cx.activate(true);
 
-            // Create main window
             let bounds = Bounds::centered(None, size(px(1000.), px(750.)), cx);
             cx.open_window(
                 WindowOptions {
@@ -128,9 +200,7 @@ fn run_gui(args: Args) -> anyhow::Result<()> {
                     ..Default::default()
                 },
                 |window, cx| {
-                    // Create the main app view
                     let app_view = cx.new(|cx| gui::ChatApp::new(window, cx));
-                    // Wrap in Root (required by gpui-component)
                     cx.new(|cx| Root::new(app_view, window, cx))
                 },
             )
