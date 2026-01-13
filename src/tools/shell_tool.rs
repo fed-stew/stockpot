@@ -23,6 +23,9 @@ pub struct RunShellCommandTool;
 /// Default timeout for waiting for command completion (30 seconds)
 const DEFAULT_WAIT_TIMEOUT_SECS: u64 = 30;
 
+/// Maximum characters in shell output to protect context window
+const SHELL_OUTPUT_MAX_CHARS: usize = 50_000;
+
 #[derive(Debug, Deserialize)]
 struct RunShellCommandArgs {
     command: String,
@@ -31,6 +34,28 @@ struct RunShellCommandArgs {
     /// If true, run in background and return process_id immediately
     #[serde(default)]
     background: bool,
+}
+
+/// Truncate output to protect context window, cutting at line boundaries
+fn truncate_output(output: &str, max_chars: usize) -> (String, bool) {
+    if output.len() <= max_chars {
+        return (output.to_string(), false);
+    }
+
+    let mut truncated: String = output.chars().take(max_chars).collect();
+
+    // Try to cut at a newline boundary for cleaner output
+    if let Some(last_newline) = truncated.rfind('\n') {
+        truncated.truncate(last_newline);
+    }
+
+    truncated.push_str(&format!(
+        "\n\n[OUTPUT TRUNCATED: {} total chars, showing first {}]",
+        output.len(),
+        max_chars
+    ));
+
+    (truncated, true)
 }
 
 #[async_trait]
@@ -138,6 +163,7 @@ impl RunShellCommandTool {
         match tool_ctx.wait_for_completion(&process_id, timeout).await {
             Some((output, exit_code)) => {
                 // Command completed within timeout
+                let (output, _truncated) = truncate_output(&output, SHELL_OUTPUT_MAX_CHARS);
                 let exit_code = exit_code.unwrap_or(-1);
                 let status = if exit_code == 0 {
                     format!(
@@ -159,6 +185,7 @@ impl RunShellCommandTool {
             None => {
                 // Command still running after timeout
                 let output = tool_ctx.store.output(&process_id).unwrap_or_default();
+                let (output, _truncated) = truncate_output(&output, SHELL_OUTPUT_MAX_CHARS);
 
                 let mut result = format!(
                     "Command is still running after {}s timeout.\n\n\
@@ -170,16 +197,7 @@ impl RunShellCommandTool {
 
                 if !output.trim().is_empty() {
                     result.push_str("\n--- output so far ---\n");
-                    // Show last 2000 chars
-                    let preview: String = output
-                        .chars()
-                        .rev()
-                        .take(2000)
-                        .collect::<String>()
-                        .chars()
-                        .rev()
-                        .collect();
-                    result.push_str(&preview);
+                    result.push_str(&output);
                 }
 
                 Ok(ToolReturn::text(result))

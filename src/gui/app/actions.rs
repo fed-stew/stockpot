@@ -136,6 +136,7 @@ impl ChatApp {
         self.current_agent = name.to_string();
         let _ = self.agents.switch(name);
         self.message_history.clear();
+        self.update_context_usage();
         self.show_agent_dropdown = false;
         self.show_model_dropdown = false;
     }

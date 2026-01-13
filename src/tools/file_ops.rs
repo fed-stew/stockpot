@@ -69,6 +69,63 @@ const READ_FILE_MAX_TOKENS: usize = 10_000;
 /// Approximate characters per token (conservative estimate)
 const CHARS_PER_TOKEN: usize = 4;
 
+/// Check if a directory is likely a home directory
+fn is_home_directory(path: &Path) -> bool {
+    let Some(home_path) = dirs::home_dir() else {
+        return false;
+    };
+    if path == home_path {
+        return true;
+    }
+    // Check common home subdirectories
+    let common_subdirs = [
+        "Documents",
+        "Desktop",
+        "Downloads",
+        "Pictures",
+        "Music",
+        "Videos",
+    ];
+    if let Some(parent) = path.parent() {
+        if parent == home_path {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                return common_subdirs.contains(&name);
+            }
+        }
+    }
+    false
+}
+
+/// Check if a directory looks like a project directory
+fn is_project_directory(path: &Path) -> bool {
+    let indicators = [
+        "package.json",
+        "pyproject.toml",
+        "Cargo.toml",
+        "pom.xml",
+        "build.gradle",
+        "CMakeLists.txt",
+        ".git",
+        "requirements.txt",
+        "composer.json",
+        "Gemfile",
+        "go.mod",
+        "Makefile",
+        "setup.py",
+    ];
+
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if indicators.contains(&name) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// List files in a directory.
 pub fn list_files(
     directory: &str,
@@ -80,6 +137,14 @@ pub fn list_files(
     if !path.exists() {
         return Err(FileError::NotFound(directory.to_string()));
     }
+
+    // Auto-disable recursion for home directories (unless it's a project)
+    let effective_recursive = if recursive && is_home_directory(path) && !is_project_directory(path)
+    {
+        false
+    } else {
+        recursive
+    };
 
     let max_entries = max_entries
         .unwrap_or(LIST_FILES_DEFAULT_MAX_ENTRIES)
@@ -98,7 +163,7 @@ pub fn list_files(
     let mut ctx = ListFilesContext {
         base: path,
         entries: &mut entries,
-        recursive,
+        recursive: effective_recursive,
         max_depth,
         max_entries,
         truncated: &mut truncated,
@@ -287,8 +352,8 @@ pub struct GrepResult {
 }
 
 /// Safety caps to prevent huge context blowups.
-const GREP_HARD_MAX_MATCHES: usize = 200;
-const GREP_DEFAULT_MAX_MATCHES: usize = 100;
+const GREP_HARD_MAX_MATCHES: usize = 50;
+const GREP_DEFAULT_MAX_MATCHES: usize = 50;
 const GREP_MAX_MATCHES_PER_FILE: usize = 10;
 const GREP_MAX_LINE_LENGTH: usize = 512;
 const GREP_MAX_FILE_SIZE_BYTES: u64 = 5 * 1024 * 1024;

@@ -23,6 +23,31 @@ struct ReadProcessOutputArgs {
     wait_for_more: bool,
 }
 
+/// Maximum characters in process output to protect context window
+const PROCESS_OUTPUT_MAX_CHARS: usize = 50_000;
+
+/// Truncate output to protect context window
+fn truncate_output(output: &str, max_chars: usize) -> String {
+    if output.len() <= max_chars {
+        return output.to_string();
+    }
+
+    let mut truncated: String = output.chars().take(max_chars).collect();
+
+    // Try to cut at a newline boundary for cleaner output
+    if let Some(last_newline) = truncated.rfind('\n') {
+        truncated.truncate(last_newline);
+    }
+
+    truncated.push_str(&format!(
+        "\n\n[OUTPUT TRUNCATED: {} total chars, showing first {}]",
+        output.len(),
+        max_chars
+    ));
+
+    truncated
+}
+
 #[async_trait]
 impl Tool for ReadProcessOutputTool {
     fn definition(&self) -> ToolDefinition {
@@ -113,7 +138,9 @@ fn format_output(process_id: &str, output: &str, exit_code: Option<i32>) -> Tool
     if output.is_empty() {
         result.push_str("(no output yet)");
     } else {
-        result.push_str(output);
+        // Apply truncation protection
+        let truncated_output = truncate_output(output, PROCESS_OUTPUT_MAX_CHARS);
+        result.push_str(&truncated_output);
     }
 
     ToolReturn::text(result)

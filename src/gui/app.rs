@@ -381,6 +381,9 @@ impl ChatApp {
         // Set up keyboard focus on the main app
         window.focus(&app.focus_handle, cx);
 
+        // Initial context usage update
+        app.update_context_usage();
+
         app
     }
 

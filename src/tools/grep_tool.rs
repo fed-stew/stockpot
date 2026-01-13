@@ -29,7 +29,7 @@ impl Tool for GrepTool {
             "grep",
             "Recursively search for text patterns across files. \
              Searches across recognized text file types while limiting results for performance. \
-             Safety rails: max 200 matches total, max 10 per file, lines truncated at 512 chars, files over 5MB skipped.",
+             Safety rails: max 50 matches total, max 10 per file, lines truncated at 512 chars, files over 5MB skipped.",
         )
         .with_parameters(
             SchemaBuilder::new()

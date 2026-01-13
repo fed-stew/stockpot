@@ -35,35 +35,83 @@ impl ChatApp {
         let model = self.model_registry.get(&effective_model);
         self.context_window_size = model.map(|m| m.context_length).unwrap_or(128_000);
 
-        // Estimate tokens - during streaming use conversation content (includes in-progress response),
-        // otherwise use message_history for accurate count
-        if self.is_generating {
-            // During streaming, estimate from conversation content
-            // ~4 chars per token approximation
-            let conv_chars: usize = self
-                .conversation
-                .messages
-                .iter()
-                .map(|m| m.content.len())
-                .sum();
-            self.context_tokens_used = conv_chars / 4;
-        } else if !self.message_history.is_empty() {
-            self.context_tokens_used = crate::tokens::estimate_tokens(&self.message_history);
+        // Calculate base overhead (System Prompt + Tool Definitions)
+        let mut overhead_tokens = 0;
+
+        if let Some(agent) = self.agents.get(&self.current_agent) {
+            // 1. System Prompt
+            let system_prompt = agent.system_prompt();
+            if !system_prompt.is_empty() {
+                overhead_tokens += (system_prompt.len() / 4).max(10);
+            }
+
+            // 2. Tool Definitions
+            let tool_names = agent.available_tools();
+            // Filter tools based on settings (similar to execution logic)
+            // We use the same filter logic as in executor/mod.rs roughly,
+            // or just count all available tools since the agent *might* use them.
+            // For accuracy, we should replicate the executor's filtering, but
+            // for now, counting the agent's declared tools is a safe upper bound.
+            let tools = self.tool_registry.tools_by_name(&tool_names);
+
+            for tool in tools {
+                let def = tool.definition();
+                if let Ok(json) = serde_json::to_string(&def) {
+                    overhead_tokens += (json.len() / 4).max(10);
+                }
+            }
+        }
+
+        // Calculate base tokens from confirmed message history (always available)
+        let history_tokens = if !self.message_history.is_empty() {
+            crate::tokens::estimate_tokens(&self.message_history)
         } else {
-            // Fallback for empty history
+            0
+        };
+
+        if self.is_generating {
+            // During streaming, we take the base history tokens (which are accurate)
+            // and ADD the estimated tokens for the current turn (User prompt + Streaming response)
+
+            let mut pending_tokens = 0;
+
+            // 1. Add estimated tokens for the last user message (the prompt)
+            if let Some(user_msg) = self
+                .conversation
+                .messages
+                .iter()
+                .rfind(|m| m.role == crate::gui::state::MessageRole::User)
+            {
+                pending_tokens += (user_msg.content.len() / 4).max(10);
+            }
+
+            // 2. Add estimated tokens for the active assistant message (streaming response)
+            // We check the very last message - if it's from the assistant, it's the one being generated
+            if let Some(last_msg) = self.conversation.messages.last() {
+                if last_msg.role == crate::gui::state::MessageRole::Assistant {
+                    pending_tokens += (last_msg.content.len() / 4).max(10);
+                }
+            }
+
+            self.context_tokens_used = overhead_tokens + history_tokens + pending_tokens;
+        } else if !self.message_history.is_empty() {
+            self.context_tokens_used = overhead_tokens + history_tokens;
+        } else {
+            // Fallback for empty history (e.g. first run, or just cleared)
             let conv_chars: usize = self
                 .conversation
                 .messages
                 .iter()
                 .map(|m| m.content.len())
                 .sum();
-            self.context_tokens_used = conv_chars / 4;
+            self.context_tokens_used = overhead_tokens + (conv_chars / 4);
         }
 
         tracing::debug!(
             model = %effective_model,
             context_window = self.context_window_size,
             tokens_used = self.context_tokens_used,
+            overhead_tokens = overhead_tokens,
             history_len = self.message_history.len(),
             "Context usage updated"
         );
