@@ -249,7 +249,7 @@ fn save_claude_models_to_db(db: &Database, models: &[String]) -> Result<(), std:
             supports_thinking,
             supports_vision: true,
             supports_tools: true,
-            description: Some(format!("Claude Code OAuth: {}", model_name)),
+            description: None,
             custom_endpoint: None,
             azure_deployment: None,
             azure_api_version: None,
