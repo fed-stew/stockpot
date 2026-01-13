@@ -25,10 +25,14 @@ mod shell;
 mod delete_file_tool;
 mod edit_file_tool;
 mod grep_tool;
+mod kill_process_tool;
 mod list_files_tool;
+mod list_processes_tool;
 mod read_file_tool;
+mod read_process_output_tool;
 mod reasoning_tool;
 mod shell_tool;
+mod tool_context;
 
 // Registry
 pub mod registry;
@@ -39,3 +43,6 @@ pub mod registry;
 
 // Re-export registry types
 pub use registry::SpotToolRegistry;
+
+// Re-export tool context
+pub use tool_context::{get_global_context, set_global_context, ToolContext};

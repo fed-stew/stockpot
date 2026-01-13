@@ -258,6 +258,38 @@ impl ChatApp {
                                     )
                                     .child("+ New"),
                             )
+                            // System Executions toggle
+                            .child(
+                                div()
+                                    .id("system-exec-btn")
+                                    .px(px(12.))
+                                    .py(px(6.))
+                                    .rounded(px(6.))
+                                    .bg(if self.system_executions.visible {
+                                        self.theme.accent
+                                    } else {
+                                        self.theme.tool_card
+                                    })
+                                    .text_color(if self.system_executions.visible {
+                                        rgb(0xffffff)
+                                    } else {
+                                        self.theme.text
+                                    })
+                                    .text_size(px(12.))
+                                    .cursor_pointer()
+                                    .hover(|s| s.opacity(0.8))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, _, cx| {
+                                            this.show_agent_dropdown = false;
+                                            this.show_model_dropdown = false;
+                                            this.show_settings = false;
+                                            this.system_executions.toggle();
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child("⚡"),
+                            )
                             // Settings
                             .child(
                                 div()
@@ -276,6 +308,7 @@ impl ChatApp {
                                             this.show_agent_dropdown = false;
                                             this.show_model_dropdown = false;
                                             this.show_settings = !this.show_settings;
+                                            this.system_executions.visible = false;
                                             if this.show_settings {
                                                 this.settings_tab =
                                                     super::settings::SettingsTab::PinnedAgents;

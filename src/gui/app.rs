@@ -20,7 +20,7 @@ use crate::db::Database;
 use crate::mcp::McpManager;
 use crate::messaging::MessageBus;
 use crate::models::ModelRegistry;
-use crate::tools::SpotToolRegistry;
+use crate::tools::{set_global_context, SpotToolRegistry, ToolContext};
 
 actions!(
     stockpot_gui,
@@ -50,6 +50,7 @@ mod model_management;
 mod scroll_animation;
 mod settings;
 mod streaming;
+mod system_executions;
 mod toolbar;
 
 pub use attachments::{
@@ -194,6 +195,9 @@ pub struct ChatApp {
     /// MCP settings: import error message
     mcp_import_error: Option<String>,
 
+    /// System Executions sidebar state
+    system_executions: system_executions::SystemExecutionsState,
+
     /// Stack of active agent names (main agent at bottom, sub-agents pushed on top)
     /// Empty means no agent running
     active_agent_stack: Vec<String>,
@@ -272,7 +276,7 @@ impl ChatApp {
         })
         .detach();
 
-        let app = Self {
+        let mut app = Self {
             focus_handle,
             input_state,
             conversation: Conversation::new(),
@@ -351,6 +355,8 @@ impl ChatApp {
             mcp_import_json: String::new(),
             mcp_import_error: None,
 
+            system_executions: system_executions::SystemExecutionsState::new(),
+
             active_agent_stack: Vec::new(),
             active_section_ids: HashMap::new(),
             text_view_cache: RefCell::new(HashMap::new()),
@@ -369,10 +375,138 @@ impl ChatApp {
         // Start MCP servers in background
         app.start_mcp_servers(cx);
 
+        // Initialize tool context for terminal integration
+        app.init_tool_context(cx);
+
         // Set up keyboard focus on the main app
         window.focus(&app.focus_handle, cx);
 
         app
+    }
+
+    /// Initialize the global tool context for terminal integration.
+    fn init_tool_context(&mut self, cx: &mut Context<Self>) {
+        let store = self.system_executions.store.clone();
+        let request_tx = self.system_executions.request_tx.clone();
+
+        // Create and set global tool context
+        let tool_ctx = ToolContext::new(store, request_tx);
+        if let Err(_existing) = set_global_context(tool_ctx) {
+            tracing::warn!("Tool context already initialized");
+        }
+
+        // Start request handler loop
+        if let Some(mut request_rx) = self.system_executions.take_request_rx() {
+            cx.spawn(async move |this, cx| {
+                while let Some(request) = request_rx.recv().await {
+                    let _ = this.update(cx, |app, cx| {
+                        app.handle_exec_request(request, cx);
+                    });
+                }
+            })
+            .detach();
+        }
+    }
+
+    /// Render the main content area (messages + input + optional sidebar)
+    fn render_main_content_area(&self, cx: &Context<Self>) -> impl IntoElement {
+        let sidebar_visible = self.system_executions.visible;
+        let sidebar_width = self.system_executions.sidebar_width;
+        let is_resizing = self.system_executions.is_resizing;
+
+        div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .min_h(px(0.))
+            .overflow_hidden()
+            .relative()
+            // Main content (messages + input)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .min_h(px(0.))
+                    .overflow_hidden()
+                    .child(self.render_messages(cx))
+                    .child(self.render_input(cx)),
+            )
+            // Sidebar (when visible)
+            .when(sidebar_visible, |d| {
+                d.child(self.render_system_executions_panel(cx, sidebar_width))
+            })
+            // Sidebar resize overlay - captures mouse events during resize drag
+            .when(is_resizing, |d| {
+                d.child(
+                    div()
+                        .id("resize-overlay")
+                        .absolute()
+                        .inset_0()
+                        .cursor(gpui::CursorStyle::ResizeLeftRight)
+                        .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                            if this.system_executions.is_resizing {
+                                if let (Some(start_x), Some(start_width)) = (
+                                    this.system_executions.resize_start_x,
+                                    this.system_executions.resize_start_width,
+                                ) {
+                                    let current_x: f32 = event.position.x.into();
+                                    let delta = start_x - current_x;
+                                    let new_width = (start_width + delta).clamp(200.0, 600.0);
+                                    this.system_executions.sidebar_width = new_width;
+                                    cx.notify();
+                                }
+                            }
+                        }))
+                        .on_mouse_up(
+                            gpui::MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.system_executions.is_resizing = false;
+                                this.system_executions.resize_start_x = None;
+                                this.system_executions.resize_start_width = None;
+                                cx.notify();
+                            }),
+                        ),
+                )
+            })
+            // Terminal height resize overlay
+            .when(self.system_executions.resizing_terminal.is_some(), |d| {
+                d.child(
+                    div()
+                        .id("terminal-resize-overlay")
+                        .absolute()
+                        .inset_0()
+                        .cursor(gpui::CursorStyle::ResizeUpDown)
+                        .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                            if let Some(ref process_id) =
+                                this.system_executions.resizing_terminal.clone()
+                            {
+                                if let (Some(start_y), Some(start_height)) = (
+                                    this.system_executions.resize_start_y,
+                                    this.system_executions.resize_start_height,
+                                ) {
+                                    let current_y: f32 = event.position.y.into();
+                                    let delta = current_y - start_y;
+                                    let new_height = (start_height + delta).clamp(100.0, 600.0);
+                                    this.system_executions
+                                        .terminal_heights
+                                        .insert(process_id.clone(), new_height);
+                                    cx.notify();
+                                }
+                            }
+                        }))
+                        .on_mouse_up(
+                            gpui::MouseButton::Left,
+                            cx.listener(|this, _, _, cx| {
+                                this.system_executions.resizing_terminal = None;
+                                this.system_executions.resize_start_y = None;
+                                this.system_executions.resize_start_height = None;
+                                cx.notify();
+                            }),
+                        ),
+                )
+            })
     }
 
     /// Update the list state when messages change
@@ -814,9 +948,11 @@ impl Render for ChatApp {
             .child(self.render_agent_dropdown_panel(cx))
             .child(self.render_model_dropdown_panel(cx))
             .child(self.render_error())
-            .child(self.render_messages(cx))
-            .child(self.render_input(cx))
+            // Main content area with optional sidebar
+            .child(self.render_main_content_area(cx))
+            // Overlay dialogs
             .child(self.render_settings(cx))
+            .child(self.render_approval_dialog(cx))
             .child(self.render_add_model_dialog(cx))
             .child(self.render_api_keys_dialog(cx))
             .child(self.render_mcp_import_dialog(cx))

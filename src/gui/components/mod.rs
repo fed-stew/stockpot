@@ -9,6 +9,7 @@ mod message;
 mod scrollbar;
 mod selectable_text;
 mod spinner;
+mod terminal_view;
 // Note: text_input.rs is no longer used - now using gpui_component::input::Input
 // mod text_input;
 mod throughput_chart;
@@ -35,5 +36,6 @@ pub use attachment_preview::{render_attachment_preview, render_attachments_row};
 pub use spinner::{current_spinner_frame, spinner, Spinner};
 
 pub use collapsible::{collapsible, collapsible_display, CollapsibleProps};
+pub use terminal_view::TerminalView;
 pub use throughput_chart::{throughput_chart, ThroughputChartProps};
 pub use tooltip::{MarkdownTooltip, SimpleTooltip};

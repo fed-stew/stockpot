@@ -283,5 +283,59 @@ impl ChatApp {
                             .child(if is_enabled { "✓ Enabled" } else { "Disabled" })
                     }),
             )
+            // YOLO Mode Toggle
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.text)
+                            .child("⚡ YOLO Mode"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(theme.text_muted)
+                            .mb(px(4.))
+                            .child("Auto-accept shell commands without confirmation. High-risk commands (sudo, rm -rf, etc.) still require approval."),
+                    )
+                    .child({
+                        let is_enabled = Settings::new(&self.db).yolo_mode();
+                        div()
+                            .id("yolo-mode-toggle")
+                            .px(px(12.))
+                            .py(px(10.))
+                            .rounded(px(8.))
+                            .bg(if is_enabled {
+                                rgba(0xf59e0bff)  // Warning orange color for YOLO mode
+                            } else {
+                                theme.tool_card
+                            })
+                            .text_color(if is_enabled {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text
+                            })
+                            .text_size(px(13.))
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.9))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    let settings = Settings::new(&this.db);
+                                    let current = settings.yolo_mode();
+                                    if let Err(e) = settings.set_yolo_mode(!current) {
+                                        tracing::warn!("Failed to save yolo_mode: {}", e);
+                                    }
+                                    cx.notify();
+                                }),
+                            )
+                            .child(if is_enabled { "⚡ YOLO Enabled" } else { "Disabled" })
+                    }),
+            )
     }
 }

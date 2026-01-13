@@ -1,25 +1,36 @@
 //! RunShellCommand tool implementation.
 //!
 //! Provides a serdesAI-compatible tool for executing shell commands.
+//! Supports both PTY-based terminal execution (when available) and
+//! fallback synchronous execution.
+
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
 use super::shell;
+use super::tool_context::get_global_context;
 
 /// Tool for executing shell commands.
 #[derive(Debug, Clone, Default)]
 pub struct RunShellCommandTool;
+
+/// Default timeout for waiting for command completion (30 seconds)
+const DEFAULT_WAIT_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Deserialize)]
 struct RunShellCommandArgs {
     command: String,
     working_directory: Option<String>,
     timeout_seconds: Option<u64>,
+    /// If true, run in background and return process_id immediately
+    #[serde(default)]
+    background: bool,
 }
 
 #[async_trait]
@@ -28,8 +39,9 @@ impl Tool for RunShellCommandTool {
         ToolDefinition::new(
             "run_shell_command",
             "Execute a shell command with comprehensive monitoring. \
-             Commands are executed in a controlled environment with timeout handling. \
-             Use this to run tests, build projects, or execute system commands.",
+             Commands are executed in a PTY with real-time output streaming. \
+             Fast commands (completing within 30s) return output directly. \
+             Long-running commands return a process_id for monitoring.",
         )
         .with_parameters(
             SchemaBuilder::new()
@@ -42,8 +54,15 @@ impl Tool for RunShellCommandTool {
                 )
                 .integer(
                     "timeout_seconds",
-                    "Timeout in seconds. If no output is produced for this duration, \
-                     the process will be terminated. Defaults to 60 seconds.",
+                    "Maximum time to wait for command completion before returning \
+                     process_id for background monitoring. Defaults to 30 seconds.",
+                    false,
+                )
+                .boolean(
+                    "background",
+                    "If true, run in background and return process_id immediately \
+                     without waiting for completion. Use list_processes and \
+                     read_process_output to monitor.",
                     false,
                 )
                 .build()
@@ -62,7 +81,119 @@ impl Tool for RunShellCommandTool {
             ))
         })?;
 
-        // Build the command runner with options
+        // Try to use terminal system if available
+        if let Some(tool_ctx) = get_global_context() {
+            return self.call_with_terminal(tool_ctx, args).await;
+        }
+
+        // Fallback to synchronous execution
+        self.call_fallback(args)
+    }
+}
+
+impl RunShellCommandTool {
+    /// Execute using the terminal system with PTY support.
+    async fn call_with_terminal(
+        &self,
+        tool_ctx: &super::tool_context::ToolContext,
+        args: RunShellCommandArgs,
+    ) -> ToolResult {
+        info!(
+            tool = "run_shell_command",
+            command = %args.command,
+            background = args.background,
+            "Executing via terminal system"
+        );
+
+        // Request terminal spawn from UI
+        let process_id = match tool_ctx
+            .execute_shell(args.command.clone(), args.working_directory.clone())
+            .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                return Ok(ToolReturn::error(format!(
+                    "Failed to spawn terminal: {}",
+                    e
+                )));
+            }
+        };
+
+        // If background mode, return immediately
+        if args.background {
+            return Ok(ToolReturn::text(format!(
+                "Command started in background.\n\n\
+                 Process ID: {}\n\n\
+                 Use `list_processes` to see all running processes.\n\
+                 Use `read_process_output` with process_id to get output.\n\
+                 Use `kill_process` to terminate if needed.",
+                process_id
+            )));
+        }
+
+        // Wait for completion with timeout
+        let timeout_secs = args.timeout_seconds.unwrap_or(DEFAULT_WAIT_TIMEOUT_SECS);
+        let timeout = Duration::from_secs(timeout_secs);
+
+        match tool_ctx.wait_for_completion(&process_id, timeout).await {
+            Some((output, exit_code)) => {
+                // Command completed within timeout
+                let exit_code = exit_code.unwrap_or(-1);
+                let status = if exit_code == 0 {
+                    format!(
+                        "Command completed successfully (exit code: {})\n",
+                        exit_code
+                    )
+                } else {
+                    format!("Command failed (exit code: {})\n", exit_code)
+                };
+
+                let mut result = status;
+                if !output.trim().is_empty() {
+                    result.push_str("\n--- output ---\n");
+                    result.push_str(&output);
+                }
+
+                Ok(ToolReturn::text(result))
+            }
+            None => {
+                // Command still running after timeout
+                let output = tool_ctx.store.output(&process_id).unwrap_or_default();
+
+                let mut result = format!(
+                    "Command is still running after {}s timeout.\n\n\
+                     Process ID: {}\n\n\
+                     Use `read_process_output` to get more output.\n\
+                     Use `kill_process` to terminate if needed.\n",
+                    timeout_secs, process_id
+                );
+
+                if !output.trim().is_empty() {
+                    result.push_str("\n--- output so far ---\n");
+                    // Show last 2000 chars
+                    let preview: String = output
+                        .chars()
+                        .rev()
+                        .take(2000)
+                        .collect::<String>()
+                        .chars()
+                        .rev()
+                        .collect();
+                    result.push_str(&preview);
+                }
+
+                Ok(ToolReturn::text(result))
+            }
+        }
+    }
+
+    /// Fallback to synchronous execution (when terminal system not available).
+    fn call_fallback(&self, args: RunShellCommandArgs) -> ToolResult {
+        debug!(
+            tool = "run_shell_command",
+            "Using fallback synchronous execution"
+        );
+
         let mut runner = shell::CommandRunner::new();
 
         if let Some(dir) = &args.working_directory {
@@ -77,7 +208,6 @@ impl Tool for RunShellCommandTool {
             Ok(result) => {
                 let mut output = String::new();
 
-                // Include exit status
                 if result.success {
                     output.push_str(&format!(
                         "Command completed successfully (exit code: {})\n",
@@ -90,19 +220,16 @@ impl Tool for RunShellCommandTool {
                     ));
                 }
 
-                // Include stdout if present
                 if !result.stdout.trim().is_empty() {
                     output.push_str("\n--- stdout ---\n");
                     output.push_str(&result.stdout);
                 }
 
-                // Include stderr if present
                 if !result.stderr.trim().is_empty() {
                     output.push_str("\n--- stderr ---\n");
                     output.push_str(&result.stderr);
                 }
 
-                // Indicate if output was truncated
                 if result.stdout_truncated || result.stderr_truncated {
                     output.push_str("\n\n⚠️ Output was truncated due to size limits.");
                 }

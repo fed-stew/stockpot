@@ -10,6 +10,7 @@ pub mod mcp;
 pub mod messaging;
 pub mod models;
 pub mod session;
+pub mod terminal;
 pub mod tokens;
 pub mod tools;
 pub mod version_check;

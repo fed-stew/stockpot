@@ -11,8 +11,11 @@ use super::agent_tools::{InvokeAgentTool, ListAgentsTool};
 use super::delete_file_tool::DeleteFileTool;
 use super::edit_file_tool::EditFileTool;
 use super::grep_tool::GrepTool;
+use super::kill_process_tool::KillProcessTool;
 use super::list_files_tool::ListFilesTool;
+use super::list_processes_tool::ListProcessesTool;
 use super::read_file_tool::ReadFileTool;
+use super::read_process_output_tool::ReadProcessOutputTool;
 use super::reasoning_tool::ShareReasoningTool;
 use super::shell_tool::RunShellCommandTool;
 
@@ -45,6 +48,10 @@ pub struct SpotToolRegistry {
     pub share_reasoning: ShareReasoningTool,
     pub invoke_agent: InvokeAgentTool,
     pub list_agents: ListAgentsTool,
+    // Process management tools
+    pub list_processes: ListProcessesTool,
+    pub read_process_output: ReadProcessOutputTool,
+    pub kill_process: KillProcessTool,
 }
 
 impl SpotToolRegistry {
@@ -65,6 +72,10 @@ impl SpotToolRegistry {
             Arc::new(self.share_reasoning.clone()),
             Arc::new(self.invoke_agent.clone()),
             Arc::new(self.list_agents.clone()),
+            // Process management tools
+            Arc::new(self.list_processes.clone()),
+            Arc::new(self.read_process_output.clone()),
+            Arc::new(self.kill_process.clone()),
         ]
     }
 
@@ -88,6 +99,9 @@ impl SpotToolRegistry {
                 "share_your_reasoning" => tools.push(Arc::new(self.share_reasoning.clone())),
                 "invoke_agent" => tools.push(Arc::new(self.invoke_agent.clone())),
                 "list_agents" => tools.push(Arc::new(self.list_agents.clone())),
+                "list_processes" => tools.push(Arc::new(self.list_processes.clone())),
+                "read_process_output" => tools.push(Arc::new(self.read_process_output.clone())),
+                "kill_process" => tools.push(Arc::new(self.kill_process.clone())),
                 _ => {} // Unknown tool, skip
             }
         }
@@ -129,14 +143,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.all_tools().len(), 9);
-        assert_eq!(registry.definitions().len(), 9);
+        assert_eq!(registry.all_tools().len(), 12);
+        assert_eq!(registry.definitions().len(), 12);
     }
 
     #[test]
     fn test_registry_default_trait() {
         let registry = SpotToolRegistry::default();
-        assert_eq!(registry.all_tools().len(), 9);
+        assert_eq!(registry.all_tools().len(), 12);
     }
 
     #[test]
@@ -165,7 +179,7 @@ mod tests {
     #[test]
     fn test_all_tools_returns_correct_count() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.all_tools().len(), 9);
+        assert_eq!(registry.all_tools().len(), 12);
     }
 
     #[test]
@@ -244,7 +258,7 @@ mod tests {
     #[test]
     fn test_definitions_returns_correct_count() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.definitions().len(), 9);
+        assert_eq!(registry.definitions().len(), 12);
     }
 
     #[test]

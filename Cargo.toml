@@ -82,6 +82,12 @@ webbrowser = "1.0"
 # Shell utilities
 shellexpand = "3.1"
 
+# Terminal emulation
+portable-pty = "0.8"
+alacritty_terminal = "0.24"
+parking_lot = "0.12"
+strip-ansi-escapes = "0.2"
+
 # GUI (optional - for stockpot-gui binary)
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", optional = true }
 # Using vendored gpui-component fork with proper list rendering (upstream longbridge version has broken lists)
@@ -96,7 +102,6 @@ arboard = { version = "3.4", optional = true }  # Cross-platform clipboard
 tui-textarea = { version = "0.7", optional = true }  # Multi-line input with mouse support
 
 [target.'cfg(unix)'.dependencies]
-pty-process = "0.4"
 mupdf = { version = "0.5", default-features = false }
 
 [build-dependencies]

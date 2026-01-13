@@ -130,9 +130,14 @@ impl<'a> Settings<'a> {
         self.get_or("model", "gpt-4o")
     }
 
-    /// Get YOLO mode status.
+    /// Get YOLO mode status (auto-accept shell commands without confirmation).
     pub fn yolo_mode(&self) -> bool {
         self.get_bool("yolo_mode").unwrap_or(false)
+    }
+
+    /// Set YOLO mode status.
+    pub fn set_yolo_mode(&self, enabled: bool) -> Result<(), SettingsError> {
+        self.set("yolo_mode", if enabled { "true" } else { "false" })
     }
 
     /// Get the assistant name.

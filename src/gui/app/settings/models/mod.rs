@@ -248,7 +248,7 @@ impl ChatApp {
         let model_name = model.clone();
         let model_name_for_delete = model.clone();
         let model_name_for_expand = model.clone();
-        
+
         // Don't show description for OAuth models - the name is already descriptive
         let desc = if model.starts_with("claude-code-") || model.starts_with("chatgpt-") {
             String::new()
