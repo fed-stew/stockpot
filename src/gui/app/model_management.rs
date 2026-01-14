@@ -192,6 +192,9 @@ impl ChatApp {
                 "claude-code" => crate::auth::run_claude_code_auth(&db)
                     .await
                     .map_err(|e| e.to_string()),
+                "google" => crate::auth::run_google_auth(&db)
+                    .await
+                    .map_err(|e| e.to_string()),
                 _ => Err(format!("Unknown provider: {}", provider)),
             };
 

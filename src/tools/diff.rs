@@ -1368,7 +1368,7 @@ Binary files a/image.png and b/image.png differ
 "#;
         let parsed = UnifiedDiff::parse(diff).unwrap();
         // Current impl processes all hunks but only first file's paths
-        assert!(parsed.hunks.len() >= 1);
+        assert!(!parsed.hunks.is_empty());
     }
 
     // ===== No-newline-at-end-of-file handling =====

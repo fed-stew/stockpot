@@ -22,7 +22,7 @@ use super::event::{AppEvent, ClipboardManager, EventHandler};
 use super::execution::execute_agent;
 use super::hit_test::{ClickTarget, HitTestRegistry};
 use super::selection::{Position, SelectionState};
-use super::state::{MessageRole, MessageSection, TuiConversation};
+use super::state::TuiConversation;
 use super::theme::Theme;
 use super::ui;
 use super::widgets;
@@ -115,6 +115,7 @@ impl TuiApp {
         let terminal = Terminal::new(backend)?;
 
         // Initialize database
+        #[allow(clippy::arc_with_non_send_sync)]
         let db = Arc::new(Database::open()?);
         db.migrate()?;
 
@@ -600,14 +601,13 @@ impl TuiApp {
         if !self.attachments.is_empty() {
             final_content.push_str("\n\n--- Attachments ---\n");
             for attachment in &self.attachments.pending {
-                if let crate::tui::attachments::TuiAttachment::File { path, .. } = attachment {
-                    if let Ok(text) = std::fs::read_to_string(path) {
-                        final_content.push_str(&format!(
-                            "File: {}\n```\n{}\n```\n\n",
-                            path.display(),
-                            text
-                        ));
-                    }
+                let crate::tui::attachments::TuiAttachment::File { path, .. } = attachment;
+                if let Ok(text) = std::fs::read_to_string(path) {
+                    final_content.push_str(&format!(
+                        "File: {}\n```\n{}\n```\n\n",
+                        path.display(),
+                        text
+                    ));
                 }
             }
             self.attachments.clear();
@@ -665,6 +665,7 @@ impl TuiApp {
 
                 for col in start_col..=end_col {
                     if col < row_width && row < buffer.area.height {
+                        #[allow(deprecated)]
                         let cell = buffer.get(col, row);
                         selected_text.push_str(cell.symbol());
                     }

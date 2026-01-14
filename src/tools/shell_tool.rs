@@ -712,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_tool_default_impl() {
-        let tool = RunShellCommandTool::default();
+        let tool = RunShellCommandTool;
         assert_eq!(tool.definition().name(), "run_shell_command");
     }
 

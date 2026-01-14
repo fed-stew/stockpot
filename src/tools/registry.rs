@@ -725,6 +725,7 @@ mod tests {
 
     #[test]
     fn test_tools_are_send_sync() {
+        #[allow(dead_code)]
         fn assert_send_sync<T: Send + Sync>() {}
 
         let registry = SpotToolRegistry::new();

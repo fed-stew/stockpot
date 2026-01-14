@@ -15,6 +15,7 @@ use crate::tui::theme::Theme;
 
 pub struct NestedAgentWidget<'a> {
     section: &'a AgentSection,
+    #[allow(dead_code)]
     theme: &'a Theme,
 }
 

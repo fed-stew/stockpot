@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 
 /// Application events
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum AppEvent {
     /// Terminal key press
     Key(KeyEvent),
@@ -42,6 +43,7 @@ pub enum AppEvent {
 /// Event handler that polls for terminal events
 pub struct EventHandler {
     rx: mpsc::UnboundedReceiver<AppEvent>,
+    #[allow(dead_code)]
     tx: mpsc::UnboundedSender<AppEvent>,
 }
 
@@ -124,6 +126,7 @@ impl EventHandler {
     }
 
     /// Get the sender for external events (streaming, etc.)
+    #[allow(dead_code)]
     pub fn sender(&self) -> mpsc::UnboundedSender<AppEvent> {
         self.tx.clone()
     }

@@ -4,8 +4,8 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Paragraph, StatefulWidget, Widget, Wrap},
+    text::{Line, Span},
+    widgets::{StatefulWidget, Widget},
 };
 
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
@@ -93,7 +93,7 @@ impl<'a> MessageList<'a> {
             let style = span.style;
 
             let mut current_chunk = String::new();
-            let mut chunk_start_col = current_col;
+            let _chunk_start_col = current_col;
             let mut current_selected = selection.contains(row, current_col);
 
             for c in content.chars() {
@@ -216,22 +216,21 @@ impl StatefulWidget for MessageList<'_> {
                             let height = widget.height() as usize;
                             if virtual_y < state.offset + area.height as usize
                                 && virtual_y + height > state.offset
+                                && virtual_y >= state.offset
                             {
-                                if virtual_y >= state.offset {
-                                    let render_y =
-                                        (area.y as usize + virtual_y - state.offset) as u16;
-                                    // Register toggle click target
-                                    if let Some(registry) = &mut self.registry {
-                                        registry.register(
-                                            Rect::new(area.x, render_y, area.width, 1),
-                                            ClickTarget::SectionToggle(thinking.id.clone()),
-                                        );
-                                    }
-                                    widget.render(
-                                        Rect::new(area.x, render_y, area.width, height as u16),
-                                        buf,
+                                let render_y =
+                                    (area.y as usize + virtual_y - state.offset) as u16;
+                                // Register toggle click target
+                                if let Some(registry) = &mut self.registry {
+                                    registry.register(
+                                        Rect::new(area.x, render_y, area.width, 1),
+                                        ClickTarget::SectionToggle(thinking.id.clone()),
                                     );
                                 }
+                                widget.render(
+                                    Rect::new(area.x, render_y, area.width, height as u16),
+                                    buf,
+                                );
                             }
                             virtual_y += height;
                         }
@@ -240,22 +239,21 @@ impl StatefulWidget for MessageList<'_> {
                             let height = widget.height() as usize;
                             if virtual_y < state.offset + area.height as usize
                                 && virtual_y + height > state.offset
+                                && virtual_y >= state.offset
                             {
-                                if virtual_y >= state.offset {
-                                    let render_y =
-                                        (area.y as usize + virtual_y - state.offset) as u16;
-                                    // Register toggle click target
-                                    if let Some(registry) = &mut self.registry {
-                                        registry.register(
-                                            Rect::new(area.x, render_y, area.width, 1),
-                                            ClickTarget::SectionToggle(agent.id.clone()),
-                                        );
-                                    }
-                                    widget.render(
-                                        Rect::new(area.x, render_y, area.width, height as u16),
-                                        buf,
+                                let render_y =
+                                    (area.y as usize + virtual_y - state.offset) as u16;
+                                // Register toggle click target
+                                if let Some(registry) = &mut self.registry {
+                                    registry.register(
+                                        Rect::new(area.x, render_y, area.width, 1),
+                                        ClickTarget::SectionToggle(agent.id.clone()),
                                     );
                                 }
+                                widget.render(
+                                    Rect::new(area.x, render_y, area.width, height as u16),
+                                    buf,
+                                );
                             }
                             virtual_y += height;
                         }

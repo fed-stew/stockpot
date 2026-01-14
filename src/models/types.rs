@@ -45,6 +45,8 @@ pub enum ModelType {
     ChatgptOauth,
     /// Azure OpenAI Service
     AzureOpenai,
+    /// Google Vertex AI (OAuth)
+    GoogleVertex,
     /// OpenRouter API
     Openrouter,
     /// Round-robin load balancing across models
@@ -62,6 +64,7 @@ impl std::fmt::Display for ModelType {
             ModelType::ClaudeCode => write!(f, "claude_code"),
             ModelType::ChatgptOauth => write!(f, "chatgpt_oauth"),
             ModelType::AzureOpenai => write!(f, "azure_openai"),
+            ModelType::GoogleVertex => write!(f, "google_vertex"),
             ModelType::Openrouter => write!(f, "openrouter"),
             ModelType::RoundRobin => write!(f, "round_robin"),
         }

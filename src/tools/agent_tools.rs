@@ -412,13 +412,13 @@ mod tests {
 
     #[test]
     fn test_invoke_agent_tool_default() {
-        let tool = InvokeAgentTool::default();
+        let tool = InvokeAgentTool;
         assert_eq!(tool.definition().name, "invoke_agent");
     }
 
     #[test]
     fn test_list_agents_tool_default() {
-        let tool = ListAgentsTool::default();
+        let tool = ListAgentsTool;
         assert_eq!(tool.definition().name, "list_agents");
     }
 

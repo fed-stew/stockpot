@@ -536,8 +536,6 @@ pub fn grep(
     })
 }
 
-/// Apply a unified diff to a file.
-
 #[cfg(test)]
 mod tests {
     use super::*;

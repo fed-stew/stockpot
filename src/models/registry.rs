@@ -97,7 +97,7 @@ impl ModelRegistry {
     pub fn add_model_to_db(db: &Database, config: &ModelConfig) -> Result<(), ModelConfigError> {
         // Infer source from model type
         let source = match config.model_type {
-            ModelType::ClaudeCode | ModelType::ChatgptOauth => "oauth",
+            ModelType::ClaudeCode | ModelType::ChatgptOauth | ModelType::GoogleVertex => "oauth",
             _ if config.custom_endpoint.is_some() => "custom",
             _ => "catalog",
         };
@@ -291,6 +291,10 @@ impl ModelRegistry {
             ModelType::ChatgptOauth => {
                 // Check if we have valid OAuth tokens
                 has_oauth_tokens(db, "chatgpt")
+            }
+            ModelType::GoogleVertex => {
+                // Check if we have valid OAuth tokens
+                has_oauth_tokens(db, "google")
             }
             ModelType::AzureOpenai => {
                 has_api_key(db, "AZURE_OPENAI_API_KEY") || has_api_key(db, "AZURE_OPENAI_ENDPOINT")

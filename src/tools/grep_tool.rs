@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_tool_default_impl() {
-        let tool = GrepTool::default();
+        let tool = GrepTool;
         assert_eq!(tool.definition().name(), "grep");
     }
 }

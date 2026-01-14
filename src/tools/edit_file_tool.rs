@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_tool_default_impl() {
-        let tool = EditFileTool::default();
+        let tool = EditFileTool;
         assert_eq!(tool.definition().name(), "edit_file");
     }
 }

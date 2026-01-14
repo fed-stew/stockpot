@@ -1041,9 +1041,8 @@ mod tests {
 
         let mut not_running_count = 0;
         for handle in handles {
-            match handle.await.unwrap() {
-                Err(McpManagerError::NotRunning(_)) => not_running_count += 1,
-                _ => {}
+            if let Err(McpManagerError::NotRunning(_)) = handle.await.unwrap() {
+                not_running_count += 1;
             }
         }
 

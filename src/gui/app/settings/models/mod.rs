@@ -75,6 +75,7 @@ impl ChatApp {
             ModelType::Gemini => "Google Gemini".to_string(),
             ModelType::ClaudeCode => "Claude Code (OAuth)".to_string(),
             ModelType::ChatgptOauth => "ChatGPT (OAuth)".to_string(),
+            ModelType::GoogleVertex => "Google (OAuth)".to_string(),
             ModelType::AzureOpenai => "Azure OpenAI".to_string(),
             ModelType::Openrouter => "OpenRouter".to_string(),
             ModelType::RoundRobin => "Round Robin".to_string(),
@@ -153,6 +154,7 @@ impl ChatApp {
             )
             .child(self.render_oauth_status("claude-code", "Claude Code", cx))
             .child(self.render_oauth_status("chatgpt", "ChatGPT", cx))
+            .child(self.render_oauth_status("google", "Google (Antigravity)", cx))
     }
 
     /// Render the "Available Models" header with refresh button.

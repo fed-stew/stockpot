@@ -15,6 +15,7 @@ use crate::tui::theme::Theme;
 
 pub struct ThinkingWidget<'a> {
     section: &'a ThinkingSection,
+    #[allow(dead_code)]
     theme: &'a Theme,
 }
 

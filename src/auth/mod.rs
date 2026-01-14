@@ -7,10 +7,12 @@
 
 mod chatgpt;
 mod claude_code;
+pub mod google;
 mod storage;
 
 pub use chatgpt::{get_chatgpt_model, run_chatgpt_auth};
 pub use claude_code::{get_claude_code_model, run_claude_code_auth};
+pub use google::{get_google_model, run_google_auth};
 pub use storage::TokenStorage;
 
 /// Supported OAuth providers.
@@ -18,6 +20,7 @@ pub use storage::TokenStorage;
 pub enum OAuthProvider {
     ChatGpt,
     ClaudeCode,
+    Google,
 }
 
 impl OAuthProvider {
@@ -26,6 +29,7 @@ impl OAuthProvider {
         match self {
             Self::ChatGpt => "chatgpt",
             Self::ClaudeCode => "claude-code",
+            Self::Google => "google",
         }
     }
 }

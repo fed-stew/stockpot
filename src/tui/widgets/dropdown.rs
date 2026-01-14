@@ -4,8 +4,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, List, ListItem, Widget},
+    widgets::{Block, Borders, Widget},
 };
 
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};

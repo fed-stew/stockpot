@@ -27,13 +27,13 @@ pub async fn execute_agent(
     let agent = match agent_manager.get(&agent_name) {
         Some(agent) => agent,
         None => {
-            let _ = sender.error(format!("Agent not found: {}", agent_name));
+            sender.error(format!("Agent not found: {}", agent_name));
             return;
         }
     };
 
     // Create executor with references
-    let mut executor = AgentExecutor::new(&db, &model_registry).with_bus(sender.clone());
+    let executor = AgentExecutor::new(&db, &model_registry).with_bus(sender.clone());
 
     // Execute
     // Note: execute_with_bus signature:
@@ -57,6 +57,6 @@ pub async fn execute_agent(
         .await;
 
     if let Err(e) = result {
-        let _ = sender.error(format!("Execution failed: {}", e));
+        sender.error(format!("Execution failed: {}", e));
     }
 }
