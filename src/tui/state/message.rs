@@ -112,7 +112,6 @@ pub fn get_tool_display_info(name: &str, args: &Value) -> ToolDisplayInfo {
                 .unwrap_or("?");
             ToolDisplayInfo::new("Invoked", agent)
         }
-        "agent_share_your_reasoning" => ToolDisplayInfo::new("Reasoning", ""),
         _ => {
             // For unknown tools, use the tool name as the verb
             ToolDisplayInfo::new(name, "")

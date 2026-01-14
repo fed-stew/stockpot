@@ -16,7 +16,6 @@ use super::list_files_tool::ListFilesTool;
 use super::list_processes_tool::ListProcessesTool;
 use super::read_file_tool::ReadFileTool;
 use super::read_process_output_tool::ReadProcessOutputTool;
-use super::reasoning_tool::ShareReasoningTool;
 use super::shell_tool::RunShellCommandTool;
 
 /// Arc-wrapped tool for shared ownership.
@@ -45,7 +44,6 @@ pub struct SpotToolRegistry {
     pub delete_file: DeleteFileTool,
     pub grep: GrepTool,
     pub run_shell_command: RunShellCommandTool,
-    pub share_reasoning: ShareReasoningTool,
     pub invoke_agent: InvokeAgentTool,
     pub list_agents: ListAgentsTool,
     // Process management tools
@@ -69,7 +67,6 @@ impl SpotToolRegistry {
             Arc::new(self.delete_file.clone()),
             Arc::new(self.grep.clone()),
             Arc::new(self.run_shell_command.clone()),
-            Arc::new(self.share_reasoning.clone()),
             Arc::new(self.invoke_agent.clone()),
             Arc::new(self.list_agents.clone()),
             // Process management tools
@@ -96,7 +93,6 @@ impl SpotToolRegistry {
                 "delete_file" => tools.push(Arc::new(self.delete_file.clone())),
                 "grep" => tools.push(Arc::new(self.grep.clone())),
                 "run_shell_command" => tools.push(Arc::new(self.run_shell_command.clone())),
-                "share_your_reasoning" => tools.push(Arc::new(self.share_reasoning.clone())),
                 "invoke_agent" => tools.push(Arc::new(self.invoke_agent.clone())),
                 "list_agents" => tools.push(Arc::new(self.list_agents.clone())),
                 "list_processes" => tools.push(Arc::new(self.list_processes.clone())),
@@ -115,7 +111,6 @@ impl SpotToolRegistry {
             Arc::new(self.list_files.clone()),
             Arc::new(self.read_file.clone()),
             Arc::new(self.grep.clone()),
-            Arc::new(self.share_reasoning.clone()),
         ]
     }
 
@@ -143,14 +138,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.all_tools().len(), 12);
-        assert_eq!(registry.definitions().len(), 12);
+        assert_eq!(registry.all_tools().len(), 11);
+        assert_eq!(registry.definitions().len(), 11);
     }
 
     #[test]
     fn test_registry_default_trait() {
         let registry = SpotToolRegistry::default();
-        assert_eq!(registry.all_tools().len(), 12);
+        assert_eq!(registry.all_tools().len(), 11);
     }
 
     #[test]
@@ -179,7 +174,7 @@ mod tests {
     #[test]
     fn test_all_tools_returns_correct_count() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.all_tools().len(), 12);
+        assert_eq!(registry.all_tools().len(), 11);
     }
 
     #[test]
@@ -198,7 +193,6 @@ mod tests {
             "delete_file",
             "grep",
             "run_shell_command",
-            "share_your_reasoning",
             "invoke_agent",
             "list_agents",
         ];
@@ -258,7 +252,7 @@ mod tests {
     #[test]
     fn test_definitions_returns_correct_count() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.definitions().len(), 12);
+        assert_eq!(registry.definitions().len(), 11);
     }
 
     #[test]
@@ -328,13 +322,12 @@ mod tests {
             "delete_file",
             "grep",
             "run_shell_command",
-            "share_your_reasoning",
             "invoke_agent",
             "list_agents",
         ];
 
         let tools = registry.tools_by_name(&names);
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 8);
     }
 
     #[test]
@@ -411,10 +404,7 @@ mod tests {
         for tool in &tools {
             let name = tool.definition().name;
             assert!(
-                name == "list_files"
-                    || name == "read_file"
-                    || name == "grep"
-                    || name == "share_your_reasoning",
+                name == "list_files" || name == "read_file" || name == "grep",
                 "Unexpected tool in read_only: {}",
                 name
             );
@@ -425,7 +415,7 @@ mod tests {
     fn test_read_only_tools_count() {
         let registry = SpotToolRegistry::new();
         let tools = registry.read_only_tools();
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 3);
     }
 
     #[test]
@@ -441,7 +431,6 @@ mod tests {
             "list_files".to_string(),
             "read_file".to_string(),
             "grep".to_string(),
-            "share_your_reasoning".to_string(),
         ]
         .into_iter()
         .collect();
@@ -508,7 +497,6 @@ mod tests {
             .collect();
 
         assert!(!tool_names.contains("run_shell_command"));
-        assert!(!tool_names.contains("share_your_reasoning"));
         assert!(!tool_names.contains("invoke_agent"));
         assert!(!tool_names.contains("list_agents"));
     }
@@ -628,15 +616,6 @@ mod tests {
         assert_eq!(
             registry.run_shell_command.definition().name,
             "run_shell_command"
-        );
-    }
-
-    #[test]
-    fn test_share_reasoning_tool_exists() {
-        let registry = SpotToolRegistry::new();
-        assert_eq!(
-            registry.share_reasoning.definition().name,
-            "share_your_reasoning"
         );
     }
 

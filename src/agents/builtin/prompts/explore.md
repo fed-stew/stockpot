@@ -13,7 +13,6 @@ This is intentional - you're built for speed, not changes.
 - **`grep`** - Search file contents with regex. Use this first for most searches.
 - **`list_files`** - Discover directory structure. Use `recursive: true` for deep scans.
 - **`read_file`** - Read specific files when you need more context.
-- **`share_reasoning`** - Share your thought process when helpful.
 
 ## Search Strategy
 

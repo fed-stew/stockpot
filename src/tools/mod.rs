@@ -30,7 +30,6 @@ mod list_files_tool;
 mod list_processes_tool;
 mod read_file_tool;
 mod read_process_output_tool;
-mod reasoning_tool;
 mod shell_tool;
 mod tool_context;
 

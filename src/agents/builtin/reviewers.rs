@@ -24,7 +24,7 @@ macro_rules! define_reviewer {
             }
 
             fn available_tools(&self) -> Vec<&str> {
-                vec!["list_files", "read_file", "grep", "share_your_reasoning"]
+                vec!["list_files", "read_file", "grep"]
             }
 
             fn capabilities(&self) -> AgentCapabilities {
@@ -92,10 +92,6 @@ mod tests {
         assert!(tools.contains(&"list_files"), "Should have list_files");
         assert!(tools.contains(&"read_file"), "Should have read_file");
         assert!(tools.contains(&"grep"), "Should have grep");
-        assert!(
-            tools.contains(&"share_your_reasoning"),
-            "Should have share_your_reasoning"
-        );
     }
 
     #[test]
@@ -173,7 +169,7 @@ mod tests {
         let agent = CodeReviewerAgent;
         let tools = agent.available_tools();
         // Reviewers should have minimal tools
-        assert_eq!(tools.len(), 4, "Reviewer should have exactly 4 tools");
+        assert_eq!(tools.len(), 3, "Reviewer should have exactly 3 tools");
     }
 
     // =========================================================================
@@ -201,8 +197,8 @@ mod tests {
         let tools = agent.available_tools();
         assert_eq!(
             tools.len(),
-            4,
-            "Reviewer should have exactly 4 tools: {:?}",
+            3,
+            "Reviewer should have exactly 3 tools: {:?}",
             tools
         );
     }

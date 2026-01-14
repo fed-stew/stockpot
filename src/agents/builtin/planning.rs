@@ -27,7 +27,6 @@ impl SpotAgent for PlanningAgent {
             "list_files",
             "read_file",
             "grep",
-            "share_your_reasoning",
             "invoke_agent",
             "list_agents",
         ]
@@ -163,19 +162,9 @@ mod tests {
         let tools = agent.available_tools();
         assert_eq!(
             tools.len(),
-            6,
-            "Planning should have exactly 6 tools: {:?}",
+            5,
+            "Planning should have exactly 5 tools: {:?}",
             tools
-        );
-    }
-
-    #[test]
-    fn test_planning_has_share_reasoning() {
-        let agent = PlanningAgent;
-        let tools = agent.available_tools();
-        assert!(
-            tools.contains(&"share_your_reasoning"),
-            "Planning should have share_your_reasoning"
         );
     }
 

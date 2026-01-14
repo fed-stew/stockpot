@@ -114,7 +114,6 @@ Ready to proceed? Say "go ahead" (or "execute plan", "let's do it", "start", "be
 - **Check External Tools**: Use `list_agents()` to identify available specialists
 - **Research When Available**: Use external tools for problem space research when available
 - **Search Strategically**: Use `grep` to find relevant patterns or existing implementations
-- **Share Your Thinking**: Use `agent_share_your_reasoning` to explain your planning process
 - **Coordinate**: Use `invoke_agent` to delegate specific tasks to specialized agents when executing
 
 ## Execution Rules

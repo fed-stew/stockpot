@@ -30,7 +30,6 @@ impl SpotAgent for StockpotAgent {
             "delete_file",
             "grep",
             "run_shell_command",
-            "share_your_reasoning",
             "invoke_agent",
             "list_agents",
         ]
@@ -152,19 +151,9 @@ mod tests {
         let tools = agent.available_tools();
         assert_eq!(
             tools.len(),
-            9,
-            "Stockpot should have exactly 9 tools: {:?}",
+            8,
+            "Stockpot should have exactly 8 tools: {:?}",
             tools
-        );
-    }
-
-    #[test]
-    fn test_stockpot_has_share_reasoning() {
-        let agent = StockpotAgent;
-        let tools = agent.available_tools();
-        assert!(
-            tools.contains(&"share_your_reasoning"),
-            "Stockpot should have share_your_reasoning"
         );
     }
 

@@ -129,65 +129,6 @@ impl Tool for ListAgentsTool {
 }
 
 // ============================================================================
-// ShareReasoningTool (moved from registry.rs for organization)
-// ============================================================================
-
-/// Tool for sharing agent reasoning with the user.
-///
-/// This helps users understand the agent's thought process.
-#[derive(Debug, Clone, Default)]
-pub struct ShareReasoningTool;
-
-#[derive(Debug, Deserialize)]
-struct ShareReasoningArgs {
-    /// The agent's current reasoning/thinking.
-    reasoning: String,
-    /// Optional planned next steps.
-    #[serde(default)]
-    next_steps: Option<String>,
-}
-
-#[async_trait]
-impl Tool for ShareReasoningTool {
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new(
-            "share_your_reasoning",
-            "Share your current reasoning and planned next steps with the user. \
-             Use this to explain your thought process before taking actions.",
-        )
-        .with_parameters(
-            SchemaBuilder::new()
-                .string(
-                    "reasoning",
-                    "Your current thought process and analysis",
-                    true,
-                )
-                .string("next_steps", "What you plan to do next", false)
-                .build()
-                .expect("schema build failed"),
-        )
-    }
-
-    async fn call(&self, _ctx: &RunContext, args: JsonValue) -> ToolResult {
-        debug!(tool = "share_reasoning", ?args, "Tool called");
-
-        let args: ShareReasoningArgs = serde_json::from_value(args.clone()).map_err(|e| {
-            warn!(tool = "share_reasoning", error = %e, ?args, "Failed to parse arguments");
-            ToolError::execution_failed(format!("Invalid arguments: {e}. Got: {args}"))
-        })?;
-
-        let reasoning = &args.reasoning;
-        let mut output = format!("💭 **Reasoning:**\n{reasoning}\n");
-
-        if let Some(steps) = args.next_steps {
-            output.push_str(&format!("\n📋 **Next Steps:**\n{steps}"));
-        }
-
-        Ok(ToolReturn::text(output))
-    }
-}
-
-// ============================================================================
 // Helper Types
 // ============================================================================
 
@@ -422,78 +363,6 @@ mod tests {
     }
 
     // =========================================================================
-    // ShareReasoningTool Tests
-    // =========================================================================
-
-    #[test]
-    fn test_share_reasoning_tool_definition() {
-        let tool = ShareReasoningTool;
-        let def = tool.definition();
-        assert_eq!(def.name, "share_your_reasoning");
-        assert!(def.description.contains("reasoning"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_basic() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "I need to analyze the code structure first."
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("Reasoning"));
-        assert!(text.contains("I need to analyze"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_with_next_steps() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "The code has issues.",
-                    "next_steps": "1. Fix the bug\n2. Add tests"
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("Reasoning"));
-        assert!(text.contains("Next Steps"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_missing_reasoning() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "next_steps": "Do something"
-                }),
-            )
-            .await;
-
-        assert!(result.is_err());
-    }
-
-    // =========================================================================
     // Helper Types Tests
     // =========================================================================
 
@@ -553,12 +422,6 @@ mod tests {
         assert_eq!(tool.definition().name, "list_agents");
     }
 
-    #[test]
-    fn test_share_reasoning_tool_default() {
-        let tool = ShareReasoningTool::default();
-        assert_eq!(tool.definition().name, "share_your_reasoning");
-    }
-
     // =========================================================================
     // Clone Trait Tests
     // =========================================================================
@@ -577,13 +440,6 @@ mod tests {
         assert_eq!(cloned.definition().name, "list_agents");
     }
 
-    #[test]
-    fn test_share_reasoning_tool_clone() {
-        let tool = ShareReasoningTool;
-        let cloned = tool.clone();
-        assert_eq!(cloned.definition().name, "share_your_reasoning");
-    }
-
     // =========================================================================
     // Debug Trait Tests
     // =========================================================================
@@ -600,13 +456,6 @@ mod tests {
         let tool = ListAgentsTool;
         let debug_str = format!("{:?}", tool);
         assert!(debug_str.contains("ListAgentsTool"));
-    }
-
-    #[test]
-    fn test_share_reasoning_tool_debug() {
-        let tool = ShareReasoningTool;
-        let debug_str = format!("{:?}", tool);
-        assert!(debug_str.contains("ShareReasoningTool"));
     }
 
     // =========================================================================
@@ -641,23 +490,6 @@ mod tests {
 
         // list_agents has no parameters
         assert!(params.is_object());
-    }
-
-    #[test]
-    fn test_share_reasoning_tool_schema_has_required_fields() {
-        let tool = ShareReasoningTool;
-        let def = tool.definition();
-        let params = def.parameters();
-
-        assert!(params.is_object());
-        let obj = params.as_object().unwrap();
-
-        let props = obj.get("properties");
-        assert!(props.is_some());
-
-        let props_obj = props.unwrap().as_object().unwrap();
-        assert!(props_obj.contains_key("reasoning"));
-        assert!(props_obj.contains_key("next_steps"));
     }
 
     // =========================================================================
@@ -708,48 +540,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_share_reasoning_tool_empty_reasoning() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": ""
-                }),
-            )
-            .await;
-
-        // Empty string is valid, should return OK
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("Reasoning"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_empty_next_steps() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "Thinking...",
-                    "next_steps": ""
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("Next Steps"));
-    }
-
     // =========================================================================
     // Edge Case Tests - Invalid JSON Types
     // =========================================================================
@@ -798,27 +588,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("cannot be invoked directly"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_wrong_type_reasoning() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": {"nested": "object"}
-                }),
-            )
-            .await;
-
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid arguments"));
     }
 
     #[tokio::test]
@@ -937,40 +706,6 @@ mod tests {
         assert!(debug_str.contains("InvokeAgentArgs"));
     }
 
-    #[test]
-    fn test_share_reasoning_args_deserialize_full() {
-        let json = serde_json::json!({
-            "reasoning": "thinking hard",
-            "next_steps": "do things"
-        });
-
-        let args: ShareReasoningArgs = serde_json::from_value(json).unwrap();
-        assert_eq!(args.reasoning, "thinking hard");
-        assert_eq!(args.next_steps, Some("do things".to_string()));
-    }
-
-    #[test]
-    fn test_share_reasoning_args_deserialize_minimal() {
-        let json = serde_json::json!({
-            "reasoning": "just reasoning"
-        });
-
-        let args: ShareReasoningArgs = serde_json::from_value(json).unwrap();
-        assert_eq!(args.reasoning, "just reasoning");
-        assert!(args.next_steps.is_none());
-    }
-
-    #[test]
-    fn test_share_reasoning_args_debug() {
-        let args = ShareReasoningArgs {
-            reasoning: "test".to_string(),
-            next_steps: Some("steps".to_string()),
-        };
-
-        let debug_str = format!("{:?}", args);
-        assert!(debug_str.contains("ShareReasoningArgs"));
-    }
-
     // =========================================================================
     // Tool Description Content Tests
     // =========================================================================
@@ -991,15 +726,6 @@ mod tests {
 
         assert!(def.description.contains("List"));
         assert!(def.description.contains("agents"));
-    }
-
-    #[test]
-    fn test_share_reasoning_tool_description_content() {
-        let tool = ShareReasoningTool;
-        let def = tool.definition();
-
-        assert!(def.description.contains("reasoning"));
-        assert!(def.description.contains("thought"));
     }
 
     // =========================================================================
@@ -1031,53 +757,9 @@ mod tests {
             .contains("cannot be invoked directly"));
     }
 
-    #[tokio::test]
-    async fn test_share_reasoning_tool_null_next_steps() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "thinking",
-                    "next_steps": null
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        // null next_steps should not show "Next Steps" section
-        assert!(!text.contains("Next Steps"));
-    }
-
     // =========================================================================
     // Unicode and Special Characters Tests
     // =========================================================================
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_unicode_content() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "分析コード 🔍 العربية",
-                    "next_steps": "步骤 étapes Шаги"
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("分析コード"));
-        assert!(text.contains("步骤"));
-    }
 
     #[tokio::test]
     async fn test_invoke_agent_tool_special_chars_in_name() {
@@ -1127,124 +809,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_share_reasoning_schema_required_array() {
-        let tool = ShareReasoningTool;
-        let def = tool.definition();
-        let params = def.parameters();
-        let obj = params.as_object().unwrap();
-
-        if let Some(required) = obj.get("required") {
-            let req_arr = required.as_array().unwrap();
-            let req_strs: Vec<&str> = req_arr.iter().map(|v| v.as_str().unwrap()).collect();
-            assert!(
-                req_strs.contains(&"reasoning"),
-                "reasoning should be required"
-            );
-            assert!(
-                !req_strs.contains(&"next_steps"),
-                "next_steps should not be required"
-            );
-        }
-    }
-
     // =========================================================================
     // Very Large Input Tests
     // =========================================================================
 
-    #[tokio::test]
-    async fn test_share_reasoning_tool_large_reasoning() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        // Create a large reasoning string (10KB)
-        let large_reasoning = "A".repeat(10_000);
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": large_reasoning
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.len() > 10_000);
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_large_next_steps() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let large_steps = "Step ".repeat(2_000);
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "Short reasoning",
-                    "next_steps": large_steps
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-    }
-
     // =========================================================================
     // Multiline Content Tests
     // =========================================================================
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_multiline_reasoning() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let multiline = "Line 1\nLine 2\nLine 3\n\nLine 5 after blank";
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": multiline
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("Line 1"));
-        assert!(text.contains("Line 5"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_multiline_next_steps() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let multiline_steps = "1. First step\n2. Second step\n3. Third step";
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "Planning",
-                    "next_steps": multiline_steps
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("1. First step"));
-        assert!(text.contains("3. Third step"));
-    }
 
     // =========================================================================
     // ToolReturn Type Inspection Tests
@@ -1262,27 +833,6 @@ mod tests {
         // Should be JSON, not text
         assert!(ret.as_json().is_some());
         assert!(ret.as_text().is_none());
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_returns_text_type() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "test"
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        // Should be text, not JSON
-        assert!(ret.as_text().is_some());
-        assert!(ret.as_json().is_none());
     }
 
     // =========================================================================
@@ -1339,11 +889,7 @@ mod tests {
 
     #[test]
     fn test_tool_definitions_have_non_empty_names() {
-        let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(InvokeAgentTool),
-            Box::new(ListAgentsTool),
-            Box::new(ShareReasoningTool),
-        ];
+        let tools: Vec<Box<dyn Tool>> = vec![Box::new(InvokeAgentTool), Box::new(ListAgentsTool)];
 
         for tool in tools {
             let def = tool.definition();
@@ -1353,11 +899,7 @@ mod tests {
 
     #[test]
     fn test_tool_definitions_have_non_empty_descriptions() {
-        let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(InvokeAgentTool),
-            Box::new(ListAgentsTool),
-            Box::new(ShareReasoningTool),
-        ];
+        let tools: Vec<Box<dyn Tool>> = vec![Box::new(InvokeAgentTool), Box::new(ListAgentsTool)];
 
         for tool in tools {
             let def = tool.definition();
@@ -1370,11 +912,7 @@ mod tests {
 
     #[test]
     fn test_all_tool_names_are_unique() {
-        let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(InvokeAgentTool),
-            Box::new(ListAgentsTool),
-            Box::new(ShareReasoningTool),
-        ];
+        let tools: Vec<Box<dyn Tool>> = vec![Box::new(InvokeAgentTool), Box::new(ListAgentsTool)];
 
         let mut names: Vec<String> = tools.iter().map(|t| t.definition().name.clone()).collect();
         let original_len = names.len();
@@ -1407,25 +945,6 @@ mod tests {
         assert!(err_str.contains("Got:") || err_str.contains("wrong_field"));
     }
 
-    #[tokio::test]
-    async fn test_share_reasoning_invalid_args_error_includes_received_args() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "wrong_field": "value"
-                }),
-            )
-            .await;
-
-        assert!(result.is_err());
-        let err_str = result.unwrap_err().to_string();
-        assert!(err_str.contains("Got:") || err_str.contains("wrong_field"));
-    }
-
     // =========================================================================
     // Edge Case: Extra Fields in Args
     // =========================================================================
@@ -1453,25 +972,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("cannot be invoked directly"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_extra_fields_ignored() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "valid reasoning",
-                    "extra": "ignored",
-                    "number": 42
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
     }
 
     // =========================================================================
@@ -1545,48 +1045,9 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_share_reasoning_tool_whitespace_only_reasoning() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "   \t\n  "
-                }),
-            )
-            .await;
-
-        // Whitespace is valid, returns OK
-        assert!(result.is_ok());
-    }
-
     // =========================================================================
     // Escape Sequences in Content
     // =========================================================================
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_escape_sequences() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool
-            .call(
-                &ctx,
-                serde_json::json!({
-                    "reasoning": "Tab:\tNewline:\nQuote:\"Backslash:\\"
-                }),
-            )
-            .await;
-
-        assert!(result.is_ok());
-        let ret = result.unwrap();
-        let text = ret.as_text().unwrap();
-        assert!(text.contains("Tab:"));
-        assert!(text.contains("Quote:"));
-    }
 
     // =========================================================================
     // Tool Trait Object Safety Tests
@@ -1602,12 +1063,6 @@ mod tests {
     fn test_list_agents_tool_can_be_boxed() {
         let tool: Box<dyn Tool> = Box::new(ListAgentsTool);
         assert_eq!(tool.definition().name, "list_agents");
-    }
-
-    #[test]
-    fn test_share_reasoning_tool_can_be_boxed() {
-        let tool: Box<dyn Tool> = Box::new(ShareReasoningTool);
-        assert_eq!(tool.definition().name, "share_your_reasoning");
     }
 
     // =========================================================================
@@ -1636,21 +1091,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_share_reasoning_schema_property_types() {
-        let tool = ShareReasoningTool;
-        let def = tool.definition();
-        let params = def.parameters();
-        let obj = params.as_object().unwrap();
-        let props = obj.get("properties").unwrap().as_object().unwrap();
-
-        for (name, prop) in props {
-            let prop_obj = prop.as_object().unwrap();
-            let prop_type = prop_obj.get("type");
-            assert!(prop_type.is_some(), "property {} should have a type", name);
-        }
-    }
-
     // =========================================================================
     // Empty JSON Object Tests
     // =========================================================================
@@ -1658,19 +1098,6 @@ mod tests {
     #[tokio::test]
     async fn test_invoke_agent_tool_empty_json_object() {
         let tool = InvokeAgentTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool.call(&ctx, serde_json::json!({})).await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid arguments"));
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_empty_json_object() {
-        let tool = ShareReasoningTool;
         let ctx = RunContext::minimal("test");
 
         let result = tool.call(&ctx, serde_json::json!({})).await;
@@ -1694,16 +1121,6 @@ mod tests {
             .call(&ctx, serde_json::json!(["planner", "test"]))
             .await;
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_share_reasoning_tool_array_args() {
-        let tool = ShareReasoningTool;
-        let ctx = RunContext::minimal("test");
-
-        let result = tool.call(&ctx, serde_json::json!(["reasoning"])).await;
-        // Behavior depends on serde implementation - just ensure no panic
-        let _ = result;
     }
 
     #[tokio::test]

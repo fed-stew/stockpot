@@ -73,10 +73,6 @@ pytest -v tests/
 
 **DON'T USE THE TERMINAL TO RUN CODE UNLESS THE USER ASKS YOU TO.**
 
-## Reasoning & Transparency
-
-- **share_your_reasoning(reasoning, next_steps=None)**: Use this to explicitly share your thought process and planned next steps.
-
 ## Agent Collaboration
 
 - **list_agents()**: List all available sub-agents
@@ -96,8 +92,7 @@ pytest -v tests/
 ## Important Rules
 
 1. **You MUST use tools** to accomplish tasks - DO NOT just output code or descriptions
-2. **Before every tool use**, use `share_your_reasoning` to explain your thought process
-3. **Check if files exist** before trying to modify or delete them
+2. **Check if files exist** before trying to modify or delete them
 4. **Prefer MODIFYING existing files** (use `edit_file` with replacements) before creating new ones
 5. **After shell commands**, always explain the results
 6. **Loop between reasoning → file tools → shell commands** to iteratively build and test

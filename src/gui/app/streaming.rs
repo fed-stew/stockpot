@@ -154,44 +154,50 @@ impl ChatApp {
         match &msg {
             Message::TextDelta(delta) => {
                 // Check if this delta is from a nested agent
-                if let Some(agent_name) = &delta.agent_name {
+                let routed_to_nested = if let Some(agent_name) = &delta.agent_name {
                     // Route to the nested agent's section
                     if let Some(section_id) = self.active_section_ids.get(agent_name) {
                         self.conversation
                             .append_to_nested_agent(section_id, &delta.text);
+                        true // Was routed to nested
                     } else {
                         // Fallback: append to main content if section not found
                         self.conversation.append_to_current(&delta.text);
+                        false
                     }
                 } else {
                     // No agent attribution - append to current (handles main agent)
                     self.conversation.append_to_current(&delta.text);
-                }
+                    false
+                };
 
                 // Track throughput
                 self.update_throughput(delta.text.len());
 
-                if let Some(msg) = self.conversation.messages.last() {
-                    let (element_id, full_text) = if let Some((idx, text)) = msg
-                        .sections
-                        .iter()
-                        .enumerate()
-                        .rev()
-                        .find_map(|(idx, section)| match section {
-                            MessageSection::Text(text) => Some((idx, text)),
-                            _ => None,
-                        }) {
-                        (format!("msg-{}-sec-{}", msg.id, idx), text.to_string())
-                    } else {
-                        (format!("msg-{}-content", msg.id), msg.content.clone())
-                    };
-                    let delta_text = delta.text.clone();
-                    self.update_text_view_cache(
-                        element_id,
-                        &full_text,
-                        Some(delta_text.as_str()),
-                        cx,
-                    );
+                // Only update text view cache for main content, not nested sections
+                if !routed_to_nested {
+                    if let Some(msg) = self.conversation.messages.last() {
+                        let (element_id, full_text) = if let Some((idx, text)) = msg
+                            .sections
+                            .iter()
+                            .enumerate()
+                            .rev()
+                            .find_map(|(idx, section)| match section {
+                                MessageSection::Text(text) => Some((idx, text)),
+                                _ => None,
+                            }) {
+                            (format!("msg-{}-sec-{}", msg.id, idx), text.to_string())
+                        } else {
+                            (format!("msg-{}-content", msg.id), msg.content.clone())
+                        };
+                        let delta_text = delta.text.clone();
+                        self.update_text_view_cache(
+                            element_id,
+                            &full_text,
+                            Some(delta_text.as_str()),
+                            cx,
+                        );
+                    }
                 }
 
                 // Throttled context usage update (every 500ms during streaming)
@@ -313,11 +319,12 @@ impl ChatApp {
                 AgentEvent::Completed { .. } => {
                     // Pop this agent from stack
                     if let Some(completed_agent) = self.active_agent_stack.pop() {
-                        if let Some(section_id) = self.active_section_ids.remove(&completed_agent) {
+                        // Use .get() instead of .remove() - keep section_id for late-arriving events
+                        if let Some(section_id) = self.active_section_ids.get(&completed_agent) {
                             // Finish the nested section
-                            self.conversation.finish_nested_agent(&section_id);
+                            self.conversation.finish_nested_agent(section_id);
                             // Auto-collapse completed sub-agent sections
-                            self.conversation.set_section_collapsed(&section_id, true);
+                            self.conversation.set_section_collapsed(section_id, true);
                         }
                     }
 
@@ -331,17 +338,20 @@ impl ChatApp {
                         self.sync_messages_list_state();
                         // Stop throughput tracking
                         self.is_streaming_active = false;
+
+                        // Clear section mappings - safe now since main agent is done
+                        self.active_section_ids.clear();
                     }
                 }
                 AgentEvent::Error { message } => {
                     // Pop all agents down to (and including) the errored one
                     while let Some(agent_name) = self.active_agent_stack.pop() {
-                        if let Some(section_id) = self.active_section_ids.remove(&agent_name) {
+                        if let Some(section_id) = self.active_section_ids.get(&agent_name) {
                             self.conversation.append_to_nested_agent(
-                                &section_id,
+                                section_id,
                                 &format!("\n\n❌ Error: {}", message),
                             );
-                            self.conversation.finish_nested_agent(&section_id);
+                            self.conversation.finish_nested_agent(section_id);
                         }
                         if agent_name == agent.agent_name {
                             break; // Found the errored agent, stop unwinding
@@ -355,6 +365,9 @@ impl ChatApp {
                         self.conversation.finish_current_message();
                         self.is_generating = false;
                         self.error_message = Some(message.clone());
+
+                        // Clear section mappings
+                        self.active_section_ids.clear();
                     }
                 }
             },

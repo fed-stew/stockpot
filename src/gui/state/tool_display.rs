@@ -84,7 +84,6 @@ pub fn get_tool_display_info(name: &str, args: &serde_json::Value) -> ToolDispla
                 .unwrap_or("?");
             ToolDisplayInfo::new("Invoked", agent)
         }
-        "agent_share_your_reasoning" => ToolDisplayInfo::new("Reasoning", ""),
         _ => {
             // For unknown tools, use the tool name as the verb
             ToolDisplayInfo::new(name, "")
@@ -168,13 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tool_display_info_reasoning() {
-        let args = serde_json::json!({});
-        let info = get_tool_display_info("agent_share_your_reasoning", &args);
-        assert_eq!(info, ToolDisplayInfo::new("Reasoning", ""));
-    }
-
-    #[test]
     fn test_get_tool_display_info_unknown_tool() {
         let args = serde_json::json!({});
         let info = get_tool_display_info("custom_tool", &args);
@@ -188,9 +180,9 @@ mod tests {
         let display = format_tool_call_display("read_file", &args);
         assert_eq!(display, "• Read  test.rs");
 
-        // Test with empty subject
+        // Test with unknown tool (empty subject)
         let args_empty = serde_json::json!({});
-        let display = format_tool_call_display("agent_share_your_reasoning", &args_empty);
-        assert_eq!(display, "• Reasoning ");
+        let display = format_tool_call_display("some_unknown_tool", &args_empty);
+        assert_eq!(display, "• some_unknown_tool ");
     }
 }

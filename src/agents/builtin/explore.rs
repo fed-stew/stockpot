@@ -23,7 +23,7 @@ impl SpotAgent for ExploreAgent {
     }
 
     fn available_tools(&self) -> Vec<&str> {
-        vec!["list_files", "read_file", "grep", "share_your_reasoning"]
+        vec!["list_files", "read_file", "grep"]
     }
 
     fn visibility(&self) -> AgentVisibility {
@@ -72,8 +72,7 @@ mod tests {
         assert!(tools.contains(&"list_files"));
         assert!(tools.contains(&"read_file"));
         assert!(tools.contains(&"grep"));
-        assert!(tools.contains(&"share_your_reasoning"));
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 3);
     }
 
     #[test]

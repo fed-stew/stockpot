@@ -81,17 +81,12 @@ impl<'a> AgentExecutor<'a> {
     /// Filter tool names based on settings.
     ///
     /// Filters out:
-    /// - `share_your_reasoning` unless `show_reasoning` is enabled
     /// - `invoke_agent` and `list_agents` (these use custom executors)
     fn filter_tools<'b>(&self, tool_names: Vec<&'b str>) -> Vec<&'b str> {
-        let settings = Settings::new(self.db);
-        let show_reasoning = settings.get_bool("show_reasoning").unwrap_or(false);
-
         tool_names
             .into_iter()
             .filter(|name| {
                 match *name {
-                    "share_your_reasoning" => show_reasoning,
                     // These are handled by custom executors, not the registry
                     "invoke_agent" | "list_agents" => false,
                     _ => true,
@@ -566,32 +561,6 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_tools_removes_share_your_reasoning_when_disabled() {
-        let (_temp, db) = setup_test_db();
-        let registry = ModelRegistry::new();
-        let executor = AgentExecutor::new(&db, &registry);
-        let tools = vec!["read_file", "share_your_reasoning", "write_file"];
-        let filtered = executor.filter_tools(tools);
-        assert!(!filtered.contains(&"share_your_reasoning"));
-        assert!(filtered.contains(&"read_file"));
-        assert!(filtered.contains(&"write_file"));
-    }
-
-    #[test]
-    fn test_filter_tools_keeps_share_your_reasoning_when_enabled() {
-        let (_temp, db) = setup_test_db();
-        let registry = ModelRegistry::new();
-        let settings = Settings::new(&db);
-        settings.set("show_reasoning", "true").unwrap();
-        let executor = AgentExecutor::new(&db, &registry);
-        let tools = vec!["read_file", "share_your_reasoning", "write_file"];
-        let filtered = executor.filter_tools(tools);
-        assert!(filtered.contains(&"share_your_reasoning"));
-        assert!(filtered.contains(&"read_file"));
-        assert!(filtered.contains(&"write_file"));
-    }
-
-    #[test]
     fn test_filter_tools_removes_invoke_agent() {
         let (_temp, db) = setup_test_db();
         let registry = ModelRegistry::new();
@@ -620,17 +589,10 @@ mod tests {
         let (_temp, db) = setup_test_db();
         let registry = ModelRegistry::new();
         let executor = AgentExecutor::new(&db, &registry);
-        let tools = vec![
-            "read_file",
-            "invoke_agent",
-            "list_agents",
-            "share_your_reasoning",
-            "write_file",
-        ];
+        let tools = vec!["read_file", "invoke_agent", "list_agents", "write_file"];
         let filtered = executor.filter_tools(tools);
         assert!(!filtered.contains(&"invoke_agent"));
         assert!(!filtered.contains(&"list_agents"));
-        assert!(!filtered.contains(&"share_your_reasoning"));
         assert_eq!(filtered.len(), 2);
     }
 
@@ -810,29 +772,6 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_tools_with_all_special_tools_and_reasoning_enabled() {
-        let (_temp, db) = setup_test_db();
-        let registry = ModelRegistry::new();
-        let settings = Settings::new(&db);
-        settings.set("show_reasoning", "true").unwrap();
-        let executor = AgentExecutor::new(&db, &registry);
-        let tools = vec![
-            "read_file",
-            "invoke_agent",
-            "list_agents",
-            "share_your_reasoning",
-            "write_file",
-        ];
-        let filtered = executor.filter_tools(tools);
-        assert!(filtered.contains(&"share_your_reasoning"));
-        assert!(!filtered.contains(&"invoke_agent"));
-        assert!(!filtered.contains(&"list_agents"));
-        assert!(filtered.contains(&"read_file"));
-        assert!(filtered.contains(&"write_file"));
-        assert_eq!(filtered.len(), 3);
-    }
-
-    #[test]
     fn test_wants_both_agent_tools() {
         let (_temp, db) = setup_test_db();
         let registry = ModelRegistry::new();
@@ -847,7 +786,7 @@ mod tests {
         let (_temp, db) = setup_test_db();
         let registry = ModelRegistry::new();
         let executor = AgentExecutor::new(&db, &registry);
-        let tools = vec!["invoke_agent", "list_agents", "share_your_reasoning"];
+        let tools = vec!["invoke_agent", "list_agents"];
         let filtered = executor.filter_tools(tools);
         assert!(filtered.is_empty());
     }
