@@ -3,13 +3,13 @@
 use super::storage::{StoredTokens, TokenStorage, TokenStorageError};
 use crate::db::Database;
 use crate::models::{ModelConfig, ModelType};
-use serdes_ai_models::google::GoogleModel;
+use serdes_ai_models::antigravity::AntigravityModel;
 use serdes_ai_providers::oauth::{
     config::google_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow, OAuthError,
     TokenResponse,
 };
 use thiserror::Error;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const PROVIDER: &str = "google";
 
@@ -94,51 +94,145 @@ impl<'a> GoogleAuth<'a> {
 // Onboarding Logic
 // ============================================================================
 
-/// Fetch the Antigravity Project ID by onboarding the user.
+/// Default fallback project ID when Antigravity doesn't return one
+/// (e.g., for business/workspace accounts)
+const ANTIGRAVITY_DEFAULT_PROJECT_ID: &str = "rising-fact-p41fc";
+
+/// Fetch the Antigravity Project ID via loadCodeAssist API.
+///
+/// Uses the same approach as opencode-antigravity-auth:
+/// 1. Try loadCodeAssist on prod, daily, and autopush endpoints
+/// 2. Fall back to default project ID if all fail
 async fn fetch_project_id(access_token: &str) -> Result<String, GoogleAuthError> {
-    info!("Fetching Antigravity Project ID...");
+    info!("Fetching Antigravity Project ID via loadCodeAssist...");
 
     let client = reqwest::Client::new();
-    // Use the sandbox endpoint as specified
-    let url = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:onboardUser";
 
-    let response = client
-        .post(url)
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("Content-Type", "application/json")
-        .send()
-        .await?;
+    // Endpoints in order: prod first (best for managed project resolution), then fallbacks
+    let endpoints = [
+        "https://cloudcode-pa.googleapis.com",
+        "https://daily-cloudcode-pa.sandbox.googleapis.com",
+        "https://autopush-cloudcode-pa.sandbox.googleapis.com",
+    ];
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        error!("Onboarding failed: {} - {}", status, text);
-        return Err(GoogleAuthError::Onboarding(format!(
-            "Failed to onboard user: {}",
-            status
-        )));
+    // Required headers to match CLIProxy/Vibeproxy behavior
+    let client_metadata =
+        r#"{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}"#;
+
+    // Request body for loadCodeAssist
+    let payload = serde_json::json!({
+        "metadata": {
+            "ideType": "IDE_UNSPECIFIED",
+            "platform": "PLATFORM_UNSPECIFIED",
+            "pluginType": "GEMINI"
+        }
+    });
+
+    let mut errors = Vec::new();
+
+    for base_endpoint in endpoints {
+        let url = format!("{}/v1internal:loadCodeAssist", base_endpoint);
+        debug!("Trying loadCodeAssist at: {}", url);
+
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("Content-Type", "application/json")
+            .header("User-Agent", "google-api-nodejs-client/9.15.1")
+            .header(
+                "X-Goog-Api-Client",
+                "google-cloud-sdk vscode_cloudshelleditor/0.1",
+            )
+            .header("Client-Metadata", client_metadata)
+            .body(payload.to_string())
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        debug!("loadCodeAssist response: {:?}", json);
+
+                        // Look for cloudaicompanionProject field
+                        if let Some(project_id) = extract_project_id(&json) {
+                            info!("Successfully fetched Project ID: {}", project_id);
+                            return Ok(project_id);
+                        }
+                        errors.push(format!(
+                            "loadCodeAssist missing project id at {}",
+                            base_endpoint
+                        ));
+                    }
+                    Err(e) => {
+                        errors.push(format!(
+                            "loadCodeAssist parse error at {}: {}",
+                            base_endpoint, e
+                        ));
+                    }
+                }
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                errors.push(format!(
+                    "loadCodeAssist {} at {}: {}",
+                    status, base_endpoint, text
+                ));
+            }
+            Err(e) => {
+                errors.push(format!("loadCodeAssist error at {}: {}", base_endpoint, e));
+            }
+        }
     }
 
-    // Try to parse as JSON first
-    let json: serde_json::Value = response.json().await?;
-    debug!("Onboarding response: {:?}", json);
+    // Log all errors for debugging
+    if !errors.is_empty() {
+        warn!(
+            "Failed to resolve Antigravity project via loadCodeAssist: {}",
+            errors.join("; ")
+        );
+    }
 
-    // Look for project_id or similar field
-    // Based on typical Google APIs, it might be camelCase or snake_case
-    if let Some(project_id) = json
+    // Use default fallback project ID
+    info!(
+        "Using default Antigravity project ID: {}",
+        ANTIGRAVITY_DEFAULT_PROJECT_ID
+    );
+    Ok(ANTIGRAVITY_DEFAULT_PROJECT_ID.to_string())
+}
+
+/// Extract project ID from loadCodeAssist response
+fn extract_project_id(json: &serde_json::Value) -> Option<String> {
+    // Primary: cloudaicompanionProject as string
+    if let Some(id) = json.get("cloudaicompanionProject").and_then(|v| v.as_str()) {
+        if !id.is_empty() {
+            return Some(id.to_string());
+        }
+    }
+
+    // Alternative: cloudaicompanionProject.id as nested object
+    if let Some(project) = json.get("cloudaicompanionProject") {
+        if let Some(id) = project.get("id").and_then(|v| v.as_str()) {
+            if !id.is_empty() {
+                return Some(id.to_string());
+            }
+        }
+    }
+
+    // Fallback: project_id or projectId at root
+    if let Some(id) = json
         .get("project_id")
         .or_else(|| json.get("projectId"))
         .and_then(|v| v.as_str())
     {
-        info!("Successfully fetched Project ID: {}", project_id);
-        return Ok(project_id.to_string());
+        if !id.is_empty() {
+            return Some(id.to_string());
+        }
     }
 
-    // If direct field not found, maybe check nested fields if we knew the structure
-    // For now, fail if not found
-    Err(GoogleAuthError::Onboarding(
-        "Project ID not found in onboarding response".to_string(),
-    ))
+    None
 }
 
 // ============================================================================
@@ -227,35 +321,33 @@ pub async fn run_google_auth(db: &Database) -> Result<(), GoogleAuthError> {
     let tokens = handle.wait_for_tokens().await?;
     println!("✅ OAuth tokens received.");
 
-    // Onboard user to get Project ID
-    println!("🚀 Onboarding user to fetch Project ID...");
+    // Fetch Project ID via loadCodeAssist API
+    println!("🚀 Fetching Antigravity Project ID...");
     let project_id = match fetch_project_id(&tokens.access_token).await {
-        Ok(id) => id,
+        Ok(id) => {
+            if id == ANTIGRAVITY_DEFAULT_PROJECT_ID {
+                println!("📋 Using default Antigravity project: {}", id);
+            } else {
+                println!("✅ Got Project ID: {}", id);
+            }
+            id
+        }
         Err(e) => {
+            // This shouldn't happen since fetch_project_id now has fallback
             println!("⚠️  Failed to fetch Project ID: {}", e);
-            println!("   Tokens will be saved without Project ID, but models may not work.");
-            String::new()
+            println!("   Using default project ID.");
+            ANTIGRAVITY_DEFAULT_PROJECT_ID.to_string()
         }
     };
 
     let auth = GoogleAuth::new(db);
-    // Store project_id if we got one
-    let project_id_opt = if project_id.is_empty() {
-        None
-    } else {
-        Some(project_id.as_str())
-    };
-    auth.save_tokens(&tokens, project_id_opt)?;
+    auth.save_tokens(&tokens, Some(&project_id))?;
 
     println!("✅ Authentication successful!");
 
-    if !project_id.is_empty() {
-        // Register models
-        if let Err(e) = save_google_models_to_db(db, &project_id) {
-            println!("⚠️  Failed to save models: {}", e);
-        }
-    } else {
-        println!("⚠️  Skipping model registration due to missing Project ID.");
+    // Register models with the project ID
+    if let Err(e) = save_google_models_to_db(db, &project_id) {
+        println!("⚠️  Failed to save models: {}", e);
     }
 
     println!();
@@ -269,11 +361,67 @@ pub async fn run_google_auth(db: &Database) -> Result<(), GoogleAuthError> {
 // Model Retrieval
 // ============================================================================
 
-/// Get a Google model, refreshing tokens if needed.
+/// Transform model name to API format for Antigravity.
+///
+/// For Antigravity API:
+/// - gemini-3-pro-{low,high}: Keep the tier suffix (API requires it)
+/// - gemini-3-flash-{tier}: Strip the tier, use thinkingLevel param
+/// - claude-*-thinking-{tier}: Strip the tier, use thinking_budget param
+///
+/// Returns (api_model_name, thinking_budget, thinking_level)
+fn transform_model_name(model_name: &str) -> (String, Option<u64>, Option<String>) {
+    let lower = model_name.to_lowercase();
+    let tiers = [
+        ("-high", 32768u64, "high"),
+        ("-medium", 16384u64, "medium"),
+        ("-low", 8192u64, "low"),
+    ];
+
+    // Gemini 3 Pro: KEEP the tier suffix (API requires it)
+    if lower.starts_with("gemini-3-pro") {
+        for (suffix, _budget, level) in tiers {
+            if model_name.ends_with(suffix) {
+                // Keep full name like gemini-3-pro-low
+                return (model_name.to_string(), None, Some(level.to_string()));
+            }
+        }
+        // No tier? Default to -low
+        return (format!("{}-low", model_name), None, Some("low".to_string()));
+    }
+
+    // Gemini 3 Flash: Strip tier, use thinkingLevel
+    if lower.starts_with("gemini-3-flash") {
+        for (suffix, _, level) in tiers {
+            if model_name.ends_with(suffix) {
+                let base = model_name.strip_suffix(suffix).unwrap();
+                return (base.to_string(), None, Some(level.to_string()));
+            }
+        }
+        // No tier, use default low
+        return (model_name.to_string(), None, Some("low".to_string()));
+    }
+
+    // Claude thinking models: Strip tier, use thinking_budget
+    if lower.contains("claude") && lower.contains("thinking") {
+        for (suffix, budget, _) in tiers {
+            if model_name.ends_with(suffix) {
+                let base = model_name.strip_suffix(suffix).unwrap();
+                return (base.to_string(), Some(budget), None);
+            }
+        }
+        // No tier, default to high budget for Claude
+        return (model_name.to_string(), Some(32768), None);
+    }
+
+    // Non-thinking model
+    (model_name.to_string(), None, None)
+}
+
+/// Get a Google/Antigravity model, refreshing tokens if needed.
 pub async fn get_google_model(
     db: &Database,
     model_name: &str,
-) -> Result<GoogleModel, GoogleAuthError> {
+) -> Result<AntigravityModel, GoogleAuthError> {
     let auth = GoogleAuth::new(db);
     let access_token = auth.refresh_if_needed().await?;
 
@@ -285,56 +433,34 @@ pub async fn get_google_model(
         .account_id
         .ok_or_else(|| GoogleAuthError::Onboarding("No Project ID found in storage".to_string()))?;
 
-    // Strip prefix if present
-    let actual_model_name = model_name.strip_prefix("google-").unwrap_or(model_name);
+    // Strip google- prefix if present
+    let model_without_prefix = model_name.strip_prefix("google-").unwrap_or(model_name);
 
-    // Use Vertex constructor since we have a project ID
-    // Location is typically us-central1 for Antigravity, but could be configurable
-    // For now hardcode or use a default
-    let location = "us-central1";
+    // Transform model name (get API model name, thinking budget, thinking level)
+    let (api_model_name, thinking_budget, thinking_level) =
+        transform_model_name(model_without_prefix);
 
-    // Note: The `GoogleModel::vertex` constructor takes (model_name, project_id, location)
-    // However, we also need to pass the OAuth token.
-    // The `GoogleModel` struct in serdes-ai-models might not have a method to set the token directly if it expects ADC or similar?
-    // Let's check the GoogleModel source again.
-    // It has `api_key` but doesn't seem to have an explicit `oauth_token` field in `new` or `vertex`.
-    // Wait, the `GoogleModel` source I read earlier had:
-    // pub struct GoogleModel { ... api_key: Option<String>, ... }
-    // It didn't explicitly show a Bearer token field.
-    // However, looking at `request` method:
-    // `format!("... key={}", self.api_key ...)` for non-Vertex.
-    // For Vertex: `format!("{}/v1/projects/{}/...`
-    // It says "For Vertex AI, would need OAuth token".
-    // "For now, API key is in URL for Google AI".
+    debug!(
+        original = %model_name,
+        api_model = %api_model_name,
+        thinking_budget = ?thinking_budget,
+        thinking_level = ?thinking_level,
+        "Transformed model name for Antigravity API"
+    );
 
-    // If the `GoogleModel` in `serdes-ai-models` doesn't support passing an OAuth token, I might need to
-    // subclass it or use a custom client setup.
-    // BUT, since `GoogleModel` has `with_client`, I can configure the reqwest client to include the Authorization header!
-    // Or I can use the `api_key` field as the token if the implementation allows (unlikely).
+    // Use Antigravity model which supports Google's Cloud Code API
+    let model = AntigravityModel::new(&api_model_name, access_token, project_id);
 
-    // Let's assume I can use `with_client` or similar, OR I might need to check if `serdes-ai-models` has been updated to support OAuth tokens.
-    // The source I read was:
-    // `// For Vertex AI, would need OAuth token`
-    // `// For now, API key is in URL for Google AI`
-
-    // This implies `serdes-ai-models` might NOT support OAuth token injection out of the box for Vertex yet?
-    // Wait, `stockpot` depends on `serdes-ai-models`.
-    // If `serdes-ai-models` doesn't support it, I might be blocked or need to patch it.
-
-    // However, `GoogleModel` has `with_client(mut self, client: Client)`.
-    // I can create a `Client` that includes the default headers!
-
-    let mut headers = reqwest::header::HeaderMap::new();
-    let mut auth_val = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", access_token))
-        .map_err(|e| GoogleAuthError::Onboarding(e.to_string()))?;
-    auth_val.set_sensitive(true);
-    headers.insert(reqwest::header::AUTHORIZATION, auth_val);
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()?;
-
-    let model = GoogleModel::vertex(actual_model_name, project_id, location).with_client(client); // Inject authenticated client
+    // Enable thinking with appropriate config
+    let model = if let Some(budget) = thinking_budget {
+        // Claude uses thinking_budget
+        model.with_thinking(Some(budget))
+    } else if let Some(level) = thinking_level {
+        // Gemini 3 uses thinkingLevel
+        model.with_thinking_level(level)
+    } else {
+        model
+    };
 
     Ok(model)
 }

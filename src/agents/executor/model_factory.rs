@@ -135,6 +135,13 @@ pub async fn get_model(
                     .map_err(|e| ExecutorError::Auth(e.to_string()))?;
                 return Ok(Arc::new(model));
             }
+            ModelType::GoogleVertex => {
+                debug!("Detected Google Vertex (Antigravity) OAuth model from config");
+                let model = auth::get_google_model(db, model_name)
+                    .await
+                    .map_err(|e| ExecutorError::Auth(e.to_string()))?;
+                return Ok(Arc::new(model));
+            }
             // For other types, fall through to standard handling
             _ => {}
         }
@@ -160,6 +167,16 @@ pub async fn get_model(
                 ExecutorError::Auth(e.to_string())
             })?;
         info!(model_id = %model.identifier(), "Claude Code OAuth model ready");
+        return Ok(Arc::new(model));
+    }
+
+    if model_name.starts_with("google-") {
+        debug!("Detected Google Vertex (Antigravity) OAuth model by prefix");
+        let model = auth::get_google_model(db, model_name).await.map_err(|e| {
+            error!(error = %e, "Failed to get Google model");
+            ExecutorError::Auth(e.to_string())
+        })?;
+        info!(model_id = %model.identifier(), "Google Vertex OAuth model ready");
         return Ok(Arc::new(model));
     }
 

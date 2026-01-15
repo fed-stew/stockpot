@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.19.3"
+version = "0.20.0"
 edition = "2021"
 description = "AI-powered coding assistant with native GUI"
 license = "MIT"
@@ -18,7 +18,7 @@ path = "src/main.rs"
 serdes-ai = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full"] }
 serdes-ai-core = { git = "https://github.com/janfeddersen-wq/serdesAI" }
 serdes-ai-agent = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["tracing-integration"] }
-serdes-ai-models = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full", "chatgpt-oauth", "claude-code-oauth"] }
+serdes-ai-models = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
 serdes-ai-providers = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full"] }
 serdes-ai-tools = { git = "https://github.com/janfeddersen-wq/serdesAI" }
 serdes-ai-mcp = { git = "https://github.com/janfeddersen-wq/serdesAI" }

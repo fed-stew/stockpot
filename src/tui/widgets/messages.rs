@@ -218,8 +218,7 @@ impl StatefulWidget for MessageList<'_> {
                                 && virtual_y + height > state.offset
                                 && virtual_y >= state.offset
                             {
-                                let render_y =
-                                    (area.y as usize + virtual_y - state.offset) as u16;
+                                let render_y = (area.y as usize + virtual_y - state.offset) as u16;
                                 // Register toggle click target
                                 if let Some(registry) = &mut self.registry {
                                     registry.register(
@@ -241,8 +240,7 @@ impl StatefulWidget for MessageList<'_> {
                                 && virtual_y + height > state.offset
                                 && virtual_y >= state.offset
                             {
-                                let render_y =
-                                    (area.y as usize + virtual_y - state.offset) as u16;
+                                let render_y = (area.y as usize + virtual_y - state.offset) as u16;
                                 // Register toggle click target
                                 if let Some(registry) = &mut self.registry {
                                     registry.register(

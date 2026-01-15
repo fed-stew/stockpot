@@ -23,6 +23,7 @@ pub fn parse_model_type(s: &str) -> ModelType {
         "custom_anthropic" => ModelType::CustomAnthropic,
         "claude_code" => ModelType::ClaudeCode,
         "chatgpt_oauth" => ModelType::ChatgptOauth,
+        "google_vertex" => ModelType::GoogleVertex,
         "azure_openai" => ModelType::AzureOpenai,
         "openrouter" => ModelType::Openrouter,
         "round_robin" => ModelType::RoundRobin,
