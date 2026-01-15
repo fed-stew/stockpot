@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.20.3"
+version = "0.20.4"
 edition = "2021"
 description = "AI-powered coding assistant with native GUI"
 license = "MIT"
@@ -128,6 +128,15 @@ strip = "symbols"
 # See: https://github.com/bilelmoussaoui/ashpd/issues/323
 # Using zvariant-5.8.0 tag (before the breaking change)
 [patch.crates-io]
+# Pin core-text to 21.0.0 to use core-graphics 0.24 (21.1.0 uses 0.25 which conflicts with zed-font-kit)
+core-text = { git = "https://github.com/servo/core-foundation-rs", tag = "core-text-v21.0.0" }
+core-graphics = { git = "https://github.com/servo/core-foundation-rs", tag = "core-text-v21.0.0" }
+core-foundation = { git = "https://github.com/servo/core-foundation-rs", tag = "core-text-v21.0.0" }
+core-foundation-sys = { git = "https://github.com/servo/core-foundation-rs", tag = "core-text-v21.0.0" }
+
+# Pin zbus to avoid ashpd 0.12.0 compilation failure (zvariant_derive 5.9.0 breaking change)
+# See: https://github.com/bilelmoussaoui/ashpd/issues/323
+# Using zvariant-5.8.0 tag (before the breaking change)
 zbus = { git = "https://github.com/dbus2/zbus", tag = "zvariant-5.8.0" }
 zvariant = { git = "https://github.com/dbus2/zbus", tag = "zvariant-5.8.0" }
 zvariant_derive = { git = "https://github.com/dbus2/zbus", tag = "zvariant-5.8.0" }
