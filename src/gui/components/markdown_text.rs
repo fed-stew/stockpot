@@ -69,6 +69,9 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
 
     
     let mut in_block_quote = false;
+    let mut in_list_item = false;
+    let mut list_depth: usize = 0;
+    let mut ordered_list_counters: Vec<usize> = Vec::new();
 
     // Enable GFM features
     let mut options = Options::empty();
@@ -159,7 +162,10 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
             Event::Start(tag) => {
                 match tag {
                     Tag::Paragraph => {
-                        if !text.is_empty() && !text.ends_with("\n\n") {
+                        // Don't add newline if we just added a list bullet
+                        if in_list_item {
+                            // Skip - bullet already positioned
+                        } else if !text.is_empty() && !text.ends_with("\n\n") {
                              if !text.ends_with('\n') {
                                 text.push('\n');
                                 runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
@@ -185,19 +191,44 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                             CodeBlockKind::Indented => None,
                         };
                     }
-                    Tag::List(_) => {
+                    Tag::List(start) => {
                         if !text.is_empty() && !text.ends_with('\n') {
                              text.push('\n');
                              runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                        }
+                        list_depth += 1;
+                        if let Some(start_num) = start {
+                            ordered_list_counters.push(start_num as usize);
+                        } else {
+                            ordered_list_counters.push(0); // 0 means unordered
                         }
                     }
                     Tag::Item => {
                          if !text.is_empty() && !text.ends_with('\n') {
                             text.push('\n');
-                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                            runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
                          }
-                         text.push_str("• ");
-                         runs.push(TextRun { len: "• ".len(), font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         // Add indentation for nested lists
+                         let indent = "  ".repeat(list_depth.saturating_sub(1));
+                         if !indent.is_empty() {
+                             text.push_str(&indent);
+                             runs.push(TextRun { len: indent.len(), font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         }
+                         // Add bullet or number
+                         let marker = if let Some(counter) = ordered_list_counters.last_mut() {
+                             if *counter > 0 {
+                                 let num = *counter;
+                                 *counter += 1;
+                                 format!("{}. ", num)
+                             } else {
+                                 "• ".to_string()
+                             }
+                         } else {
+                             "• ".to_string()
+                         };
+                         text.push_str(&marker);
+                         runs.push(TextRun { len: marker.len(), font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         in_list_item = true;
                     }
                     Tag::Emphasis => italic = true,
                     Tag::Strong => bold = true,
@@ -226,10 +257,15 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                          runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
                     }
                     TagEnd::List(_) => {
+                         list_depth = list_depth.saturating_sub(1);
+                         ordered_list_counters.pop();
                          if !text.ends_with('\n') {
                              text.push('\n');
                              runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
                          }
+                    }
+                    TagEnd::Item => {
+                        in_list_item = false;
                     }
                     TagEnd::Link => {
                         link_dest = None;
