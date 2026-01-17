@@ -28,6 +28,8 @@ streamdown-parser = { git = "https://github.com/fed-stew/streamdown-rs" }
 streamdown-render = { git = "https://github.com/fed-stew/streamdown-rs" }
 streamdown-config = { git = "https://github.com/fed-stew/streamdown-rs" }
 
+pulldown-cmark = "0.10"
+
 # Core
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
 nu-ansi-term = "0.50"
@@ -67,6 +69,7 @@ semver = "1.0"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 ignore = "0.4"
+unicode-width = "0.2.0"
 
 # HTTP (for OAuth)
 reqwest = { version = "0.12", features = ["json", "stream"] }

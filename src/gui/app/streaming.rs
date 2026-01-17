@@ -36,7 +36,6 @@
 //! idle because the constant `cx.notify()` calls interfered with GPUI's vsync.
 
 use gpui::{AppContext, AsyncApp, Context, WeakEntity};
-use gpui_component::text::TextViewState;
 
 use crate::gui::state::MessageSection;
 use crate::messaging::{AgentEvent, Message, ToolStatus};
@@ -51,19 +50,44 @@ impl ChatApp {
         delta: Option<&str>,
         cx: &mut Context<Self>,
     ) {
-        if let Some(state) = self.text_view_cache.borrow().get(&element_id).cloned() {
-            state.update(cx, |text, cx| {
-                if let Some(delta) = delta {
-                    text.push_str(delta, cx);
-                } else {
-                    text.set_text(full_text, cx);
+        if let Some(entity) = self.text_view_cache.borrow().get(&element_id).cloned() {
+            entity.update(cx, |view, cx| {
+                // If full_text is empty and we have a delta, it's a buffered update
+                if full_text.is_empty() {
+                    if let Some(d) = delta {
+                        view.append_delta(d, cx);
+                        return;
+                    }
                 }
+                // Otherwise, standard full update
+                view.update_content(full_text, cx);
             });
             return;
         }
 
-        let state = cx.new(|cx| TextViewState::markdown(full_text, cx));
-        self.text_view_cache.borrow_mut().insert(element_id, state);
+        let theme = self.theme.clone();
+        let full_text = full_text.to_string();
+        let entity = cx.new(|cx| {
+            let mut view = crate::gui::components::StreamingMarkdownView::new(theme);
+            view.update_content(&full_text, cx);
+            view
+        });
+        self.text_view_cache.borrow_mut().insert(element_id, entity);
+    }
+
+    fn flush_cache_updates(&mut self, cx: &mut Context<Self>) {
+        // Throttle updates to ~30fps (33ms) to prevent markdown re-parsing from blocking the main thread
+        // This keeps scrolling smooth (120fps) while text updates slightly less frequently
+        if self.pending_cache_updates.is_empty() || self.last_text_flush.elapsed() < std::time::Duration::from_millis(33) {
+            return;
+        }
+
+        let updates: Vec<_> = self.pending_cache_updates.drain().collect();
+        for (element_id, delta) in updates {
+            // We pass "" as full_text because we know the view exists (checked in handle_message)
+            self.update_text_view_cache(element_id, "", Some(&delta), cx);
+        }
+        self.last_text_flush = std::time::Instant::now();
     }
 
     /// Start the unified UI event loop.
@@ -95,12 +119,12 @@ impl ChatApp {
                         _ = animation_interval.tick() => {
                             let result = this.update(cx, |app, cx| {
                                 app.tick_throughput();
-                                let scroll_moved = app.tick_scroll_animation();
-                                // Only trigger re-render if scroll position changed
-                                // This prevents render thrashing when sitting at bottom
-                                if scroll_moved {
-                                    cx.notify();
-                                }
+                                let _ = app.tick_scroll_animation();
+                                // Flush buffered text updates
+                                app.flush_cache_updates(cx);
+                                // Always notify during streaming to ensure smooth text updates
+                                // and throughput animation, even if scroll didn't move.
+                                cx.notify();
                             });
                             if result.is_err() {
                                 break; // Entity dropped
@@ -174,8 +198,39 @@ impl ChatApp {
                 // Track throughput
                 self.update_throughput(delta.text.len());
 
-                // Only update text view cache for main content, not nested sections
-                if !routed_to_nested {
+                // Prepare cache update data (to avoid double borrowing self)
+                let cache_update = if routed_to_nested {
+                    // Handle nested agent cache update
+                    if let Some(agent_name) = &delta.agent_name {
+                        if let Some(section_id) = self.active_section_ids.get(agent_name) {
+                            if let Some(msg) = self.conversation.messages.last() {
+                                if let Some(section) = msg.get_nested_section(section_id) {
+                                    // Find the last text item (where we just appended)
+                                    section
+                                        .items
+                                        .iter()
+                                        .enumerate()
+                                        .rev()
+                                        .find_map(|(idx, item)| match item {
+                                            crate::gui::state::AgentContentItem::Text(t) => {
+                                                Some((format!("agent-{}-text-{}", section.id, idx), t.clone()))
+                                            }
+                                            _ => None,
+                                        })
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    // Handle main content cache update
                     if let Some(msg) = self.conversation.messages.last() {
                         let (element_id, full_text) = if let Some((idx, text)) = msg
                             .sections
@@ -190,11 +245,30 @@ impl ChatApp {
                         } else {
                             (format!("msg-{}-content", msg.id), msg.content.clone())
                         };
-                        let delta_text = delta.text.clone();
+                        Some((element_id, full_text))
+                    } else {
+                        None
+                    }
+                };
+
+                // Apply update if we found a target
+                if let Some((element_id, full_text)) = cache_update {
+                    let delta_text = delta.text.clone();
+                    // Check if view exists to determine if we can buffer
+                    let view_exists = self.text_view_cache.borrow().contains_key(&element_id);
+                    
+                    if view_exists {
+                        // Buffer the update to be flushed in animation tick
+                        self.pending_cache_updates
+                            .entry(element_id)
+                            .and_modify(|s| s.push_str(&delta_text))
+                            .or_insert(delta_text);
+                    } else {
+                        // Create view immediately for first chunk
                         self.update_text_view_cache(
                             element_id,
                             &full_text,
-                            Some(delta_text.as_str()),
+                            Some(&delta_text),
                             cx,
                         );
                     }
@@ -226,6 +300,47 @@ impl ChatApp {
                 } else {
                     // No agent attribution - append to main conversation
                     self.conversation.append_thinking(&thinking.text);
+
+                    // Prepare cache update (to avoid double borrowing self)
+                    let cache_update = if let Some(msg) = self.conversation.messages.last() {
+                        if let Some(section_id) = msg.active_thinking_section_id() {
+                            if let Some(section) = msg.get_thinking_section(section_id) {
+                                Some((
+                                    format!("thinking-{}-content", section.id),
+                                    section.content.clone(),
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Apply update
+                    if let Some((element_id, full_text)) = cache_update {
+                        let delta_text = thinking.text.clone();
+                        // Check if view exists to determine if we can buffer
+                        let view_exists = self.text_view_cache.borrow().contains_key(&element_id);
+
+                        if view_exists {
+                            // Buffer the update
+                            self.pending_cache_updates
+                                .entry(element_id)
+                                .and_modify(|s| s.push_str(&delta_text))
+                                .or_insert(delta_text);
+                        } else {
+                            // Create view immediately
+                            self.update_text_view_cache(
+                                element_id,
+                                &full_text,
+                                Some(delta_text.as_str()),
+                                cx,
+                            );
+                        }
+                    }
                 }
             }
             Message::Tool(tool) => {

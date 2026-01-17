@@ -1,8 +1,8 @@
 use gpui::{
-    div, list, prelude::*, px, AnyElement, App, Context, ElementId, Entity, IntoElement,
-    MouseButton, SharedString, StatefulInteractiveElement, Styled,
+    div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, MouseButton,
+    SharedString, StatefulInteractiveElement, Styled,
 };
-use gpui_component::text::TextView;
+use crate::gui::components::StreamingMarkdownView;
 
 use super::ChatApp;
 use crate::gui::components::{collapsible_display, list_scrollbar, CollapsibleProps};
@@ -11,18 +11,28 @@ use crate::gui::state::{
 };
 
 impl ChatApp {
-    fn markdown_text_view(&self, element_id: &SharedString, content: &str) -> TextView {
-        // Clone the Entity to release the RefCell borrow immediately
-        // This prevents "RefCell already borrowed" errors when dialogs block the UI
-        if let Some(state) = self
-            .text_view_cache
-            .borrow()
-            .get(element_id.as_ref())
-            .cloned()
-        {
-            TextView::new(&state)
+    fn markdown_text_view(
+        &self,
+        element_id: &SharedString,
+        content: &str,
+        cx: &mut App,
+    ) -> Entity<StreamingMarkdownView> {
+        // Check cache first
+        let mut cache = self.text_view_cache.borrow_mut();
+        if let Some(entity) = cache.get(element_id.as_ref()).cloned() {
+            entity.update(cx, |view, cx| view.update_content(content, cx));
+            entity
         } else {
-            TextView::markdown(ElementId::Name(element_id.clone()), content.to_string())
+            // Create new StreamingMarkdownView entity and cache it
+            let theme = self.theme.clone();
+            let content = content.to_string();
+            let entity = cx.new(|cx| {
+                let mut view = StreamingMarkdownView::new(theme);
+                view.update_content(&content, cx);
+                view
+            });
+            cache.insert(element_id.to_string(), entity.clone());
+            entity
         }
     }
 
@@ -45,39 +55,39 @@ impl ChatApp {
                     .w_full()
                     .min_w_0()
                     .min_h(px(0.))
-                    .p(px(16.))
+                    .p(px(12.))
                     .when(!has_messages, |d| {
                         d.flex().items_center().justify_center().child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .items_center()
-                                .gap(px(12.))
-                                .child(div().text_size(px(56.)).child("🍲"))
+                                .gap(px(8.))
+                                .child(div().text_size(px(48.)).child("🍲"))
                                 .child(
                                     div()
-                                        .text_size(px(20.))
+                                        .text_size(px(18.))
                                         .font_weight(gpui::FontWeight::MEDIUM)
                                         .text_color(theme.text)
                                         .child("Welcome to Stockpot"),
                                 )
                                 .child(
                                     div()
-                                        .text_size(px(14.))
+                                        .text_size(px(12.))
                                         .text_color(theme.text_muted)
                                         .child("Your AI-powered coding assistant"),
                                 )
                                 .child(
                                     div()
-                                        .mt(px(16.))
-                                        .text_size(px(13.))
+                                        .mt(px(10.))
+                                        .text_size(px(11.))
                                         .text_color(theme.text_muted)
                                         .child("Type a message below to get started"),
                                 )
                                 .child(
                                     div()
-                                        .mt(px(8.))
-                                        .text_size(px(12.))
+                                        .mt(px(4.))
+                                        .text_size(px(11.))
                                         .text_color(theme.text_muted)
                                         .child("📁 Drag and drop files here to share them"),
                                 ),
@@ -125,20 +135,20 @@ impl ChatApp {
                                         .flex()
                                         .flex_col()
                                         .w_full()
-                                        .pb(px(16.)) // Gap between messages
+                                        .pb(px(10.)) // Gap between messages
                                         .when(is_user, |d| d.items_end())
                                         .when(!is_user, |d| d.items_start())
                                         .child(
                                             div()
-                                                .text_size(px(11.))
+                                                .text_size(px(10.))
                                                 .text_color(theme.text_muted)
-                                                .mb(px(4.))
+                                                .mb(px(2.))
                                                 .child(if is_user { "You" } else { "Assistant" }),
                                         )
                                         .child(
                                             div()
-                                                .p(px(12.))
-                                                .rounded(px(8.))
+                                                .p(px(10.))
+                                                .rounded(px(6.))
                                                 .bg(bubble_bg)
                                                 .text_color(theme.text)
                                                 .overflow_hidden()
@@ -196,14 +206,15 @@ impl ChatApp {
             // Always use stable UUID-based ID to prevent re-renders
             let element_id = SharedString::from(format!("msg-{}-content", msg_id));
             let owned_content = content.to_string();
-            let text_view = self.markdown_text_view(&element_id, &owned_content);
+            let text_view = self.markdown_text_view(&element_id, &owned_content, cx);
             vec![div()
                 .id(element_id.clone())
                 .w_full()
                 .min_w_0()
                 .max_w_full()
                 .overflow_x_hidden()
-                .child(text_view.selectable(true))
+                .text_size(px(12.5))
+                .child(text_view)
                 .into_any_element()]
         }
     }
@@ -223,14 +234,15 @@ impl ChatApp {
                 // Text sections render as markdown
                 // Always use stable UUID-based ID to prevent re-renders
                 let element_id = SharedString::from(format!("msg-{}-sec-{}", msg_id, sec_idx));
-                let text_view = self.markdown_text_view(&element_id, text);
+                let text_view = self.markdown_text_view(&element_id, text, cx);
                 div()
                     .id(element_id.clone())
                     .w_full()
                     .min_w_0()
                     .max_w_full()
                     .overflow_x_hidden()
-                    .child(text_view.selectable(true))
+                    .text_size(px(12.5))
+                    .child(text_view)
                     .into_any_element()
             }
             MessageSection::NestedAgent(agent_section) => {
@@ -257,7 +269,7 @@ impl ChatApp {
         _msg_id: &str,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
-        _cx: &mut App,
+        cx: &mut App,
     ) -> AnyElement {
         let is_collapsed = thinking.is_collapsed;
         let stable_id = &thinking.id;
@@ -287,14 +299,15 @@ impl ChatApp {
         } else {
             // Full markdown content when expanded
             let element_id = SharedString::from(format!("thinking-{}-content", stable_id));
-            let text_view = self.markdown_text_view(&element_id, &thinking.content);
+            let text_view = self.markdown_text_view(&element_id, &thinking.content, cx);
             div()
                 .id(element_id.clone())
                 .w_full()
                 .min_w_0()
                 .max_w_full()
                 .overflow_x_hidden()
-                .child(text_view.selectable(true))
+                .text_size(px(12.5))
+                .child(text_view)
                 .into_any_element()
         };
 
@@ -311,7 +324,7 @@ impl ChatApp {
                 stable_id
             )))
             .w_full()
-            .my(px(8.)) // Vertical margin for visual separation
+            .my(px(4.)) // Vertical margin for visual separation
             .cursor_pointer()
             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                 view.update(cx, |app, cx: &mut Context<ChatApp>| {
@@ -346,10 +359,10 @@ impl ChatApp {
             .id(element_id)
             .flex()
             .items_center()
-            .gap(px(6.))
-            .py(px(3.))
-            .my(px(2.))
-            .text_size(px(13.))
+            .gap(px(5.))
+            .py(px(2.))
+            .my(px(1.))
+            .text_size(px(12.))
             // Muted bullet
             .child(div().text_color(theme.tool_bullet).child("•"))
             // Semi-bold colored verb (matches markdown bold styling)
@@ -381,7 +394,7 @@ impl ChatApp {
         agent_section: &crate::gui::state::AgentSection,
         theme: &crate::gui::theme::Theme,
         view: &Entity<ChatApp>,
-        _cx: &mut App,
+        cx: &mut App,
     ) -> AnyElement {
         let is_collapsed = agent_section.is_collapsed;
 
@@ -411,14 +424,15 @@ impl ChatApp {
                     AgentContentItem::Text(text) => {
                         let element_id =
                             SharedString::from(format!("agent-{}-text-{}", stable_id, idx));
-                        let text_view = self.markdown_text_view(&element_id, text);
+                        let text_view = self.markdown_text_view(&element_id, text, cx);
                         div()
                             .id(element_id.clone())
                             .w_full()
                             .min_w_0()
                             .max_w_full()
                             .overflow_x_hidden()
-                            .child(text_view.selectable(true))
+                            .text_size(px(12.5))
+                            .child(text_view)
                             .into_any_element()
                     }
                     AgentContentItem::ToolCall {
@@ -441,10 +455,10 @@ impl ChatApp {
                             .id(element_id)
                             .flex()
                             .items_center()
-                            .gap(px(6.))
-                            .py(px(3.))
-                            .my(px(2.))
-                            .text_size(px(13.))
+                            .gap(px(5.))
+                            .py(px(2.))
+                            .my(px(1.))
+                            .text_size(px(12.))
                             // Muted bullet
                             .child(div().text_color(theme.tool_bullet).child("•"))
                             // Semi-bold colored verb
@@ -489,10 +503,10 @@ impl ChatApp {
                             .id(element_id)
                             .flex()
                             .items_center()
-                            .gap(px(6.))
-                            .py(px(3.))
-                            .my(px(2.))
-                            .text_size(px(13.))
+                            .gap(px(5.))
+                            .py(px(2.))
+                            .my(px(1.))
+                            .text_size(px(12.))
                             // Muted bullet
                             .child(div().text_color(theme.tool_bullet).child("•"))
                             // Semi-bold colored "Thinking"
@@ -534,7 +548,7 @@ impl ChatApp {
         div()
             .id(SharedString::from(format!("agent-{}-container", stable_id)))
             .w_full()
-            .my(px(8.)) // Vertical margin for visual separation
+            .my(px(4.)) // Vertical margin for visual separation
             .cursor_pointer()
             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                 view.update(cx, |app, cx: &mut Context<ChatApp>| {

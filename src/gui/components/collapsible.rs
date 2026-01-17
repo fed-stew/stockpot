@@ -166,8 +166,8 @@ where
                         div()
                             .flex_1()
                             .min_w_0()
-                            .pl(px(12.))
-                            .py(px(8.))
+                            .pl(px(10.))
+                            .py(px(4.))
                             .child(content),
                     ),
             )
@@ -237,8 +237,8 @@ where
                         div()
                             .flex_1()
                             .min_w_0()
-                            .pl(px(12.))
-                            .py(px(8.))
+                            .pl(px(10.))
+                            .py(px(4.))
                             .child(content),
                     ),
             )
@@ -266,8 +266,8 @@ where
         .id(SharedString::from(format!("{}-header", id)))
         .flex()
         .items_center()
-        .gap(px(8.))
-        .py(px(6.))
+        .gap(px(6.))
+        .py(px(4.))
         .cursor_pointer()
         .hover(|s| s.opacity(0.7))
         // Only add click handler if on_toggle is provided
@@ -279,7 +279,7 @@ where
         // Chevron indicator (muted)
         .child(
             div()
-                .text_size(px(10.))
+                .text_size(px(9.))
                 .text_color(muted_color)
                 .child(chevron),
         )
@@ -287,7 +287,7 @@ where
         .child(
             div()
                 .flex_1()
-                .text_size(px(13.))
+                .text_size(px(12.))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(text_color)
                 .child(title),
@@ -296,7 +296,7 @@ where
         .when(is_loading, |header| {
             header.child(
                 div()
-                    .text_size(px(12.))
+                    .text_size(px(11.))
                     .text_color(muted_color)
                     .child(current_spinner_frame()),
             )

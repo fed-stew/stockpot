@@ -1,0 +1,84 @@
+warning: stockpot@0.20.4: Using cached models catalog (< 24h old)
+warning: stockpot@0.20.4: Models catalog written to /Users/janfeddersen/sources/stockpot/target/debug/build/stockpot-524e39e0ed640446/out/models_catalog.json
+warning: stockpot@0.20.4: Using cached models catalog (< 24h old)
+warning: stockpot@0.20.4: Models catalog written to /Users/janfeddersen/sources/stockpot/target/debug/build/stockpot-524e39e0ed640446/out/models_catalog.json
+   Compiling stockpot v0.20.4 (/Users/janfeddersen/sources/stockpot)
+   Compiling stockpot v0.20.4 (/Users/janfeddersen/sources/stockpot)
+error[E0308]: mismatched types
+   --> src/gui/components/markdown_text.rs:279:21
+    |
+251 |                 match tag {
+    |                       --- this expression has type `TagEnd`
+...
+279 error[E0308]: mismatched types
+   --> src/gui/components/markdown_text.rs:279:21
+    |
+251 |                 match tag {
+    |                       --- this expression has type `TagEnd`
+...
+279 |                     Tag::TableHead => {
+    |                     ^^^^^^^^^^^^^^ expected `TagEnd`, found `Tag<'_>`
+
+|                     Tag::TableHead => {
+    |                     ^^^^^^^^^^^^^^ expected `TagEnd`, found `Tag<'_>`
+
+error[E0061]: this function takes 1 argument but 4 arguments were supplied
+   --> src/gui/components/markdown_text.rs:483:5
+    |
+483 |     gpui::rgba(
+    |     ^^^^^^^^^^
+484 |         color.r as f32 / 255.0,
+    |         ---------------------- error[E0061]: this function takes 1 argument but 4 arguments were supplied
+   --> src/gui/components/markdown_text.rs:483:5
+    |
+483 |     gpui::rgba(
+    |     ^^^^^^^^^^
+484 |         color.r as f32 / 255.0,
+    |         ---------------------- expected `u32`, found `f32`
+485 |         color.g as f32 / 255.0,
+    |         ---------------------- unexpected argument #2 of type `f32`
+486 |         color.b as f32 / 255.0,
+    |         ---------------------- unexpected argument #3 of type `f32`
+expected `u32`, found `f32`
+485 |         color.g as f32 / 255.0,
+    |         ---------------------- unexpected argument #2 of type `f32`
+486 |         color.b as f32 / 255.0,
+    |         ---------------------- unexpected argument #3 of type `f32`
+487 |         color.a as f32 / 255.0,
+    |         ---------------------- unexpected argument #4 of type `f32`
+    |
+487 |         color.a as f32 / 255.0,
+    |         ---------------------- unexpected argument #4 of type `f32`
+    |
+note: function defined here
+   --> /Users/janfeddersen/.cargo/git/checkouts/zed-a70e2ad075855582/cff3ac6/crates/gpui/src/color.rs:20:8
+    |
+ 20 | pub fn rgba(hex: u32) -> Rgba {
+    |note: function defined here
+   --> /Users/janfeddersen/.cargo/git/checkouts/zed-a70e2ad075855582/cff3ac6/crates/gpui/src/color.rs:20:8
+    |
+ 20 | pub fn rgba(hex: u32) -> Rgba {
+    |        ^^^^
+help: remove the extra arguments
+    |
+484 -         color.r as f32 / 255.0,
+484 +                 ^^^^
+help: remove the extra arguments
+    |
+484 -         color.r as f32 / 255.0,
+484 +         /* u32 */,
+    |
+
+/* u32 */,
+    |
+
+Some errors have detailed explanations: E0061, E0308.
+Some errors have detailed explanations: E0061, E0308.
+For more information about an error, try `rustc --explain E0061`.
+For more information about an error, try `rustc --explain E0061`.
+warning: stockpot@0.20.4: Using cached models catalog (< 24h old)
+warning: stockpot@0.20.4: Models catalog written to /Users/janfeddersen/sources/stockpot/target/debug/build/stockpot-524e39e0ed640446/out/models_catalog.json
+warning: stockpot@0.20.4: Using cached models catalog (< 24h old)
+warning: stockpot@0.20.4: Models catalog written to /Users/janfeddersen/sources/stockpot/target/debug/build/stockpot-524e39e0ed640446/out/models_catalog.json
+error: could not compile `stockpot` (lib) due to 2 previous errors
+error: could not compile `stockpot` (lib) due to 2 previous errors

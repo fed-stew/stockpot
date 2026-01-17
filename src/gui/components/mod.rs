@@ -9,6 +9,7 @@ mod message;
 mod scrollbar;
 mod selectable_text;
 mod spinner;
+mod streaming_markdown_view;
 mod terminal_view;
 // Note: text_input.rs is no longer used - now using gpui_component::input::Input
 // mod text_input;
@@ -19,6 +20,7 @@ mod tooltip;
 pub use chat_view::ChatView;
 pub use input_field::InputField;
 pub use message::MessageView;
+pub use streaming_markdown_view::StreamingMarkdownView;
 pub use scrollbar::{
     list_scrollbar, scroll_ratio, scrollbar, ListScrollbarDragState, ScrollbarDragState,
 };

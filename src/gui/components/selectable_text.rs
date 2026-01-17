@@ -61,6 +61,17 @@ impl SelectableText {
         cx.notify();
     }
 
+    pub fn append(&mut self, delta: &str, cx: &mut Context<Self>) {
+        let mut new_content = self.content.to_string();
+        new_content.push_str(delta);
+        self.content = new_content.into();
+        // We don't necessarily need to clear selection on append, but safe for now.
+        // self.selected_range = 0..0; 
+        self.cached_rendered = None;
+        self.cached_content = SharedString::from("");
+        cx.notify();
+    }
+
     fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
         let rendered = markdown_text::render_markdown(
             self.content.as_ref(),

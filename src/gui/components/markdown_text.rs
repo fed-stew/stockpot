@@ -1,17 +1,24 @@
 use std::ops::Range;
+use std::sync::OnceLock;
 
-use gpui::{font, hsla, FontWeight, Hsla, SharedString, TextRun, TextStyle};
+use gpui::{font, hsla, FontWeight, Hsla, SharedString, StrikethroughStyle, TextRun, TextStyle, UnderlineStyle};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use syntect::highlighting::{ThemeSet, Color};
+use syntect::parsing::SyntaxSet;
+use syntect::easy::HighlightLines;
+
 
 use crate::gui::theme::Theme;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MarkdownSegment {
-    Plain(String),
-    Bold(String),
-    Italic(String),
-    BoldItalic(String),
-    Code(String),
-    Header(u8, String),
+static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
+static THEME_SET: OnceLock<ThemeSet> = OnceLock::new();
+
+fn get_syntax_set() -> &'static SyntaxSet {
+    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
+}
+
+fn get_theme_set() -> &'static ThemeSet {
+    THEME_SET.get_or_init(ThemeSet::load_defaults)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -20,49 +27,304 @@ pub struct RenderedMarkdown {
     pub runs: Vec<TextRun>,
 }
 
-pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> RenderedMarkdown {
-    let segments = parse_markdown(source);
 
+
+pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> RenderedMarkdown {
     let mut text = String::new();
     let mut runs = Vec::new();
 
     let base_font = text_style.font();
     let base_color: Hsla = theme.text.into();
-    let header_color: Hsla = theme.text.into();
-
+    let accent_color: Hsla = theme.accent.into();
+    let _border_color: Hsla = theme.border.into();
+    let panel_bg: Hsla = theme.panel_background.into();
+    
     let code_font = font("monospace");
+    // Subtle background for code
     let code_bg = hsla(0.0, 0.0, 0.25, 0.35);
 
-    for segment in segments {
-        let (segment_text, font, color, background_color) = match segment {
-            MarkdownSegment::Plain(s) => (s, base_font.clone(), base_color, None),
-            MarkdownSegment::Bold(s) => (s, base_font.clone().bold(), base_color, None),
-            MarkdownSegment::Italic(s) => (s, base_font.clone().italic(), base_color, None),
-            MarkdownSegment::BoldItalic(s) => {
-                (s, base_font.clone().bold().italic(), base_color, None)
-            }
-            MarkdownSegment::Code(s) => (s, code_font.clone(), base_color, Some(code_bg)),
-            MarkdownSegment::Header(_level, s) => {
-                let mut header_font = base_font.clone();
-                header_font.weight = FontWeight::SEMIBOLD;
-                (s, header_font, header_color, None)
-            }
-        };
+    // Table colors
+    let _table_header_bg = panel_bg; // Distinct header background
+    let _table_row_even_bg = panel_bg; // Subtle zebra stripe (using panel bg)
+    
+    // Initialize Syntect
+    let syntax_set = get_syntax_set();
+    let theme_set = get_theme_set();
+    let highlighter_theme = theme_set.themes.get("base16-ocean.dark")
+        .or_else(|| theme_set.themes.get("base16-mocha.dark"))
+        .or_else(|| theme_set.themes.get("base16-eighties.dark"))
+        .unwrap_or_else(|| theme_set.themes.values().next().unwrap());
 
-        if segment_text.is_empty() {
+    // State tracking
+    let mut bold = false;
+    let mut italic = false;
+    let mut strikethrough = false;
+    let mut header_level: Option<HeadingLevel> = None;
+    let mut link_dest: Option<String> = None;
+    
+    let mut in_code_block = false;
+    let mut code_block_lang: Option<String> = None;
+    let mut code_buffer = String::new();
+    
+
+    
+    let mut in_block_quote = false;
+
+    // Enable GFM features
+    let mut options = Options::empty();
+
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+
+    let parser = Parser::new_ext(source, options);
+
+    for event in parser {
+        // Handle code block buffering content
+        if in_code_block {
+            match event {
+                Event::End(TagEnd::CodeBlock) => {
+                    in_code_block = false;
+                    
+                    let syntax = code_block_lang
+                        .as_ref()
+                        .and_then(|lang| syntax_set.find_syntax_by_token(lang))
+                        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
+                    
+                    let mut highlighter = HighlightLines::new(syntax, highlighter_theme);
+                    
+                    if !text.is_empty() && !text.ends_with('\n') {
+                        text.push('\n');
+                        runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                    }
+
+                    for line in code_buffer.lines() {
+                        let ranges: Vec<(syntect::highlighting::Style, &str)> = highlighter.highlight_line(line, syntax_set).unwrap_or_default();
+                        
+                        for (style, range_text) in ranges {
+                            let range_color = syntect_color_to_hsla(style.foreground);
+                            let len = range_text.len();
+                            text.push_str(range_text);
+                            
+                            let mut run_font = code_font.clone();
+                            if style.font_style.contains(syntect::highlighting::FontStyle::BOLD) {
+                                run_font = run_font.bold();
+                            }
+                            if style.font_style.contains(syntect::highlighting::FontStyle::ITALIC) {
+                                run_font = run_font.italic();
+                            }
+
+                            runs.push(TextRun {
+                                len,
+                                font: run_font,
+                                color: range_color,
+                                background_color: Some(code_bg),
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                        
+                        text.push('\n');
+                        runs.push(TextRun {
+                            len: 1,
+                            font: code_font.clone(),
+                            color: base_color,
+                            background_color: Some(code_bg),
+                            underline: None,
+                            strikethrough: None,
+                        });
+                    }
+                    
+                    code_buffer.clear();
+                    code_block_lang = None;
+                    
+                     if !text.ends_with('\n') {
+                        text.push('\n');
+                        runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                     }
+                }
+                Event::Text(t) => {
+                    code_buffer.push_str(&t);
+                }
+                Event::SoftBreak | Event::HardBreak => {
+                    code_buffer.push('\n');
+                }
+                _ => {}
+            }
             continue;
         }
 
-        let len = segment_text.len();
-        text.push_str(&segment_text);
-        runs.push(TextRun {
-            len,
-            font,
-            color,
-            background_color,
-            underline: None,
-            strikethrough: None,
-        });
+
+
+        match event {
+            Event::Start(tag) => {
+                match tag {
+                    Tag::Paragraph => {
+                        if !text.is_empty() && !text.ends_with("\n\n") {
+                             if !text.ends_with('\n') {
+                                text.push('\n');
+                                runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                             }
+                        }
+                    }
+                    Tag::Heading { level, .. } => {
+                         if !text.is_empty() && !text.ends_with('\n') {
+                            text.push('\n');
+                            runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         }
+                         if !text.is_empty() && !text.ends_with("\n\n") {
+                             text.push('\n');
+                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         }
+                         header_level = Some(level);
+                    }
+                    Tag::BlockQuote => in_block_quote = true,
+                    Tag::CodeBlock(kind) => {
+                        in_code_block = true;
+                        code_block_lang = match kind {
+                            CodeBlockKind::Fenced(lang) => Some(lang.to_string()),
+                            CodeBlockKind::Indented => None,
+                        };
+                    }
+                    Tag::List(_) => {
+                        if !text.is_empty() && !text.ends_with('\n') {
+                             text.push('\n');
+                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                        }
+                    }
+                    Tag::Item => {
+                         if !text.is_empty() && !text.ends_with('\n') {
+                            text.push('\n');
+                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         }
+                         text.push_str("• ");
+                         runs.push(TextRun { len: "• ".len(), font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                    }
+                    Tag::Emphasis => italic = true,
+                    Tag::Strong => bold = true,
+                    Tag::Strikethrough => strikethrough = true,
+
+                    Tag::Link { dest_url, .. } => {
+                        link_dest = Some(dest_url.to_string());
+                    }
+                    _ => {}
+                }
+            }
+            Event::End(tag) => {
+                match tag {
+                    TagEnd::Heading(_) => {
+                        header_level = None;
+                        text.push('\n');
+                        runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                    },
+                    TagEnd::BlockQuote => in_block_quote = false,
+                    TagEnd::CodeBlock => {},
+                    TagEnd::Emphasis => italic = false,
+                    TagEnd::Strong => bold = false,
+                    TagEnd::Strikethrough => strikethrough = false,
+                    TagEnd::Paragraph => {
+                         text.push('\n');
+                         runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                    }
+                    TagEnd::List(_) => {
+                         if !text.ends_with('\n') {
+                             text.push('\n');
+                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                         }
+                    }
+                    TagEnd::Link => {
+                        link_dest = None;
+                    }
+                    _ => {}
+                }
+            }
+            Event::Text(t) => {
+                let mut font = base_font.clone();
+
+                if bold { font = font.bold(); }
+                if italic { font = font.italic(); }
+
+                if let Some(level) = header_level {
+                     font.weight = match level {
+                        HeadingLevel::H1 => FontWeight::BOLD,
+                        HeadingLevel::H2 => FontWeight::SEMIBOLD,
+                        HeadingLevel::H3 => FontWeight::SEMIBOLD,
+                        _ => FontWeight::NORMAL,
+                     };
+                }
+
+                if in_block_quote {
+                    font = font.italic();
+                }
+
+                let color = if link_dest.is_some() { accent_color } else { base_color };
+
+                let underline = if strikethrough {
+                    Some(StrikethroughStyle {
+                        color: Some(color),
+                        thickness: 1.0.into(),
+                    })
+                } else {
+                    None
+                };
+                
+                let text_underline = if link_dest.is_some() {
+                    Some(UnderlineStyle {
+                        color: Some(color),
+                        thickness: 1.0.into(),
+                        wavy: false,
+                    })
+                } else {
+                    None
+                };
+
+                let len = t.len();
+                text.push_str(&t);
+                runs.push(TextRun {
+                    len,
+                    font,
+                    color,
+                    background_color: None,
+                    underline: text_underline,
+                    strikethrough: underline,
+                });
+            }
+            Event::Code(t) => {
+                let len = t.len();
+                text.push_str(&t);
+                runs.push(TextRun {
+                    len,
+                    font: code_font.clone(),
+                    color: base_color,
+                    background_color: Some(code_bg),
+                    underline: None,
+                    strikethrough: None,
+                });
+            }
+            Event::SoftBreak => {
+                text.push('\n');
+                runs.push(TextRun {
+                    len: 1,
+                    font: base_font.clone(),
+                    color: base_color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                });
+            }
+            Event::HardBreak => {
+                text.push('\n');
+                runs.push(TextRun {
+                    len: 1,
+                    font: base_font.clone(),
+                    color: base_color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                });
+            }
+
+            _ => {}
+        }
     }
 
     let runs = merge_adjacent_runs(runs);
@@ -72,6 +334,9 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
         runs,
     }
 }
+
+
+
 
 pub fn apply_selection_background(
     runs: &[TextRun],
@@ -149,148 +414,12 @@ fn merge_adjacent_runs(runs: Vec<TextRun>) -> Vec<TextRun> {
     merged
 }
 
-fn parse_markdown(source: &str) -> Vec<MarkdownSegment> {
-    let mut segments = Vec::new();
-
-    for part in source.split_inclusive('\n') {
-        let (line, has_newline) = match part.strip_suffix('\n') {
-            Some(line) => (line, true),
-            None => (part, false),
-        };
-
-        if let Some((level, header_text)) = parse_header_line(line) {
-            segments.push(MarkdownSegment::Header(level, header_text.to_string()));
-        } else {
-            segments.extend(parse_inline(line));
-        }
-
-        if has_newline {
-            segments.push(MarkdownSegment::Plain("\n".to_string()));
-        }
-    }
-
-    // Handle empty input or a trailing empty segment when `source` doesn't end with '\n'.
-    if source.is_empty() {
-        segments.clear();
-    }
-
-    segments
-}
-
-fn parse_header_line(line: &str) -> Option<(u8, &str)> {
-    let mut level = 0u8;
-    for ch in line.chars() {
-        if ch == '#' {
-            level += 1;
-        } else {
-            break;
-        }
-    }
-
-    if (1..=6).contains(&level) {
-        let rest = &line[level as usize..];
-        if let Some(rest) = rest.strip_prefix(' ') {
-            return Some((level, rest));
-        }
-    }
-
-    None
-}
-
-fn parse_inline(input: &str) -> Vec<MarkdownSegment> {
-    let mut segments = Vec::new();
-    let mut i = 0usize;
-
-    while i < input.len() {
-        let remaining = &input[i..];
-
-        // Try to match code: `code`
-        if let Some(stripped) = remaining.strip_prefix('`') {
-            if let Some(end) = stripped.find('`') {
-                let code = &stripped[..end];
-                segments.push(MarkdownSegment::Code(code.to_string()));
-                i += 1 + end + 1;
-                continue;
-            }
-
-            segments.push(MarkdownSegment::Plain("`".to_string()));
-            i += 1;
-            continue;
-        }
-
-        // Try to match bold+italic: ***text***
-        if let Some(stripped) = remaining.strip_prefix("***") {
-            if let Some(end) = stripped.find("***") {
-                let inner = &stripped[..end];
-                segments.push(MarkdownSegment::BoldItalic(inner.to_string()));
-                i += 3 + end + 3;
-                continue;
-            }
-
-            segments.push(MarkdownSegment::Plain("***".to_string()));
-            i += 3;
-            continue;
-        }
-
-        // Try to match bold: **text**
-        if let Some(stripped) = remaining.strip_prefix("**") {
-            if let Some(end) = stripped.find("**") {
-                let inner = &stripped[..end];
-                segments.push(MarkdownSegment::Bold(inner.to_string()));
-                i += 2 + end + 2;
-                continue;
-            }
-
-            segments.push(MarkdownSegment::Plain("**".to_string()));
-            i += 2;
-            continue;
-        }
-
-        // Try to match italic: *text*
-        if let Some(stripped) = remaining.strip_prefix('*') {
-            if let Some(end) = stripped.find('*') {
-                let inner = &stripped[..end];
-                if !inner.is_empty() {
-                    segments.push(MarkdownSegment::Italic(inner.to_string()));
-                    i += 1 + end + 1;
-                    continue;
-                }
-            }
-
-            segments.push(MarkdownSegment::Plain("*".to_string()));
-            i += 1;
-            continue;
-        }
-
-        // Try to match italic: _text_
-        if let Some(stripped) = remaining.strip_prefix('_') {
-            if let Some(end) = stripped.find('_') {
-                let inner = &stripped[..end];
-                if !inner.is_empty() {
-                    segments.push(MarkdownSegment::Italic(inner.to_string()));
-                    i += 1 + end + 1;
-                    continue;
-                }
-            }
-
-            segments.push(MarkdownSegment::Plain("_".to_string()));
-            i += 1;
-            continue;
-        }
-
-        // No markdown matched - consume plain text until next potential delimiter.
-        // IMPORTANT: Always advance at least 1 character to prevent infinite loops.
-        let first_len = remaining.chars().next().unwrap().len_utf8();
-        let next_special = remaining[first_len..]
-            .find(|c| ['`', '*', '_'].contains(&c))
-            .map(|pos| first_len + pos)
-            .unwrap_or(remaining.len());
-
-        let advance = next_special.max(first_len);
-        let plain = &remaining[..advance];
-        segments.push(MarkdownSegment::Plain(plain.to_string()));
-        i += advance;
-    }
-
-    segments
+fn syntect_color_to_hsla(color: Color) -> Hsla {
+    gpui::rgba(
+        ((color.r as u32) << 24) |
+        ((color.g as u32) << 16) |
+        ((color.b as u32) << 8) |
+        (color.a as u32)
+    )
+    .into()
 }
