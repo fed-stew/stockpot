@@ -281,10 +281,12 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
 
                 if let Some(level) = header_level {
                      font.weight = match level {
-                        HeadingLevel::H1 => FontWeight::BOLD,
-                        HeadingLevel::H2 => FontWeight::SEMIBOLD,
+                        HeadingLevel::H1 => FontWeight::EXTRA_BOLD,
+                        HeadingLevel::H2 => FontWeight::BOLD,
                         HeadingLevel::H3 => FontWeight::SEMIBOLD,
-                        _ => FontWeight::NORMAL,
+                        HeadingLevel::H4 => FontWeight::MEDIUM,
+                        HeadingLevel::H5 => FontWeight::MEDIUM,
+                        HeadingLevel::H6 => FontWeight::NORMAL,
                      };
                 }
 
@@ -292,7 +294,16 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                     font = font.italic();
                 }
 
-                let color = if link_dest.is_some() { accent_color } else { base_color };
+                let color = if let Some(level) = header_level {
+                    match level {
+                        HeadingLevel::H1 | HeadingLevel::H2 => accent_color,
+                        _ => base_color,
+                    }
+                } else if link_dest.is_some() {
+                    accent_color
+                } else {
+                    base_color
+                };
 
                 let underline = if strikethrough {
                     Some(StrikethroughStyle {
