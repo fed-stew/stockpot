@@ -80,66 +80,39 @@ impl StreamingMarkdownView {
             let line: String = self.line_buffer.drain(..=newline_idx).collect();
             let line_content = line.trim_end_matches('\n').trim_end_matches('\r');
             
+            // If we are inside a table, process events to build structured data
+            if self.current_table.is_some() {
+                 let events = self.parser.parse_line(line_content);
+                 for event in events {
+                     self.handle_table_event(event);
+                 }
+                 continue;
+            }
+
+            // Peek at events to detect table start or horizontal rule
             let events = self.parser.parse_line(line_content);
-            for event in events {
-                self.handle_event(event, cx);
+            
+            let is_table_start = events.iter().any(|e| matches!(e, ParseEvent::TableHeader(_)));
+            let is_rule = events.iter().any(|e| matches!(e, ParseEvent::HorizontalRule));
+
+            if is_table_start {
+                // Start table mode
+                for event in events {
+                    self.handle_table_event(event);
+                }
+            } else if is_rule {
+                self.blocks.push(Block::Divider);
+            } else {
+                // RAW PASS-THROUGH: Append the original line (preserves indentation!)
+                self.append_text(&line, cx);
             }
         }
         
         cx.notify();
     }
 
-    #[allow(unused)]
-    fn handle_event(&mut self, event: ParseEvent, cx: &mut Context<Self>) {
+    fn handle_table_event(&mut self, event: ParseEvent) {
         match event {
-            ParseEvent::Text(t) => self.append_text(&t, cx),
-            ParseEvent::InlineCode(c) => self.append_text(&format!("`{}`", c), cx),
-            ParseEvent::Bold(t) => self.append_text(&format!("**{}**", t), cx),
-            ParseEvent::Italic(t) => self.append_text(&format!("*{}*", t), cx),
-            ParseEvent::Underline(t) => self.append_text(&t, cx), // Markdown doesn't really have underline
-            ParseEvent::Strikeout(t) => self.append_text(&format!("~~{}~~", t), cx),
-            ParseEvent::BoldItalic(t) => self.append_text(&format!("***{}***", t), cx),
-            ParseEvent::Link { text, url, .. } => self.append_text(&format!("[{}]({})", text, url), cx),
-            ParseEvent::Image { alt, url, .. } => self.append_text(&format!("![{}]({})", alt, url), cx),
-            ParseEvent::Footnote(t) => self.append_text(&format!("[^{}]", t), cx),
-            
-            ParseEvent::Heading { level, content, .. } => {
-                // Ensure separation from previous block
-                 if !self.blocks.is_empty() {
-                     self.append_text("\n", cx);
-                 }
-                 self.append_text(&format!("{} {}\n", "#".repeat(level as usize), content), cx);
-            }
-            
-            ParseEvent::HorizontalRule => {
-                 self.blocks.push(Block::Divider);
-            }
-            
-            ParseEvent::EmptyLine => {
-                 self.append_text("\n", cx);
-            }
-            
-            // Code Blocks
-            ParseEvent::CodeBlockStart { language, .. } => {
-                let lang = language.as_deref().unwrap_or("");
-                self.append_text(&format!("```{}\n", lang), cx);
-            }
-            ParseEvent::CodeBlockLine(line) => {
-                self.append_text(&format!("{}\n", line), cx);
-            }
-            ParseEvent::CodeBlockEnd => {
-                self.append_text("```\n", cx);
-            }
-            
-            // Lists
-            ParseEvent::ListItem { content, .. } => {
-                 self.append_text(&format!("* {}\n", content), cx);
-            }
-            ParseEvent::ListEnd => {
-                 self.append_text("\n", cx);
-            }
-            
-            // Tables
             ParseEvent::TableHeader(headers) => {
                  self.current_table = Some(TableBuilder {
                     headers: headers.clone(),
@@ -160,33 +133,7 @@ impl StreamingMarkdownView {
                     }));
                  }
             }
-            ParseEvent::TableSeparator => {}
-            
-            // Blockquotes
-            ParseEvent::BlockquoteStart { .. } => {}
-            ParseEvent::BlockquoteLine(line) => {
-                self.append_text(&format!("> {}\n", line), cx);
-            }
-            ParseEvent::BlockquoteEnd => {
-                self.append_text("\n", cx);
-            }
-            
-            // Thinking blocks
-            ParseEvent::ThinkBlockStart => {
-                self.append_text("> **Thinking...**\n", cx);
-            }
-            ParseEvent::ThinkBlockLine(line) => {
-                self.append_text(&format!("> {}\n", line), cx);
-            }
-            ParseEvent::ThinkBlockEnd => {
-                self.append_text("\n", cx);
-            }
-            
-            ParseEvent::Newline => {
-                self.append_text("\n", cx);
-            }
-            ParseEvent::Prompt(_) => {}
-            ParseEvent::InlineElements(_) => {} // Complex nested elements, ignoring for now
+            _ => {} // Ignore all other events
         }
     }
 
