@@ -21,10 +21,21 @@ fn get_theme_set() -> &'static ThemeSet {
     THEME_SET.get_or_init(ThemeSet::load_defaults)
 }
 
+/// Represents a clickable link region in the rendered markdown
+#[derive(Debug, Clone)]
+pub struct LinkRegion {
+    /// Byte range in the rendered text where this link appears
+    pub range: Range<usize>,
+    /// The URL this link points to
+    pub url: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct RenderedMarkdown {
     pub text: SharedString,
     pub runs: Vec<TextRun>,
+    /// Clickable link regions with their URLs
+    pub links: Vec<LinkRegion>,
 }
 
 
@@ -61,6 +72,8 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     let mut strikethrough = false;
     let mut header_level: Option<HeadingLevel> = None;
     let mut link_dest: Option<String> = None;
+    let mut link_start: Option<usize> = None;
+    let mut links: Vec<LinkRegion> = Vec::new();
     
     let mut in_code_block = false;
     let mut code_block_lang: Option<String> = None;
@@ -236,6 +249,7 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
 
                     Tag::Link { dest_url, .. } => {
                         link_dest = Some(dest_url.to_string());
+                        link_start = Some(text.len()); // Track where link text starts
                     }
                     _ => {}
                 }
@@ -268,7 +282,13 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                         in_list_item = false;
                     }
                     TagEnd::Link => {
-                        link_dest = None;
+                        // Save the link region with its URL
+                        if let (Some(start), Some(url)) = (link_start.take(), link_dest.take()) {
+                            links.push(LinkRegion {
+                                range: start..text.len(),
+                                url,
+                            });
+                        }
                     }
                     _ => {}
                 }
@@ -379,6 +399,7 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     RenderedMarkdown {
         text: SharedString::from(text),
         runs,
+        links,
     }
 }
 

@@ -17,6 +17,7 @@ use crate::tui::theme::Theme;
 
 pub struct ToolCallWidget<'a> {
     section: &'a ToolCallSection,
+    #[allow(dead_code)]
     theme: &'a Theme,
 }
 
@@ -41,9 +42,9 @@ impl Widget for ToolCallWidget<'_> {
         };
 
         let verb_style = Style::default()
-            .fg(self.theme.tool_verb)
+            .fg(Theme::TOOL_VERB)
             .add_modifier(Modifier::BOLD);
-        let subject_style = Style::default().fg(self.theme.text);
+        let subject_style = Style::default().fg(Theme::TEXT);
 
         let mut spans = vec![
             Span::styled(format!("  {} ", symbol), Style::default().fg(color)),

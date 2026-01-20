@@ -3,7 +3,7 @@
 use crate::agents::{AgentExecutor, AgentManager};
 use crate::db::Database;
 use crate::mcp::McpManager;
-use crate::messaging::MessageSender;
+use crate::messaging::{HistoryUpdateMessage, Message, MessageSender};
 use crate::models::ModelRegistry;
 use crate::tools::SpotToolRegistry;
 use serdes_ai_core::ModelRequest;
@@ -35,16 +35,7 @@ pub async fn execute_agent(
     // Create executor with references
     let executor = AgentExecutor::new(&db, &model_registry).with_bus(sender.clone());
 
-    // Execute
-    // Note: execute_with_bus signature:
-    // agent: &dyn SpotAgent
-    // model_name: &str
-    // prompt: &str
-    // history: Option<Vec<ModelRequest>>
-    // tool_registry: &SpotToolRegistry
-    // mcp_manager: &McpManager
-
-    // We pass references where needed
+    // Execute and get result with updated messages
     let result = executor
         .execute_with_bus(
             agent,
@@ -56,7 +47,17 @@ pub async fn execute_agent(
         )
         .await;
 
-    if let Err(e) = result {
-        sender.error(format!("Execution failed: {}", e));
+    match result {
+        Ok(exec_result) => {
+            // Send updated history back to TUI
+            if !exec_result.messages.is_empty() {
+                let _ = sender.send(Message::HistoryUpdate(HistoryUpdateMessage {
+                    messages: exec_result.messages,
+                }));
+            }
+        }
+        Err(e) => {
+            sender.error(format!("Execution failed: {}", e));
+        }
     }
 }

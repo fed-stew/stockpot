@@ -77,6 +77,15 @@ impl<'a> DropdownWidget<'a> {
 
             let is_selected = Some(id.as_str()) == self.selected_id;
 
+            // Selection/hover indicator
+            let prefix = if is_hovered {
+                "▶ "
+            } else if is_selected {
+                "✓ "
+            } else {
+                "  "
+            };
+
             let style = if is_hovered {
                 Style::default().bg(Color::DarkGray).fg(Color::White)
             } else if is_selected {
@@ -87,7 +96,9 @@ impl<'a> DropdownWidget<'a> {
                 Style::default().fg(Color::White)
             };
 
-            buf.set_string(item_rect.x, item_rect.y, label, style);
+            // Render prefix and label
+            let display = format!("{}{}", prefix, label);
+            buf.set_string(item_rect.x, item_rect.y, &display, style);
 
             // Register hit
             registry.register(item_rect, (self.target_wrapper)(id.clone()));

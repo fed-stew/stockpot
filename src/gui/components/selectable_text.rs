@@ -30,6 +30,8 @@ pub struct SelectableText {
     cached_rendered: Option<markdown_text::RenderedMarkdown>,
     cached_content: SharedString,
     cached_font_size: gpui::Pixels,
+    /// Whether the mouse is currently hovering over a link
+    hovering_link: bool,
 }
 
 impl SelectableText {
@@ -46,6 +48,7 @@ impl SelectableText {
             cached_rendered: None,
             cached_content: SharedString::from(""),
             cached_font_size: gpui::Pixels::ZERO,
+            hovering_link: false,
         }
     }
 
@@ -109,11 +112,20 @@ impl SelectableText {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let offset = self.hit_test_position(event.position, window);
+
+        // Check if clicking on a link (single click, no modifiers)
+        if event.click_count == 1 && !event.modifiers.shift {
+            if let Some(url) = self.get_link_at_offset(offset, window) {
+                // Open URL and don't start selection
+                let _ = open::that(&url);
+                return;
+            }
+        }
+
         self.is_selecting = true;
         self.drag_start_position = Some(event.position);
         self.focus_handle.focus(window, cx);
-
-        let offset = self.hit_test_position(event.position, window);
 
         if event.modifiers.shift {
             self.select_to(offset);
@@ -147,6 +159,16 @@ impl SelectableText {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Check if hovering over a link (when not dragging)
+        if event.pressed_button.is_none() {
+            let offset = self.hit_test_position(event.position, window);
+            let over_link = self.get_link_at_offset(offset, window).is_some();
+            if over_link != self.hovering_link {
+                self.hovering_link = over_link;
+                cx.notify();
+            }
+        }
+
         if self.is_selecting && event.pressed_button == Some(MouseButton::Left) {
             const DRAG_THRESHOLD: f32 = 3.0;
 
@@ -198,7 +220,8 @@ impl SelectableText {
 
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let line_height = if window.line_height() == gpui::Pixels::ZERO {
-            gpui::Pixels::from(1.0)
+            // Fallback: use font_size * 1.3 as a reasonable line height
+            font_size * 1.3
         } else {
             window.line_height()
         };
@@ -248,6 +271,22 @@ impl SelectableText {
         }
 
         rendered_len
+    }
+
+    /// Returns the URL if the given offset is within a link region
+    fn get_link_at_offset(&self, offset: usize, window: &Window) -> Option<String> {
+        let rendered = markdown_text::render_markdown(
+            self.content.as_ref(),
+            &window.text_style(),
+            &self.theme,
+        );
+        
+        for link in &rendered.links {
+            if link.range.contains(&offset) {
+                return Some(link.url.clone());
+            }
+        }
+        None
     }
 
     fn word_boundaries(content: &str, offset: usize) -> (usize, usize) {
@@ -308,6 +347,8 @@ impl Render for SelectableText {
         let styled_text = StyledText::new(rendered.text.clone()).with_runs(runs);
         let view = cx.entity().clone();
 
+        // Use an absolute-positioned full-size canvas to track the div bounds
+        // This ensures we capture the exact bounds where text is rendered
         let bounds_tracker = gpui::canvas(
             move |bounds, _window, cx| {
                 let should_update = view.read(cx).element_bounds != Some(bounds);
@@ -319,15 +360,23 @@ impl Render for SelectableText {
             },
             |_, _, _, _| {},
         )
-        .w_full()
-        .h(gpui::px(0.));
+        .absolute()
+        .size_full();
+
+        // Use pointer cursor when hovering over links, otherwise text cursor
+        let cursor = if self.hovering_link {
+            CursorStyle::PointingHand
+        } else {
+            CursorStyle::IBeam
+        };
 
         div()
             .id("selectable-text")
             .key_context("SelectableText")
             .w_full()
+            .relative() // Needed for absolute positioning of bounds_tracker
             .track_focus(&self.focus_handle(cx))
-            .cursor(CursorStyle::IBeam)
+            .cursor(cursor)
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::select_all))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))

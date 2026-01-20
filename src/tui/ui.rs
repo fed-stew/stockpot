@@ -1,183 +1,261 @@
 //! Main UI rendering
+//!
+//! Uses rustpuppy-style layout: Header → ActivityFeed → Input → StatusBar
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
 use super::app::TuiApp;
+use super::layout::AppLayout;
+use super::settings::render_settings;
 use crate::tui::hit_test::ClickTarget;
-use crate::tui::widgets::{DropdownWidget, MessageList, MetricsWidget};
+use crate::tui::theme::Theme;
+use crate::tui::widgets::{ActivityFeed, DropdownWidget, Header, StatusBar, TextSelection};
 
 /// Render the entire UI
 pub fn render(frame: &mut Frame, app: &mut TuiApp) {
     app.hit_registry.clear();
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Toolbar
-            Constraint::Min(0),    // Messages
-            Constraint::Length(1), // Metrics
-            Constraint::Length(3), // Input
-        ])
-        .split(frame.area());
+    // Use rustpuppy-style layout with dynamic input height
+    let input_lines = app.input.lines().len();
+    let layout = AppLayout::new(frame.area(), input_lines);
 
-    render_toolbar(frame, app, chunks[0]);
-    render_messages(frame, app, chunks[1]);
-    render_metrics(frame, app, chunks[2]);
-    render_input(frame, app, chunks[3]);
+    // Cache activity area for mouse calculations
+    app.cached_activity_area = layout.activity_area;
 
-    // Render dropdowns on top if visible
+    // Update viewport height for scrolling
+    app.activity_state.viewport_height = layout.activity_area.height as usize;
+
+    // Fill entire frame with background
+    for y in frame.area().y..frame.area().y + frame.area().height {
+        for x in frame.area().x..frame.area().x + frame.area().width {
+            frame.buffer_mut()[(x, y)].set_bg(Theme::BG);
+        }
+    }
+
+    // Render components
+    render_header(frame, app, layout.header_area);
+    render_activity_feed(frame, app, layout.activity_area);
+    render_input(frame, app, layout.input_area);
+    render_status_bar(frame, app, layout.status_area);
+
+    // Dropdowns overlay (if visible)
     if app.show_agent_dropdown {
-        render_agent_dropdown(frame, app, chunks[0]);
+        render_agent_dropdown(frame, app, layout.header_area);
     }
-    if app.show_model_dropdown {
-        render_model_dropdown(frame, app, chunks[0]);
+    // Note: Model dropdown removed from header - model pinning is done in Settings > Pinned Agents
+    if app.show_folder_modal {
+        render_folder_modal(frame, app, layout.header_area);
     }
 
+    // Help overlay
     if app.show_help {
         render_help(frame, frame.area());
     }
+
+    // Settings overlay (takes priority over help)
+    if app.show_settings {
+        render_settings(frame, frame.area(), app);
+    }
 }
 
-fn render_toolbar(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
-    let toolbar = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "🍲 Stockpot",
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" │ "),
-        Span::styled(&app.current_agent, Style::default().fg(Color::Cyan)),
-        Span::raw(" ▾ │ "),
-        Span::styled(&app.current_model, Style::default().fg(Color::Green)),
-        Span::raw(" ▾"),
-    ]))
-    .block(
-        Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
-
-    frame.render_widget(toolbar, area);
+fn render_header(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
+    use crate::config::Settings;
+    
+    // Get agent display name
+    let agent_display = app.agents
+        .list()
+        .iter()
+        .find(|a| a.name == app.current_agent)
+        .map(|a| a.display_name.clone())
+        .unwrap_or_else(|| app.current_agent.clone());
+    
+    // Get effective model for this agent (pinned or "default")
+    let settings = Settings::new(&app.db);
+    let model_display = settings
+        .get_agent_pinned_model(&app.current_agent)
+        .unwrap_or_else(|| "default".to_string());
+    
+    let header = Header::new(&agent_display, &model_display, &app.current_working_dir);
+    
+    // Calculate hit target positions
+    let agent_section_width = header.agent_section_width();
+    let folder_offset = header.folder_offset();
+    let folder_width = header.folder_width();
+    
+    frame.render_widget(header, area);
 
     // Register hit targets for dropdowns
+    // Combined agent/model dropdown trigger (after "stockpot │ ")
+    // Clicking anywhere on "Agent • model ▾" opens the agent dropdown
     app.hit_registry.register(
-        Rect::new(area.x + 12, area.y, 20, 1),
+        Rect::new(area.x + 15, area.y, agent_section_width, 1),
         ClickTarget::AgentDropdown,
     );
+    // Folder dropdown trigger
     app.hit_registry.register(
-        Rect::new(area.x + 40, area.y, 20, 1),
-        ClickTarget::ModelDropdown,
+        Rect::new(area.x + folder_offset, area.y, folder_width, 1),
+        ClickTarget::FolderDropdown,
     );
 }
 
-fn render_messages(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
-    if app.conversation.messages.is_empty() {
-        // Welcome screen
-        let welcome = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(""),
-            Line::from(Span::styled("🍲", Style::default())),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Welcome to Stockpot",
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                "Your AI-powered coding assistant",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Type a message below to get started",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(Span::styled(
-                "Press F1 for keyboard shortcuts",
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            )),
-        ])
-        .alignment(Alignment::Center);
-
-        frame.render_widget(welcome, area);
+fn render_activity_feed(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
+    // Empty state: welcome screen
+    if app.activities.is_empty() {
+        render_welcome(frame, area);
         return;
     }
 
-    let message_list = MessageList::new(&app.conversation.messages, &app.theme)
-        .generating(app.is_generating)
-        .registry(&mut app.hit_registry)
-        .selection(&app.selection);
-
-    frame.render_stateful_widget(message_list, area, &mut app.message_list_state);
-}
-
-fn render_metrics(frame: &mut Frame, app: &TuiApp, area: Rect) {
-    let throughput = if app.is_generating {
-        Some(app.current_throughput_cps)
+    // Build selection for the widget
+    let selection = if app.selection.is_active() {
+        let mut sel = TextSelection::default();
+        if let (Some((sl, sc)), Some((el, ec))) = (app.selection.start(), app.selection.end()) {
+            sel.start_line = sl;
+            sel.start_col = sc;
+            sel.end_line = el;
+            sel.end_col = ec;
+            sel.active = true;
+        }
+        Some(sel)
     } else {
         None
     };
 
-    let usage = if app.context_tokens_used > 0 {
-        Some(format!(
-            "{} / {}",
-            app.context_tokens_used, app.context_window_size
-        ))
-    } else {
-        None
-    };
+    // Create the activity feed widget
+    let mut activity_feed = ActivityFeed::new(&app.activities)
+        .rendered_lines(&mut app.rendered_lines);
 
-    let widget = MetricsWidget::new(app.current_model.clone(), throughput, usage);
-    frame.render_widget(widget, area);
-}
-
-fn render_input(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
-    // Update textarea block based on state
-    let mut title = if app.is_generating {
-        " Generating... ".to_string()
-    } else {
-        " Message ".to_string()
-    };
-
-    if !app.attachments.is_empty() {
-        title = format!("{} [{} files] ", title, app.attachments.pending.len());
+    if let Some(ref sel) = selection {
+        activity_feed = activity_feed.selection(sel);
     }
 
-    let border_color = if app.is_generating {
-        Color::DarkGray
-    } else {
-        Color::Cyan
-    };
-
-    app.input.set_block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .title(title),
-    );
-
-    frame.render_widget(&app.input, area);
+    frame.render_stateful_widget(activity_feed, area, &mut app.activity_state);
 }
 
-fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, toolbar_area: Rect) {
+fn render_welcome(frame: &mut Frame, area: Rect) {
+    let welcome = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(""),
+        Line::from(Span::styled("🍲", Style::default())),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Welcome to Stockpot",
+            Style::default()
+                .fg(Theme::HEADER)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "Your AI-powered coding assistant",
+            Style::default().fg(Theme::MUTED),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Type a message below to get started",
+            Style::default().fg(Theme::MUTED),
+        )),
+        Line::from(Span::styled(
+            "Press F1 for help",
+            Style::default()
+                .fg(Theme::MUTED)
+                .add_modifier(Modifier::ITALIC),
+        )),
+    ])
+    .alignment(Alignment::Center)
+    .style(Style::default().bg(Theme::BG));
+
+    frame.render_widget(welcome, area);
+}
+
+fn render_input(frame: &mut Frame, app: &TuiApp, area: Rect) {
+    // Fill background for the entire input area
+    for y in area.y..area.y + area.height {
+        for x in area.x..area.x + area.width {
+            frame.buffer_mut()[(x, y)].set_bg(Theme::INPUT_BG);
+        }
+    }
+
+    // Render prompt character "› " on the left
+    let prompt = Span::styled("› ", Style::default().fg(Theme::ACCENT));
+    let prompt_width = 2u16;
+
+    // Render prompt on first line of input area
+    frame.buffer_mut().set_span(area.x, area.y, &prompt, prompt_width);
+
+    // Textarea gets the remaining space after the prompt
+    let textarea_area = Rect {
+        x: area.x + prompt_width,
+        y: area.y,
+        width: area.width.saturating_sub(prompt_width),
+        height: area.height,
+    };
+
+    frame.render_widget(&app.input, textarea_area);
+}
+
+fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
+    // Check for recent copy feedback (expires after 2 seconds)
+    let copy_feedback = app
+        .copy_feedback
+        .as_ref()
+        .filter(|(instant, _)| instant.elapsed().as_secs() < 2)
+        .map(|(_, text)| text.clone());
+
+    let status = StatusBar::new(
+        app.is_generating,
+        app.selection.is_active(),
+        app.context_percentage(),
+    )
+    .with_copy_feedback(copy_feedback);
+
+    frame.render_widget(status, area);
+}
+
+fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
+    use crate::config::Settings;
+    
+    let settings = Settings::new(&app.db);
     let available_agents = app.agents.list();
+    
+    // Build items with pinned model info
+    // Format: "Agent Name (model)" or "Agent Name (default)"
     let items: Vec<(String, String)> = available_agents
         .iter()
-        .map(|info| (info.display_name.clone(), info.name.clone()))
+        .map(|info| {
+            let pinned = settings.get_agent_pinned_model(&info.name);
+            let model_hint = match pinned {
+                Some(m) => format!(" ({})", m), // Show full model name, no truncation
+                None => " (default)".to_string(),
+            };
+            (format!("{}{}", info.display_name, model_hint), info.name.clone())
+        })
         .collect();
 
-    let dropdown_height = (items.len() as u16 + 2).min(10);
-    let dropdown_area = Rect::new(toolbar_area.x + 12, toolbar_area.y + 1, 30, dropdown_height);
+    // Calculate width dynamically based on longest item
+    let max_item_len = items
+        .iter()
+        .map(|(label, _)| label.chars().count())
+        .max()
+        .unwrap_or(30);
+    
+    // Add padding for borders (2), selection indicator (2), and some margin (4)
+    // Use generous max width to show full model names
+    let dropdown_width = ((max_item_len + 8) as u16).max(45).min(100);
+    
+    // Height: show all items up to max 20, plus 2 for borders
+    let dropdown_height = (items.len() as u16 + 2).min(20);
+    
+    // Position below the agent section in header (after "stockpot │ ")
+    let dropdown_area = Rect::new(
+        header_area.x + 15,
+        header_area.y + 1,
+        dropdown_width,
+        dropdown_height,
+    );
 
     let widget = DropdownWidget::new(
         items,
@@ -191,7 +269,7 @@ fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, toolbar_area: Rect
     widget.render(dropdown_area, frame.buffer_mut(), &mut app.hit_registry);
 }
 
-fn render_model_dropdown(frame: &mut Frame, app: &mut TuiApp, toolbar_area: Rect) {
+fn render_model_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
     let available_models = app.model_registry.list_available(&app.db);
     let items: Vec<(String, String)> = available_models
         .iter()
@@ -199,7 +277,7 @@ fn render_model_dropdown(frame: &mut Frame, app: &mut TuiApp, toolbar_area: Rect
         .collect();
 
     let dropdown_height = (items.len() as u16 + 2).min(10);
-    let dropdown_area = Rect::new(toolbar_area.x + 40, toolbar_area.y + 1, 35, dropdown_height);
+    let dropdown_area = Rect::new(header_area.x + 35, header_area.y + 1, 35, dropdown_height);
 
     let widget = DropdownWidget::new(
         items,
@@ -213,63 +291,196 @@ fn render_model_dropdown(frame: &mut Frame, app: &mut TuiApp, toolbar_area: Rect
     widget.render(dropdown_area, frame.buffer_mut(), &mut app.hit_registry);
 }
 
+fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
+    // Modal dimensions
+    let modal_width: u16 = 50;
+    let modal_height: u16 = 15; // Fixed height for consistency
+    
+    // Visible area for entries (modal height - borders - header - separator)
+    // 15 - 2 (borders) - 1 (path) - 1 (separator) = 11, but reserve 1 for scroll indicators
+    let visible_entries: usize = 8;
+    
+    // Position modal below the folder indicator in header
+    let modal_area = Rect::new(
+        header_area.x + 45, // Approximate folder position
+        header_area.y + 1,
+        modal_width,
+        modal_height,
+    );
+
+    // Clear the area
+    frame.render_widget(Clear, modal_area);
+
+    // Build the modal content
+    let mut lines: Vec<Line> = Vec::new();
+    
+    // Current path display
+    let path_display = app.current_working_dir.to_string_lossy();
+    let truncated_path = if path_display.len() > (modal_width as usize - 6) {
+        format!("...{}", &path_display[path_display.len() - (modal_width as usize - 9)..])
+    } else {
+        path_display.to_string()
+    };
+    
+    lines.push(Line::from(vec![
+        Span::styled("📁 ", Style::default()),
+        Span::styled(truncated_path, Style::default().fg(Theme::YELLOW)),
+    ]));
+    lines.push(Line::from(Span::styled(
+        "─".repeat(modal_width as usize - 2),
+        Style::default().fg(Theme::BORDER),
+    )));
+
+    // Calculate scroll state
+    let total_items = app.folder_modal_item_count();
+    let scroll = app.folder_modal_scroll;
+    let has_more_above = scroll > 0;
+    let has_more_below = scroll + visible_entries < total_items;
+
+    // Show "more above" indicator
+    if has_more_above {
+        lines.push(Line::from(Span::styled(
+            "  ▲ more above",
+            Style::default().fg(Theme::MUTED),
+        )));
+    }
+
+    // Build list of all items (parent + entries)
+    let mut all_items: Vec<(usize, String, bool)> = Vec::new(); // (index, display_name, is_dir)
+    all_items.push((0, "..  (parent directory)".to_string(), true));
+    
+    for (i, path) in app.folder_modal_entries.iter().enumerate() {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?");
+        let display_name = if name.len() > (modal_width as usize - 8) {
+            format!("{}...", &name[..(modal_width as usize - 11)])
+        } else {
+            format!("{}/", name)
+        };
+        all_items.push((i + 1, display_name, true));
+    }
+
+    // Render visible items based on scroll
+    let visible_range_start = scroll;
+    let visible_range_end = (scroll + visible_entries).min(total_items);
+    let mut render_y_offset = 0u16;
+
+    for item_index in visible_range_start..visible_range_end {
+        if let Some((idx, name, _)) = all_items.get(item_index) {
+            let is_selected = app.folder_modal_selected == *idx;
+            let selector = if is_selected { "▶ " } else { "  " };
+            let style = if is_selected {
+                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Theme::TEXT)
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(selector, Style::default().fg(Theme::ACCENT)),
+                Span::styled(name.clone(), style),
+            ]));
+
+            // Register hit target
+            let entry_y = modal_area.y + 3 + (if has_more_above { 1 } else { 0 }) + render_y_offset;
+            if entry_y < modal_area.y + modal_area.height - 1 {
+                let entry_rect = Rect::new(modal_area.x + 1, entry_y, modal_width - 2, 1);
+                app.hit_registry.register(entry_rect, ClickTarget::FolderItem(*idx));
+            }
+            render_y_offset += 1;
+        }
+    }
+
+    // Show "more below" indicator
+    if has_more_below {
+        lines.push(Line::from(Span::styled(
+            "  ▼ more below",
+            Style::default().fg(Theme::MUTED),
+        )));
+    }
+
+    // Render the modal
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Theme::ACCENT))
+        .title(Span::styled(
+            " Change Working Folder (Ctrl+Enter to confirm) ",
+            Style::default().fg(Theme::ACCENT),
+        ))
+        .style(Style::default().bg(Theme::INPUT_BG));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, modal_area);
+}
+
 fn render_help(frame: &mut Frame, area: Rect) {
     let help_lines = vec![
         Line::from(vec![Span::styled(
             " Keyboard Shortcuts ",
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Theme::HEADER)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::styled(" Ctrl+Q      ", Style::default().fg(Color::Cyan)),
-            Span::raw("Quit"),
+            Span::styled(" Ctrl+Q      ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Quit", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Ctrl+N      ", Style::default().fg(Color::Cyan)),
-            Span::raw("New conversation"),
+            Span::styled(" Ctrl+N      ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("New conversation", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Ctrl+C      ", Style::default().fg(Color::Cyan)),
-            Span::raw("Copy selected / Cancel"),
+            Span::styled(" Ctrl+C      ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Copy selected / Cancel", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Ctrl+V      ", Style::default().fg(Color::Cyan)),
-            Span::raw("Paste"),
+            Span::styled(" Ctrl+V      ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Paste", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Enter       ", Style::default().fg(Color::Cyan)),
-            Span::raw("Send message"),
+            Span::styled(" Enter       ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Send message", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Shift+Enter ", Style::default().fg(Color::Cyan)),
-            Span::raw("New line"),
+            Span::styled(" Shift+Enter ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("New line", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Esc         ", Style::default().fg(Color::Cyan)),
-            Span::raw("Close dropdown/help"),
+            Span::styled(" Esc         ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Close dropdown/help", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" F1          ", Style::default().fg(Color::Cyan)),
-            Span::raw("Show this help"),
+            Span::styled(" F1          ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Show this help", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" ↑/↓         ", Style::default().fg(Color::Cyan)),
-            Span::raw("Scroll messages"),
+            Span::styled(" F2 / Ctrl+, ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Open settings", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" Mouse       ", Style::default().fg(Color::Cyan)),
-            Span::raw("Select text, click UI"),
+            Span::styled(" ↑/↓         ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Scroll activity feed", Style::default().fg(Theme::TEXT)),
         ]),
         Line::from(vec![
-            Span::styled(" /attach     ", Style::default().fg(Color::Cyan)),
-            Span::raw("Attach file command"),
+            Span::styled(" Mouse       ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Select text, click UI", Style::default().fg(Theme::TEXT)),
+        ]),
+        Line::from(vec![
+            Span::styled(" /attach     ", Style::default().fg(Theme::ACCENT)),
+            Span::styled("Attach file command", Style::default().fg(Theme::TEXT)),
         ]),
     ];
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow))
-        .title(" Help ");
+        .border_style(Style::default().fg(Theme::YELLOW))
+        .title(Span::styled(
+            " Help ",
+            Style::default().fg(Theme::YELLOW),
+        ))
+        .style(Style::default().bg(Theme::INPUT_BG));
 
     let paragraph = Paragraph::new(help_lines)
         .block(block)

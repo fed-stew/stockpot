@@ -104,12 +104,16 @@ fn run_render_test(_args: Args) -> anyhow::Result<()> {
 
 #[cfg(feature = "tui")]
 fn run_tui(args: Args) -> anyhow::Result<()> {
+    use std::fs::File;
+
+    // Set up file logging for TUI debugging
+    let log_file = File::create("/tmp/stockpot-tui.log").expect("Failed to create log file");
     let default_filter = if args.verbose {
         "trace"
     } else if args.debug {
         "debug"
     } else {
-        "warn"
+        "info,stockpot=debug"
     };
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
@@ -118,11 +122,15 @@ fn run_tui(args: Args) -> anyhow::Result<()> {
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
-                .with_writer(std::io::stderr),
+                .with_ansi(false)
+                .with_writer(std::sync::Mutex::new(log_file)),
         )
         .init();
+    
+    // Use LocalSet to allow spawn_local for non-Send futures (Database uses RefCell)
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-    runtime.block_on(async { stockpot::tui::run().await })
+    let local = tokio::task::LocalSet::new();
+    local.block_on(&runtime, async { stockpot::tui::run().await })
 }
 
 #[cfg(not(feature = "tui"))]

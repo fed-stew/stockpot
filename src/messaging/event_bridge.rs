@@ -96,6 +96,7 @@ impl EventBridge {
             }
 
             StreamEvent::ThinkingDelta { text } => {
+                tracing::info!("BRIDGE: Received ThinkingDelta, text_len={}", text.len());
                 let _ = self
                     .sender
                     .send(Message::thinking_from(&text, &self.agent_name));
@@ -191,6 +192,8 @@ impl EventBridge {
                 success,
                 error,
             } => {
+                tracing::info!("BRIDGE: Processing ToolExecuted for '{}' success={}", tool_name, success);
+
                 // Use provided tool_call_id, or find and remove by name
                 let resolved_id = tool_call_id.clone().or_else(|| {
                     self.tool_states
@@ -205,16 +208,14 @@ impl EventBridge {
                 }
 
                 if success {
-                    if let Some(ref id) = resolved_id {
-                        let _ = self.sender.send(Message::tool_completed_with_id_from(
-                            &tool_name,
-                            id,
-                            &self.agent_name,
-                        ));
+                    let msg = if let Some(ref id) = resolved_id {
+                        Message::tool_completed_with_id_from(&tool_name, id, &self.agent_name)
                     } else {
-                        let _ = self
-                            .sender
-                            .send(Message::tool_completed_from(&tool_name, &self.agent_name));
+                        Message::tool_completed_from(&tool_name, &self.agent_name)
+                    };
+                    match self.sender.send(msg) {
+                        Ok(_) => tracing::info!("BRIDGE: Sent tool_completed for '{}'", tool_name),
+                        Err(e) => tracing::error!("BRIDGE: Failed to send tool_completed: {:?}", e),
                     }
                 } else if let Some(ref id) = resolved_id {
                     let _ = self.sender.send(Message::tool_failed_with_id_from(

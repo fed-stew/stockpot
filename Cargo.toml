@@ -15,13 +15,13 @@ path = "src/main.rs"
 
 [dependencies]
 # SerdesAI - AI agent framework
-serdes-ai = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full"] }
-serdes-ai-core = { git = "https://github.com/janfeddersen-wq/serdesAI" }
-serdes-ai-agent = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["tracing-integration"] }
-serdes-ai-models = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
-serdes-ai-providers = { git = "https://github.com/janfeddersen-wq/serdesAI", features = ["full"] }
-serdes-ai-tools = { git = "https://github.com/janfeddersen-wq/serdesAI" }
-serdes-ai-mcp = { git = "https://github.com/janfeddersen-wq/serdesAI" }
+serdes-ai = { path = "../serdesAI/serdes-ai", features = ["full"] }
+serdes-ai-core = { path = "../serdesAI/serdes-ai-core" }
+serdes-ai-agent = { path = "../serdesAI/serdes-ai-agent", features = ["tracing-integration"] }
+serdes-ai-models = { path = "../serdesAI/serdes-ai-models", features = ["full", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
+serdes-ai-providers = { path = "../serdesAI/serdes-ai-providers", features = ["full"] }
+serdes-ai-tools = { path = "../serdesAI/serdes-ai-tools" }
+serdes-ai-mcp = { path = "../serdesAI/serdes-ai-mcp" }
 
 # Markdown rendering
 streamdown-parser = { git = "https://github.com/fed-stew/streamdown-rs" }
@@ -98,6 +98,7 @@ gpui-component = { git = "https://github.com/janfeddersen-wq/gpui-component", op
 gpui-component-assets = { git = "https://github.com/janfeddersen-wq/gpui-component", optional = true }
 rfd = { version = "0.14", optional = true }
 unicode-segmentation = { version = "1.11", optional = true }
+open = { version = "5", optional = true }
 
 # TUI (optional - for terminal user interface)
 ratatui = { version = "0.29", optional = true }
@@ -119,7 +120,7 @@ serial_test = "3"
 
 [features]
 default = ["gui"]
-gui = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets", "dep:rfd", "dep:unicode-segmentation"]
+gui = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets", "dep:rfd", "dep:unicode-segmentation", "dep:open"]
 tui = ["dep:ratatui", "dep:arboard", "dep:tui-textarea"]
 
 [profile.release]

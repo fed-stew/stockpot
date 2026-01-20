@@ -11,10 +11,14 @@ pub enum ClickTarget {
     AgentDropdown,
     /// Model dropdown trigger in toolbar
     ModelDropdown,
+    /// Folder dropdown trigger in toolbar
+    FolderDropdown,
     /// Agent dropdown item
     AgentItem(String),
     /// Model dropdown item
     ModelItem(String),
+    /// Folder dropdown item (index in list)
+    FolderItem(usize),
     /// Collapse/expand toggle for a section
     SectionToggle(String), // section_id
     /// Message content (for text selection)

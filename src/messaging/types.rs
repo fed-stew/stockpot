@@ -173,6 +173,12 @@ pub struct ThinkingMessage {
     pub agent_name: Option<String>,
 }
 
+/// History update message (for TUI to track conversation history)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryUpdateMessage {
+    pub messages: Vec<serdes_ai_core::ModelRequest>,
+}
+
 /// Any message type (for serialization).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -189,6 +195,7 @@ pub enum Message {
     Tool(ToolMessage),
     TextDelta(TextDeltaMessage),
     Thinking(ThinkingMessage),
+    HistoryUpdate(HistoryUpdateMessage),
     Divider,
     Clear,
 }

@@ -3,8 +3,11 @@
 //! Provides a full-featured terminal interface with mouse support,
 //! feature parity with the GUI mode.
 
+pub mod activity;
 mod app;
 mod event;
+mod layout;
+pub mod markdown;
 mod theme;
 mod ui;
 

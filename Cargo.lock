@@ -6866,8 +6866,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "futures",
  "serdes-ai-agent",
@@ -6890,8 +6889,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-agent"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6912,8 +6910,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-core"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -6934,8 +6931,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-embeddings"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6949,8 +6945,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-evals"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6968,8 +6963,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-graph"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6983,8 +6977,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-macros"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -6994,8 +6987,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-mcp"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -7015,8 +7007,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-models"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7044,8 +7035,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-output"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7064,8 +7054,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-providers"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -7085,8 +7074,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-retries"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7100,8 +7088,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-streaming"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -7119,8 +7106,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-tools"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7138,8 +7124,7 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-toolsets"
-version = "0.1.0"
-source = "git+https://github.com/janfeddersen-wq/serdesAI#c47c00bc9715953b505c0ac2ff9912dde6f49e65"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "indexmap",
@@ -7528,6 +7513,7 @@ dependencies = [
  "image",
  "mupdf",
  "nu-ansi-term",
+ "open",
  "parking_lot",
  "portable-pty",
  "predicates",

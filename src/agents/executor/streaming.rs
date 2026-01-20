@@ -202,6 +202,19 @@ impl<'a> AgentExecutor<'a> {
                         }
                     }
 
+                    // Debug logging for tool events
+                    match &event {
+                        StreamEvent::ToolExecuted { tool_name, success, .. } => {
+                            tracing::info!("STREAM: ToolExecuted name='{}' success={}", tool_name, success);
+                        }
+                        StreamEvent::ToolCallStart { tool_name, .. } => {
+                            tracing::info!("STREAM: ToolCallStart name='{}'", tool_name);
+                        }
+                        StreamEvent::ToolCallComplete { tool_name, .. } => {
+                            tracing::info!("STREAM: ToolCallComplete name='{}'", tool_name);
+                        }
+                        _ => {}
+                    }
                     bridge.process(event);
                 }
                 Err(e) => {
