@@ -23,7 +23,7 @@ impl AppLayout {
     /// `input_lines` is the number of lines in the input textarea (1-3, clamped)
     pub fn new(area: Rect, input_lines: usize) -> Self {
         // Clamp input height to 1-3 lines (no border, so height = lines)
-        let input_height = (input_lines.max(1).min(3)) as u16;
+        let input_height = input_lines.clamp(1, 3) as u16;
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)

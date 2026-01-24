@@ -4,6 +4,8 @@
 //! reconstructs message history from stream events.
 
 use std::collections::VecDeque;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -27,6 +29,108 @@ use super::model_factory::get_model;
 use super::sub_agents::{InvokeAgentExecutor, ListAgentsExecutor};
 use super::types::{ExecuteContext, ExecutorError, ExecutorStreamReceiver};
 use super::{AgentExecutor, SpotAgent, StreamEvent};
+
+/// Format a StreamEvent to a human-readable debug string.
+fn format_stream_event(event: &StreamEvent) -> String {
+    match event {
+        StreamEvent::TextDelta { text } => {
+            let preview = if text.len() > 100 {
+                format!("{}...", &text[..100])
+            } else {
+                text.clone()
+            };
+            format!("TextDelta {{ text: {:?} }}", preview)
+        }
+        StreamEvent::ThinkingDelta { text } => {
+            let preview = if text.len() > 100 {
+                format!("{}...", &text[..100])
+            } else {
+                text.clone()
+            };
+            format!("ThinkingDelta {{ text: {:?} }}", preview)
+        }
+        StreamEvent::ToolCallStart {
+            tool_name,
+            tool_call_id,
+        } => {
+            format!(
+                "ToolCallStart {{ tool_name: {:?}, tool_call_id: {:?} }}",
+                tool_name, tool_call_id
+            )
+        }
+        StreamEvent::ToolCallDelta {
+            delta,
+            tool_call_id,
+        } => {
+            let preview = if delta.len() > 100 {
+                format!("{}...", &delta[..100])
+            } else {
+                delta.clone()
+            };
+            format!(
+                "ToolCallDelta {{ delta: {:?}, tool_call_id: {:?} }}",
+                preview, tool_call_id
+            )
+        }
+        StreamEvent::ToolCallComplete {
+            tool_name,
+            tool_call_id,
+        } => {
+            format!(
+                "ToolCallComplete {{ tool_name: {:?}, tool_call_id: {:?} }}",
+                tool_name, tool_call_id
+            )
+        }
+        StreamEvent::ToolExecuted {
+            tool_name,
+            tool_call_id,
+            success,
+            error,
+        } => {
+            format!(
+                "ToolExecuted {{ tool_name: {:?}, tool_call_id: {:?}, success: {}, error: {:?} }}",
+                tool_name, tool_call_id, success, error
+            )
+        }
+        StreamEvent::RequestStart { step } => {
+            format!("RequestStart {{ step: {} }}", step)
+        }
+        StreamEvent::ResponseComplete { step } => {
+            format!("ResponseComplete {{ step: {} }}", step)
+        }
+        StreamEvent::RunStart { run_id } => {
+            format!("RunStart {{ run_id: {:?} }}", run_id)
+        }
+        StreamEvent::RunComplete { run_id } => {
+            format!("RunComplete {{ run_id: {:?} }}", run_id)
+        }
+        StreamEvent::OutputReady => "OutputReady".to_string(),
+        StreamEvent::Error { message } => {
+            format!("Error {{ message: {:?} }}", message)
+        }
+    }
+}
+
+/// Log a stream event to stream_events.log with timestamp.
+/// Only logs if DEBUG_STREAM_EVENTS flag is enabled (via --debug flag).
+fn log_stream_event_to_file(event: &StreamEvent) {
+    // Only log if debug mode is enabled
+    if !crate::DEBUG_STREAM_EVENTS.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+
+    let formatted = format_stream_event(event);
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let log_line = format!("[{}] {}\n", timestamp, formatted);
+
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("stream_events.log")
+    {
+        let _ = file.write_all(log_line.as_bytes());
+    }
+}
 
 /// Helper struct to track in-progress tool calls during streaming.
 struct RawToolCall {
@@ -204,8 +308,14 @@ impl<'a> AgentExecutor<'a> {
 
                     // Debug logging for tool events
                     match &event {
-                        StreamEvent::ToolExecuted { tool_name, success, .. } => {
-                            tracing::info!("STREAM: ToolExecuted name='{}' success={}", tool_name, success);
+                        StreamEvent::ToolExecuted {
+                            tool_name, success, ..
+                        } => {
+                            tracing::info!(
+                                "STREAM: ToolExecuted name='{}' success={}",
+                                tool_name,
+                                success
+                            );
                         }
                         StreamEvent::ToolCallStart { tool_name, .. } => {
                             tracing::info!("STREAM: ToolCallStart name='{}'", tool_name);
@@ -215,6 +325,10 @@ impl<'a> AgentExecutor<'a> {
                         }
                         _ => {}
                     }
+
+                    // File-based debug logging for ALL stream events
+                    log_stream_event_to_file(&event);
+
                     bridge.process(event);
                 }
                 Err(e) => {

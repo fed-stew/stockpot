@@ -78,7 +78,9 @@ impl ChatApp {
     fn flush_cache_updates(&mut self, cx: &mut Context<Self>) {
         // Throttle updates to ~30fps (33ms) to prevent markdown re-parsing from blocking the main thread
         // This keeps scrolling smooth (120fps) while text updates slightly less frequently
-        if self.pending_cache_updates.is_empty() || self.last_text_flush.elapsed() < std::time::Duration::from_millis(33) {
+        if self.pending_cache_updates.is_empty()
+            || self.last_text_flush.elapsed() < std::time::Duration::from_millis(33)
+        {
             return;
         }
 
@@ -206,17 +208,15 @@ impl ChatApp {
                             if let Some(msg) = self.conversation.messages.last() {
                                 if let Some(section) = msg.get_nested_section(section_id) {
                                     // Find the last text item (where we just appended)
-                                    section
-                                        .items
-                                        .iter()
-                                        .enumerate()
-                                        .rev()
-                                        .find_map(|(idx, item)| match item {
-                                            crate::gui::state::AgentContentItem::Text(t) => {
-                                                Some((format!("agent-{}-text-{}", section.id, idx), t.clone()))
-                                            }
+                                    section.items.iter().enumerate().rev().find_map(
+                                        |(idx, item)| match item {
+                                            crate::gui::state::AgentContentItem::Text(t) => Some((
+                                                format!("agent-{}-text-{}", section.id, idx),
+                                                t.clone(),
+                                            )),
                                             _ => None,
-                                        })
+                                        },
+                                    )
                                 } else {
                                     None
                                 }
@@ -256,7 +256,7 @@ impl ChatApp {
                     let delta_text = delta.text.clone();
                     // Check if view exists to determine if we can buffer
                     let view_exists = self.text_view_cache.borrow().contains_key(&element_id);
-                    
+
                     if view_exists {
                         // Buffer the update to be flushed in animation tick
                         self.pending_cache_updates
@@ -265,12 +265,7 @@ impl ChatApp {
                             .or_insert(delta_text);
                     } else {
                         // Create view immediately for first chunk
-                        self.update_text_view_cache(
-                            element_id,
-                            &full_text,
-                            Some(&delta_text),
-                            cx,
-                        );
+                        self.update_text_view_cache(element_id, &full_text, Some(&delta_text), cx);
                     }
                 }
 
@@ -302,22 +297,16 @@ impl ChatApp {
                     self.conversation.append_thinking(&thinking.text);
 
                     // Prepare cache update (to avoid double borrowing self)
-                    let cache_update = if let Some(msg) = self.conversation.messages.last() {
-                        if let Some(section_id) = msg.active_thinking_section_id() {
-                            if let Some(section) = msg.get_thinking_section(section_id) {
-                                Some((
+                    let cache_update = self.conversation.messages.last().and_then(|msg| {
+                        msg.active_thinking_section_id().and_then(|section_id| {
+                            msg.get_thinking_section(section_id).map(|section| {
+                                (
                                     format!("thinking-{}-content", section.id),
                                     section.content.clone(),
-                                ))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
+                                )
+                            })
+                        })
+                    });
 
                     // Apply update
                     if let Some((element_id, full_text)) = cache_update {

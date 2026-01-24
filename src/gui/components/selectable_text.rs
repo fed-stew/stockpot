@@ -69,7 +69,7 @@ impl SelectableText {
         new_content.push_str(delta);
         self.content = new_content.into();
         // We don't necessarily need to clear selection on append, but safe for now.
-        // self.selected_range = 0..0; 
+        // self.selected_range = 0..0;
         self.cached_rendered = None;
         self.cached_content = SharedString::from("");
         cx.notify();
@@ -280,7 +280,7 @@ impl SelectableText {
             &window.text_style(),
             &self.theme,
         );
-        
+
         for link in &rendered.links {
             if link.range.contains(&offset) {
                 return Some(link.url.clone());

@@ -44,7 +44,7 @@ impl Widget for ThinkingWidget<'_> {
         } else {
             "▼"
         };
-        
+
         let pill_style = Style::default()
             .fg(Theme::THINKING)
             .add_modifier(Modifier::BOLD);

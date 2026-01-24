@@ -1,12 +1,14 @@
 use std::ops::Range;
 use std::sync::OnceLock;
 
-use gpui::{font, hsla, FontWeight, Hsla, SharedString, StrikethroughStyle, TextRun, TextStyle, UnderlineStyle};
+use gpui::{
+    font, hsla, FontWeight, Hsla, SharedString, StrikethroughStyle, TextRun, TextStyle,
+    UnderlineStyle,
+};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use syntect::highlighting::{ThemeSet, Color};
-use syntect::parsing::SyntaxSet;
 use syntect::easy::HighlightLines;
-
+use syntect::highlighting::{Color, ThemeSet};
+use syntect::parsing::SyntaxSet;
 
 use crate::gui::theme::Theme;
 
@@ -38,8 +40,6 @@ pub struct RenderedMarkdown {
     pub links: Vec<LinkRegion>,
 }
 
-
-
 pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> RenderedMarkdown {
     let mut text = String::new();
     let mut runs = Vec::new();
@@ -49,7 +49,7 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     let accent_color: Hsla = theme.accent.into();
     let _border_color: Hsla = theme.border.into();
     let panel_bg: Hsla = theme.panel_background.into();
-    
+
     let code_font = font("monospace");
     // Subtle background for code
     let code_bg = hsla(0.0, 0.0, 0.25, 0.35);
@@ -57,11 +57,13 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     // Table colors
     let _table_header_bg = panel_bg; // Distinct header background
     let _table_row_even_bg = panel_bg; // Subtle zebra stripe (using panel bg)
-    
+
     // Initialize Syntect
     let syntax_set = get_syntax_set();
     let theme_set = get_theme_set();
-    let highlighter_theme = theme_set.themes.get("base16-ocean.dark")
+    let highlighter_theme = theme_set
+        .themes
+        .get("base16-ocean.dark")
         .or_else(|| theme_set.themes.get("base16-mocha.dark"))
         .or_else(|| theme_set.themes.get("base16-eighties.dark"))
         .unwrap_or_else(|| theme_set.themes.values().next().unwrap());
@@ -74,13 +76,11 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     let mut link_dest: Option<String> = None;
     let mut link_start: Option<usize> = None;
     let mut links: Vec<LinkRegion> = Vec::new();
-    
+
     let mut in_code_block = false;
     let mut code_block_lang: Option<String> = None;
     let mut code_buffer = String::new();
-    
 
-    
     let mut in_block_quote = false;
     let mut in_list_item = false;
     let mut list_depth: usize = 0;
@@ -100,32 +100,47 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
             match event {
                 Event::End(TagEnd::CodeBlock) => {
                     in_code_block = false;
-                    
+
                     let syntax = code_block_lang
                         .as_ref()
                         .and_then(|lang| syntax_set.find_syntax_by_token(lang))
                         .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-                    
+
                     let mut highlighter = HighlightLines::new(syntax, highlighter_theme);
-                    
+
                     if !text.is_empty() && !text.ends_with('\n') {
                         text.push('\n');
-                        runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                        runs.push(TextRun {
+                            len: 1,
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
                     }
 
                     for line in code_buffer.lines() {
-                        let ranges: Vec<(syntect::highlighting::Style, &str)> = highlighter.highlight_line(line, syntax_set).unwrap_or_default();
-                        
+                        let ranges: Vec<(syntect::highlighting::Style, &str)> = highlighter
+                            .highlight_line(line, syntax_set)
+                            .unwrap_or_default();
+
                         for (style, range_text) in ranges {
                             let range_color = syntect_color_to_hsla(style.foreground);
                             let len = range_text.len();
                             text.push_str(range_text);
-                            
+
                             let mut run_font = code_font.clone();
-                            if style.font_style.contains(syntect::highlighting::FontStyle::BOLD) {
+                            if style
+                                .font_style
+                                .contains(syntect::highlighting::FontStyle::BOLD)
+                            {
                                 run_font = run_font.bold();
                             }
-                            if style.font_style.contains(syntect::highlighting::FontStyle::ITALIC) {
+                            if style
+                                .font_style
+                                .contains(syntect::highlighting::FontStyle::ITALIC)
+                            {
                                 run_font = run_font.italic();
                             }
 
@@ -138,7 +153,7 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                                 strikethrough: None,
                             });
                         }
-                        
+
                         text.push('\n');
                         runs.push(TextRun {
                             len: 1,
@@ -149,14 +164,21 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                             strikethrough: None,
                         });
                     }
-                    
+
                     code_buffer.clear();
                     code_block_lang = None;
-                    
-                     if !text.ends_with('\n') {
+
+                    if !text.ends_with('\n') {
                         text.push('\n');
-                        runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                     }
+                        runs.push(TextRun {
+                            len: 1,
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
+                    }
                 }
                 Event::Text(t) => {
                     code_buffer.push_str(&t);
@@ -169,8 +191,6 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
             continue;
         }
 
-
-
         match event {
             Event::Start(tag) => {
                 match tag {
@@ -178,23 +198,45 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                         // Don't add newline if we just added a list bullet
                         if in_list_item {
                             // Skip - bullet already positioned
-                        } else if !text.is_empty() && !text.ends_with("\n\n") {
-                             if !text.ends_with('\n') {
-                                text.push('\n');
-                                runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                             }
+                        } else if !text.is_empty()
+                            && !text.ends_with("\n\n")
+                            && !text.ends_with('\n')
+                        {
+                            text.push('\n');
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
                         }
                     }
                     Tag::Heading { level, .. } => {
-                         if !text.is_empty() && !text.ends_with('\n') {
+                        if !text.is_empty() && !text.ends_with('\n') {
                             text.push('\n');
-                            runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                         }
-                         if !text.is_empty() && !text.ends_with("\n\n") {
-                             text.push('\n');
-                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                         }
-                         header_level = Some(level);
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                        if !text.is_empty() && !text.ends_with("\n\n") {
+                            text.push('\n');
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                        header_level = Some(level);
                     }
                     Tag::BlockQuote => in_block_quote = true,
                     Tag::CodeBlock(kind) => {
@@ -206,8 +248,15 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                     }
                     Tag::List(start) => {
                         if !text.is_empty() && !text.ends_with('\n') {
-                             text.push('\n');
-                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                            text.push('\n');
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
                         }
                         list_depth += 1;
                         if let Some(start_num) = start {
@@ -217,31 +266,52 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                         }
                     }
                     Tag::Item => {
-                         if !text.is_empty() && !text.ends_with('\n') {
+                        if !text.is_empty() && !text.ends_with('\n') {
                             text.push('\n');
-                            runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                         }
-                         // Add indentation for nested lists
-                         let indent = "  ".repeat(list_depth.saturating_sub(1));
-                         if !indent.is_empty() {
-                             text.push_str(&indent);
-                             runs.push(TextRun { len: indent.len(), font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                         }
-                         // Add bullet or number
-                         let marker = if let Some(counter) = ordered_list_counters.last_mut() {
-                             if *counter > 0 {
-                                 let num = *counter;
-                                 *counter += 1;
-                                 format!("{}. ", num)
-                             } else {
-                                 "• ".to_string()
-                             }
-                         } else {
-                             "• ".to_string()
-                         };
-                         text.push_str(&marker);
-                         runs.push(TextRun { len: marker.len(), font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                         in_list_item = true;
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                        // Add indentation for nested lists
+                        let indent = "  ".repeat(list_depth.saturating_sub(1));
+                        if !indent.is_empty() {
+                            text.push_str(&indent);
+                            runs.push(TextRun {
+                                len: indent.len(),
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                        // Add bullet or number
+                        let marker = if let Some(counter) = ordered_list_counters.last_mut() {
+                            if *counter > 0 {
+                                let num = *counter;
+                                *counter += 1;
+                                format!("{}. ", num)
+                            } else {
+                                "• ".to_string()
+                            }
+                        } else {
+                            "• ".to_string()
+                        };
+                        text.push_str(&marker);
+                        runs.push(TextRun {
+                            len: marker.len(),
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
+                        in_list_item = true;
                     }
                     Tag::Emphasis => italic = true,
                     Tag::Strong => bold = true,
@@ -259,24 +329,45 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                     TagEnd::Heading(_) => {
                         header_level = None;
                         text.push('\n');
-                        runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                    },
+                        runs.push(TextRun {
+                            len: 1,
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
+                    }
                     TagEnd::BlockQuote => in_block_quote = false,
-                    TagEnd::CodeBlock => {},
+                    TagEnd::CodeBlock => {}
                     TagEnd::Emphasis => italic = false,
                     TagEnd::Strong => bold = false,
                     TagEnd::Strikethrough => strikethrough = false,
                     TagEnd::Paragraph => {
-                         text.push('\n');
-                         runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
+                        text.push('\n');
+                        runs.push(TextRun {
+                            len: 1,
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
                     }
                     TagEnd::List(_) => {
-                         list_depth = list_depth.saturating_sub(1);
-                         ordered_list_counters.pop();
-                         if !text.ends_with('\n') {
-                             text.push('\n');
-                             runs.push(TextRun { len: 1, font: base_font.clone(), color: base_color, background_color: None, underline: None, strikethrough: None });
-                         }
+                        list_depth = list_depth.saturating_sub(1);
+                        ordered_list_counters.pop();
+                        if !text.ends_with('\n') {
+                            text.push('\n');
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
                     }
                     TagEnd::Item => {
                         in_list_item = false;
@@ -296,18 +387,22 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
             Event::Text(t) => {
                 let mut font = base_font.clone();
 
-                if bold { font = font.bold(); }
-                if italic { font = font.italic(); }
+                if bold {
+                    font = font.bold();
+                }
+                if italic {
+                    font = font.italic();
+                }
 
                 if let Some(level) = header_level {
-                     font.weight = match level {
+                    font.weight = match level {
                         HeadingLevel::H1 => FontWeight::EXTRA_BOLD,
                         HeadingLevel::H2 => FontWeight::BOLD,
                         HeadingLevel::H3 => FontWeight::SEMIBOLD,
                         HeadingLevel::H4 => FontWeight::MEDIUM,
                         HeadingLevel::H5 => FontWeight::MEDIUM,
                         HeadingLevel::H6 => FontWeight::NORMAL,
-                     };
+                    };
                 }
 
                 if in_block_quote {
@@ -333,7 +428,7 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                 } else {
                     None
                 };
-                
+
                 let text_underline = if link_dest.is_some() {
                     Some(UnderlineStyle {
                         color: Some(color),
@@ -402,9 +497,6 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
         links,
     }
 }
-
-
-
 
 pub fn apply_selection_background(
     runs: &[TextRun],
@@ -484,10 +576,10 @@ fn merge_adjacent_runs(runs: Vec<TextRun>) -> Vec<TextRun> {
 
 fn syntect_color_to_hsla(color: Color) -> Hsla {
     gpui::rgba(
-        ((color.r as u32) << 24) |
-        ((color.g as u32) << 16) |
-        ((color.b as u32) << 8) |
-        (color.a as u32)
+        ((color.r as u32) << 24)
+            | ((color.g as u32) << 16)
+            | ((color.b as u32) << 8)
+            | (color.a as u32),
     )
     .into()
 }

@@ -66,28 +66,29 @@ pub fn render(frame: &mut Frame, app: &mut TuiApp) {
 
 fn render_header(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
     use crate::config::Settings;
-    
+
     // Get agent display name
-    let agent_display = app.agents
+    let agent_display = app
+        .agents
         .list()
         .iter()
         .find(|a| a.name == app.current_agent)
         .map(|a| a.display_name.clone())
         .unwrap_or_else(|| app.current_agent.clone());
-    
+
     // Get effective model for this agent (pinned or "default")
     let settings = Settings::new(&app.db);
     let model_display = settings
         .get_agent_pinned_model(&app.current_agent)
         .unwrap_or_else(|| "default".to_string());
-    
+
     let header = Header::new(&agent_display, &model_display, &app.current_working_dir);
-    
+
     // Calculate hit target positions
     let agent_section_width = header.agent_section_width();
     let folder_offset = header.folder_offset();
     let folder_width = header.folder_width();
-    
+
     frame.render_widget(header, area);
 
     // Register hit targets for dropdowns
@@ -127,8 +128,8 @@ fn render_activity_feed(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
     };
 
     // Create the activity feed widget
-    let mut activity_feed = ActivityFeed::new(&app.activities)
-        .rendered_lines(&mut app.rendered_lines);
+    let mut activity_feed =
+        ActivityFeed::new(&app.activities).rendered_lines(&mut app.rendered_lines);
 
     if let Some(ref sel) = selection {
         activity_feed = activity_feed.selection(sel);
@@ -184,7 +185,9 @@ fn render_input(frame: &mut Frame, app: &TuiApp, area: Rect) {
     let prompt_width = 2u16;
 
     // Render prompt on first line of input area
-    frame.buffer_mut().set_span(area.x, area.y, &prompt, prompt_width);
+    frame
+        .buffer_mut()
+        .set_span(area.x, area.y, &prompt, prompt_width);
 
     // Textarea gets the remaining space after the prompt
     let textarea_area = Rect {
@@ -217,10 +220,10 @@ fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
 
 fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
     use crate::config::Settings;
-    
+
     let settings = Settings::new(&app.db);
     let available_agents = app.agents.list();
-    
+
     // Build items with pinned model info
     // Format: "Agent Name (model)" or "Agent Name (default)"
     let items: Vec<(String, String)> = available_agents
@@ -231,7 +234,10 @@ fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect)
                 Some(m) => format!(" ({})", m), // Show full model name, no truncation
                 None => " (default)".to_string(),
             };
-            (format!("{}{}", info.display_name, model_hint), info.name.clone())
+            (
+                format!("{}{}", info.display_name, model_hint),
+                info.name.clone(),
+            )
         })
         .collect();
 
@@ -241,14 +247,14 @@ fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect)
         .map(|(label, _)| label.chars().count())
         .max()
         .unwrap_or(30);
-    
+
     // Add padding for borders (2), selection indicator (2), and some margin (4)
     // Use generous max width to show full model names
-    let dropdown_width = ((max_item_len + 8) as u16).max(45).min(100);
-    
+    let dropdown_width = ((max_item_len + 8) as u16).clamp(45, 100);
+
     // Height: show all items up to max 20, plus 2 for borders
     let dropdown_height = (items.len() as u16 + 2).min(20);
-    
+
     // Position below the agent section in header (after "stockpot │ ")
     let dropdown_area = Rect::new(
         header_area.x + 15,
@@ -269,37 +275,15 @@ fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect)
     widget.render(dropdown_area, frame.buffer_mut(), &mut app.hit_registry);
 }
 
-fn render_model_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
-    let available_models = app.model_registry.list_available(&app.db);
-    let items: Vec<(String, String)> = available_models
-        .iter()
-        .map(|name| (name.clone(), name.clone()))
-        .collect();
-
-    let dropdown_height = (items.len() as u16 + 2).min(10);
-    let dropdown_area = Rect::new(header_area.x + 35, header_area.y + 1, 35, dropdown_height);
-
-    let widget = DropdownWidget::new(
-        items,
-        Some(&app.current_model),
-        "Select Model",
-        ClickTarget::ModelItem,
-    )
-    .mouse_pos(app.last_mouse_pos);
-
-    frame.render_widget(Clear, dropdown_area);
-    widget.render(dropdown_area, frame.buffer_mut(), &mut app.hit_registry);
-}
-
 fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
     // Modal dimensions
     let modal_width: u16 = 50;
     let modal_height: u16 = 15; // Fixed height for consistency
-    
+
     // Visible area for entries (modal height - borders - header - separator)
     // 15 - 2 (borders) - 1 (path) - 1 (separator) = 11, but reserve 1 for scroll indicators
     let visible_entries: usize = 8;
-    
+
     // Position modal below the folder indicator in header
     let modal_area = Rect::new(
         header_area.x + 45, // Approximate folder position
@@ -313,15 +297,18 @@ fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
 
     // Build the modal content
     let mut lines: Vec<Line> = Vec::new();
-    
+
     // Current path display
     let path_display = app.current_working_dir.to_string_lossy();
     let truncated_path = if path_display.len() > (modal_width as usize - 6) {
-        format!("...{}", &path_display[path_display.len() - (modal_width as usize - 9)..])
+        format!(
+            "...{}",
+            &path_display[path_display.len() - (modal_width as usize - 9)..]
+        )
     } else {
         path_display.to_string()
     };
-    
+
     lines.push(Line::from(vec![
         Span::styled("📁 ", Style::default()),
         Span::styled(truncated_path, Style::default().fg(Theme::YELLOW)),
@@ -348,12 +335,9 @@ fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
     // Build list of all items (parent + entries)
     let mut all_items: Vec<(usize, String, bool)> = Vec::new(); // (index, display_name, is_dir)
     all_items.push((0, "..  (parent directory)".to_string(), true));
-    
+
     for (i, path) in app.folder_modal_entries.iter().enumerate() {
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("?");
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
         let display_name = if name.len() > (modal_width as usize - 8) {
             format!("{}...", &name[..(modal_width as usize - 11)])
         } else {
@@ -372,7 +356,9 @@ fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
             let is_selected = app.folder_modal_selected == *idx;
             let selector = if is_selected { "▶ " } else { "  " };
             let style = if is_selected {
-                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Theme::TEXT)
             };
@@ -386,7 +372,8 @@ fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
             let entry_y = modal_area.y + 3 + (if has_more_above { 1 } else { 0 }) + render_y_offset;
             if entry_y < modal_area.y + modal_area.height - 1 {
                 let entry_rect = Rect::new(modal_area.x + 1, entry_y, modal_width - 2, 1);
-                app.hit_registry.register(entry_rect, ClickTarget::FolderItem(*idx));
+                app.hit_registry
+                    .register(entry_rect, ClickTarget::FolderItem(*idx));
             }
             render_y_offset += 1;
         }
@@ -476,10 +463,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Theme::YELLOW))
-        .title(Span::styled(
-            " Help ",
-            Style::default().fg(Theme::YELLOW),
-        ))
+        .title(Span::styled(" Help ", Style::default().fg(Theme::YELLOW)))
         .style(Style::default().bg(Theme::INPUT_BG));
 
     let paragraph = Paragraph::new(help_lines)

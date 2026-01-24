@@ -157,12 +157,16 @@ impl ActivityFeedState {
     }
 
     pub fn scroll_down(&mut self, amount: usize) {
-        let max = self.total_content_height.saturating_sub(self.viewport_height);
+        let max = self
+            .total_content_height
+            .saturating_sub(self.viewport_height);
         self.scroll_offset = (self.scroll_offset + amount).min(max);
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = self.total_content_height.saturating_sub(self.viewport_height);
+        self.scroll_offset = self
+            .total_content_height
+            .saturating_sub(self.viewport_height);
     }
 
     /// Mark cache as dirty (call when activities change)
@@ -259,13 +263,15 @@ fn render_header(activity: &Activity) -> (LineData, Color) {
             ..
         } => {
             let prefix = if *completed { "✓ Done" } else { "○ Task" };
-            let color = if *completed { Theme::GREEN } else { Theme::YELLOW };
+            let color = if *completed {
+                Theme::GREEN
+            } else {
+                Theme::YELLOW
+            };
             (prefix, description.clone(), color)
         }
         Activity::Thinking { .. } => ("Thinking", String::new(), Theme::THINKING),
-        Activity::NestedAgent { display_name, .. } => {
-            ("Agent", display_name.clone(), Theme::AGENT)
-        }
+        Activity::NestedAgent { display_name, .. } => ("Agent", display_name.clone(), Theme::AGENT),
         Activity::UserMessage { .. } => ("You", String::new(), Theme::ACCENT),
         Activity::AssistantMessage { .. } => ("Assistant", String::new(), Theme::MUTED),
     };
@@ -302,7 +308,11 @@ fn render_tree_items(items: &[String], is_last_fn: impl Fn(usize) -> bool) -> Ve
         .enumerate()
         .map(|(i, item)| {
             let mut line = LineData::new();
-            let connector = if is_last_fn(i) { TREE_LAST } else { TREE_BRANCH };
+            let connector = if is_last_fn(i) {
+                TREE_LAST
+            } else {
+                TREE_BRANCH
+            };
 
             // Indent + connector
             line.push_display_only(" ".repeat(INDENT_WIDTH - 2), Style::default());
@@ -538,7 +548,10 @@ fn wrap_line(line: &LineData, width: usize) -> Vec<(String, Vec<StyledSpan>)> {
 
             if current_width >= available {
                 // Start new line
-                let display: String = current_line_spans.iter().map(|s: &StyledSpan| s.text.as_str()).collect();
+                let display: String = current_line_spans
+                    .iter()
+                    .map(|s: &StyledSpan| s.text.as_str())
+                    .collect();
                 result.push((display, current_line_spans));
                 current_line_spans = Vec::new();
                 current_width = 0;
@@ -555,13 +568,13 @@ fn wrap_line(line: &LineData, width: usize) -> Vec<(String, Vec<StyledSpan>)> {
             }
 
             let space_left = available.saturating_sub(current_width);
-            
+
             // Take characters by display width, not by count
             // This properly handles wide characters (emojis, CJK) that take 2 cells
             let mut taken_width = 0;
             let mut take_chars = String::new();
             let mut byte_offset = 0;
-            
+
             for ch in remaining.chars() {
                 let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1);
                 if taken_width + ch_width > space_left {
@@ -579,7 +592,10 @@ fn wrap_line(line: &LineData, width: usize) -> Vec<(String, Vec<StyledSpan>)> {
             } else {
                 // Can't fit even one char, force newline
                 if !current_line_spans.is_empty() {
-                    let display: String = current_line_spans.iter().map(|s: &StyledSpan| s.text.as_str()).collect();
+                    let display: String = current_line_spans
+                        .iter()
+                        .map(|s: &StyledSpan| s.text.as_str())
+                        .collect();
                     result.push((display, current_line_spans));
                     current_line_spans = Vec::new();
                     current_width = 0;
@@ -592,7 +608,10 @@ fn wrap_line(line: &LineData, width: usize) -> Vec<(String, Vec<StyledSpan>)> {
 
     // Push remaining content
     if !current_line_spans.is_empty() {
-        let display: String = current_line_spans.iter().map(|s: &StyledSpan| s.text.as_str()).collect();
+        let display: String = current_line_spans
+            .iter()
+            .map(|s: &StyledSpan| s.text.as_str())
+            .collect();
         result.push((display, current_line_spans));
     }
 

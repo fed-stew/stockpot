@@ -152,16 +152,19 @@ fn render_server_list(
 
     // Header with hints
     let header_area = Rect::new(inner.x, inner.y, inner.width, 2);
-    let list_area = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
+    let list_area = Rect::new(
+        inner.x,
+        inner.y + 2,
+        inner.width,
+        inner.height.saturating_sub(2),
+    );
 
-    let header = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("  Enter", Style::default().fg(Theme::ACCENT)),
-            Span::styled(": toggle  ", Style::default().fg(Theme::MUTED)),
-            Span::styled("Del", Style::default().fg(Theme::ACCENT)),
-            Span::styled(": remove", Style::default().fg(Theme::MUTED)),
-        ]),
-    ]);
+    let header = Paragraph::new(vec![Line::from(vec![
+        Span::styled("  Enter", Style::default().fg(Theme::ACCENT)),
+        Span::styled(": toggle  ", Style::default().fg(Theme::MUTED)),
+        Span::styled("Del", Style::default().fg(Theme::ACCENT)),
+        Span::styled(": remove", Style::default().fg(Theme::MUTED)),
+    ])]);
     frame.render_widget(header, header_area);
 
     // Server list
@@ -204,13 +207,19 @@ fn render_server_item(server: &ServerInfo, is_selected: bool) -> ListItem<'stati
         // Status
         Line::from(vec![
             Span::raw("    "),
-            Span::styled(format!("{} ", status_icon), Style::default().fg(status_color)),
+            Span::styled(
+                format!("{} ", status_icon),
+                Style::default().fg(status_color),
+            ),
             Span::styled(status_text, Style::default().fg(status_color)),
         ]),
         // Command preview
         Line::from(vec![
             Span::raw("    "),
-            Span::styled(server.command_preview.clone(), Style::default().fg(Theme::MUTED)),
+            Span::styled(
+                server.command_preview.clone(),
+                Style::default().fg(Theme::MUTED),
+            ),
         ]),
         // Empty line for spacing
         Line::from(""),
@@ -218,6 +227,7 @@ fn render_server_item(server: &ServerInfo, is_selected: bool) -> ListItem<'stati
 }
 
 /// Render the right panel with agent-MCP assignments
+#[allow(clippy::too_many_arguments)]
 fn render_agent_assignments(
     frame: &mut Frame,
     area: Rect,
@@ -437,7 +447,10 @@ fn render_mcp_checkboxes(
 
             ListItem::new(Line::from(vec![
                 Span::styled(selector, Style::default().fg(Theme::ACCENT)),
-                Span::styled(format!("{} ", checkbox), Style::default().fg(checkbox_color)),
+                Span::styled(
+                    format!("{} ", checkbox),
+                    Style::default().fg(checkbox_color),
+                ),
                 Span::styled(server.name.clone(), name_style),
             ]))
         })
@@ -474,7 +487,7 @@ pub fn enabled_server_count() -> usize {
 pub fn toggle_server_enabled(server_index: usize) {
     let mut mcp_config = McpConfig::load_or_default();
     let servers = load_servers();
-    
+
     if let Some(server) = servers.get(server_index) {
         if let Some(entry) = mcp_config.servers.get_mut(&server.name) {
             entry.enabled = !entry.enabled;
@@ -487,7 +500,7 @@ pub fn toggle_server_enabled(server_index: usize) {
 pub fn remove_server(server_index: usize) {
     let mut mcp_config = McpConfig::load_or_default();
     let servers = load_servers();
-    
+
     if let Some(server) = servers.get(server_index) {
         mcp_config.servers.remove(&server.name);
         let _ = mcp_config.save_default();

@@ -205,7 +205,8 @@ pub struct ChatApp {
     /// Map from agent_name to section_id for currently active nested sections
     active_section_ids: HashMap<String, String>,
     /// Cache of TextViewState entities keyed by element id
-    text_view_cache: RefCell<HashMap<String, Entity<crate::gui::components::StreamingMarkdownView>>>,
+    text_view_cache:
+        RefCell<HashMap<String, Entity<crate::gui::components::StreamingMarkdownView>>>,
 
     /// Pending text updates to be applied in the next animation tick
     /// Key: element_id, Value: pending delta string

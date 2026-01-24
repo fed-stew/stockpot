@@ -30,7 +30,7 @@ pub struct Header {
 
 impl Header {
     /// Create a new header
-    /// 
+    ///
     /// # Arguments
     /// * `agent_display` - The agent's display name (e.g., "Code-Puppy 🐶")
     /// * `model_display` - The effective model (pinned model or "default")
@@ -55,7 +55,7 @@ impl Header {
     /// Format folder path for display (truncate if too long, use ~ for home)
     fn format_folder(path: &Path) -> String {
         let path_str = path.to_string_lossy();
-        
+
         // Replace home directory with ~
         let display = if let Some(home) = dirs::home_dir() {
             if let Ok(relative) = path.strip_prefix(&home) {
@@ -126,19 +126,13 @@ impl Widget for Header {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(" • ", Style::default().fg(Theme::MUTED)),
-            Span::styled(
-                &self.model_display,
-                Style::default().fg(Theme::GREEN),
-            ),
+            Span::styled(&self.model_display, Style::default().fg(Theme::GREEN)),
             Span::styled(" ▾", dropdown_indicator),
             // Separator
             Span::styled(" │ ", separator),
             // Folder with dropdown
             Span::styled("📁 ", Style::default()),
-            Span::styled(
-                &self.folder_path,
-                Style::default().fg(Theme::YELLOW),
-            ),
+            Span::styled(&self.folder_path, Style::default().fg(Theme::YELLOW)),
             Span::styled(" ▾", dropdown_indicator),
             // Separator and settings hint
             Span::styled(" │ ", separator),

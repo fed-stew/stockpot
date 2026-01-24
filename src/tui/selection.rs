@@ -150,7 +150,8 @@ impl SelectionState {
 
     /// Get selection bounds as line range (for scrolling calculations)
     pub fn line_range(&self) -> Option<(usize, usize)> {
-        self.normalized().map(|((start_line, _), (end_line, _))| (start_line, end_line))
+        self.normalized()
+            .map(|((start_line, _), (end_line, _))| (start_line, end_line))
     }
 }
 
@@ -216,8 +217,8 @@ mod tests {
     #[test]
     fn test_backwards_selection() {
         let mut sel = SelectionState::new();
-        sel.start_at(10, 20);  // Start lower-right
-        sel.update_to(5, 10);  // Drag to upper-left
+        sel.start_at(10, 20); // Start lower-right
+        sel.update_to(5, 10); // Drag to upper-left
         sel.end_selection();
 
         // Should normalize to start before end

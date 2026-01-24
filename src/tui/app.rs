@@ -24,7 +24,7 @@ use super::attachments::AttachmentManager;
 use super::event::{AppEvent, ClipboardManager, EventHandler};
 use super::execution::execute_agent;
 use super::hit_test::{ClickTarget, HitTestRegistry};
-use super::selection::{Position, SelectionState};
+use super::selection::SelectionState;
 use super::settings::SettingsState;
 use super::state::TuiConversation;
 use super::theme::Theme;
@@ -109,7 +109,6 @@ pub struct TuiApp {
     // ─────────────────────────────────────────────────────────────────────────
     // Folder modal state
     // ─────────────────────────────────────────────────────────────────────────
-    
     /// Whether folder modal is visible
     pub show_folder_modal: bool,
     /// Current working directory
@@ -129,7 +128,6 @@ pub struct TuiApp {
     // ─────────────────────────────────────────────────────────────────────────
     // Activity feed state (rustpuppy-style)
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Activities for the feed
     pub activities: Vec<Activity>,
     /// Activity feed scroll state
@@ -301,32 +299,31 @@ impl TuiApp {
 
         let ((start_line, start_col), (end_line, end_col)) = self.selection.normalized()?;
 
-        // Adjust for scroll offset - selection is in screen coords
-        let scroll = self.activity_state.scroll_offset;
-        let abs_start = start_line + scroll;
-        let abs_end = end_line + scroll;
+        // Selection coordinates are already in content/absolute coordinates
+        // (scroll offset is added when selection starts/updates in mouse handlers)
+        // So we use start_line and end_line directly without adding scroll again!
 
         let mut result = String::new();
 
         for (i, line) in self.rendered_lines.iter().enumerate() {
-            if i < abs_start || i > abs_end {
+            if i < start_line || i > end_line {
                 continue;
             }
 
             let text = &line.copyable_text;
             let chars: Vec<char> = text.chars().collect();
 
-            if i == abs_start && i == abs_end {
+            if i == start_line && i == end_line {
                 // Single line selection
                 let s = start_col.min(chars.len());
                 let e = (end_col + 1).min(chars.len());
                 result.push_str(&chars[s..e].iter().collect::<String>());
-            } else if i == abs_start {
+            } else if i == start_line {
                 // First line
                 let s = start_col.min(chars.len());
                 result.push_str(&chars[s..].iter().collect::<String>());
                 result.push('\n');
-            } else if i == abs_end {
+            } else if i == end_line {
                 // Last line
                 let e = (end_col + 1).min(chars.len());
                 result.push_str(&chars[..e].iter().collect::<String>());
@@ -364,7 +361,7 @@ impl TuiApp {
 
     /// Handle Tab key in settings (switch tabs or panels)
     fn handle_settings_tab_key(&mut self, shift: bool) {
-        use super::settings::{PinnedAgentsPanel, SettingsTab};
+        use super::settings::SettingsTab;
 
         match self.settings_state.active_tab {
             SettingsTab::PinnedAgents => {
@@ -463,9 +460,7 @@ impl TuiApp {
                 }
                 PinnedAgentsPanel::Agents => {
                     let agent_count = self.agents.list().len();
-                    if agent_count > 0
-                        && self.settings_state.agent_list_index < agent_count - 1
-                    {
+                    if agent_count > 0 && self.settings_state.agent_list_index < agent_count - 1 {
                         self.settings_state.agent_list_index += 1;
                         // Reset model list selection when agent changes
                         self.settings_state.model_list_index = 0;
@@ -485,7 +480,8 @@ impl TuiApp {
                     self.settings_state.models_selected_index = 0;
                 } else {
                     let available_models = self.model_registry.list_available(&self.db);
-                    let max_index = super::settings::models::count_models_items(self, &available_models);
+                    let max_index =
+                        super::settings::models::count_models_items(self, &available_models);
                     if max_index > 0 && self.settings_state.models_selected_index < max_index - 1 {
                         self.settings_state.models_selected_index += 1;
                     }
@@ -496,20 +492,25 @@ impl TuiApp {
                 match self.settings_state.mcp_panel {
                     McpPanel::Servers => {
                         let server_count = super::settings::mcp_servers::server_count();
-                        if server_count > 0 && self.settings_state.mcp_server_index < server_count - 1 {
+                        if server_count > 0
+                            && self.settings_state.mcp_server_index < server_count - 1
+                        {
                             self.settings_state.mcp_server_index += 1;
                         }
                     }
                     McpPanel::Agents => {
                         let agent_count = self.agents.list().len();
-                        if agent_count > 0 && self.settings_state.mcp_agent_index < agent_count - 1 {
+                        if agent_count > 0 && self.settings_state.mcp_agent_index < agent_count - 1
+                        {
                             self.settings_state.mcp_agent_index += 1;
                             self.settings_state.mcp_checkbox_index = 0;
                         }
                     }
                     McpPanel::McpCheckboxes => {
                         let enabled_count = super::settings::mcp_servers::enabled_server_count();
-                        if enabled_count > 0 && self.settings_state.mcp_checkbox_index < enabled_count - 1 {
+                        if enabled_count > 0
+                            && self.settings_state.mcp_checkbox_index < enabled_count - 1
+                        {
                             self.settings_state.mcp_checkbox_index += 1;
                         }
                     }
@@ -552,7 +553,8 @@ impl TuiApp {
                     2 => {
                         // Show Reasoning - toggle
                         let current = settings.get_bool("show_reasoning").unwrap_or(true);
-                        let _ = settings.set("show_reasoning", if current { "false" } else { "true" });
+                        let _ =
+                            settings.set("show_reasoning", if current { "false" } else { "true" });
                     }
                     3 => {
                         // YOLO Mode - toggle
@@ -597,19 +599,35 @@ impl TuiApp {
                     // Can't interact with OAuth section in TUI
                     return;
                 }
-                
+
                 let available_models = self.model_registry.list_available(&self.db);
                 let selected_index = self.settings_state.models_selected_index;
-                
+
                 // Check if it's a group header (to expand/collapse)
-                if let Some(type_label) = super::settings::models::is_group_header(self, &available_models, selected_index) {
+                if let Some(type_label) = super::settings::models::is_group_header(
+                    self,
+                    &available_models,
+                    selected_index,
+                ) {
                     // Toggle expanded state
-                    if self.settings_state.models_expanded_providers.contains(&type_label) {
-                        self.settings_state.models_expanded_providers.remove(&type_label);
+                    if self
+                        .settings_state
+                        .models_expanded_providers
+                        .contains(&type_label)
+                    {
+                        self.settings_state
+                            .models_expanded_providers
+                            .remove(&type_label);
                     } else {
-                        self.settings_state.models_expanded_providers.insert(type_label);
+                        self.settings_state
+                            .models_expanded_providers
+                            .insert(type_label);
                     }
-                } else if let Some(model_name) = super::settings::models::get_model_at_index(self, &available_models, selected_index) {
+                } else if let Some(model_name) = super::settings::models::get_model_at_index(
+                    self,
+                    &available_models,
+                    selected_index,
+                ) {
                     // Set as default model
                     self.current_model = model_name.clone();
                     let _ = settings.set("model", &model_name);
@@ -622,7 +640,7 @@ impl TuiApp {
                     McpPanel::Servers => {
                         // Toggle enable/disable of selected server
                         super::settings::mcp_servers::toggle_server_enabled(
-                            self.settings_state.mcp_server_index
+                            self.settings_state.mcp_server_index,
                         );
                     }
                     McpPanel::Agents => {
@@ -635,8 +653,10 @@ impl TuiApp {
                         if let Some(agent_info) = agents.get(self.settings_state.mcp_agent_index) {
                             let agent_name = &agent_info.name;
                             let checkbox_idx = self.settings_state.mcp_checkbox_index;
-                            
-                            if let Some(mcp_name) = super::settings::mcp_servers::get_enabled_server_name(checkbox_idx) {
+
+                            if let Some(mcp_name) =
+                                super::settings::mcp_servers::get_enabled_server_name(checkbox_idx)
+                            {
                                 let current_mcps = settings.get_agent_mcps(agent_name);
                                 if current_mcps.contains(&mcp_name) {
                                     // Remove attachment
@@ -655,7 +675,7 @@ impl TuiApp {
 
     /// Handle Left key in settings
     fn handle_settings_left_key(&mut self) {
-        use super::settings::{PinnedAgentsPanel, SettingsTab};
+        use super::settings::SettingsTab;
         use crate::agents::UserMode;
         use crate::config::{PdfMode, Settings};
 
@@ -699,7 +719,7 @@ impl TuiApp {
 
     /// Handle Right key in settings
     fn handle_settings_right_key(&mut self) {
-        use super::settings::{PinnedAgentsPanel, SettingsTab};
+        use super::settings::SettingsTab;
         use crate::agents::UserMode;
         use crate::config::{PdfMode, Settings};
 
@@ -743,24 +763,19 @@ impl TuiApp {
     /// Handle Delete key in settings
     fn handle_settings_delete_key(&mut self) {
         use super::settings::{McpPanel, SettingsTab};
-        
-        match self.settings_state.active_tab {
-            SettingsTab::McpServers => {
-                if self.settings_state.mcp_panel == McpPanel::Servers {
-                    // Remove the selected MCP server
-                    let server_count = super::settings::mcp_servers::server_count();
-                    if server_count > 0 {
-                        super::settings::mcp_servers::remove_server(
-                            self.settings_state.mcp_server_index
-                        );
-                        // Adjust selection if needed
-                        if self.settings_state.mcp_server_index >= server_count.saturating_sub(1) {
-                            self.settings_state.mcp_server_index = server_count.saturating_sub(2);
-                        }
-                    }
+
+        if self.settings_state.active_tab == SettingsTab::McpServers
+            && self.settings_state.mcp_panel == McpPanel::Servers
+        {
+            // Remove the selected MCP server
+            let server_count = super::settings::mcp_servers::server_count();
+            if server_count > 0 {
+                super::settings::mcp_servers::remove_server(self.settings_state.mcp_server_index);
+                // Adjust selection if needed
+                if self.settings_state.mcp_server_index >= server_count.saturating_sub(1) {
+                    self.settings_state.mcp_server_index = server_count.saturating_sub(2);
                 }
             }
-            _ => {}
         }
     }
 
@@ -787,7 +802,7 @@ impl TuiApp {
     /// Load directory entries for the current working directory
     pub fn load_folder_entries(&mut self) {
         self.folder_modal_entries.clear();
-        
+
         if let Ok(entries) = std::fs::read_dir(&self.current_working_dir) {
             let mut dirs: Vec<std::path::PathBuf> = entries
                 .filter_map(|e| e.ok())
@@ -801,7 +816,7 @@ impl TuiApp {
                         .unwrap_or(false)
                 })
                 .collect();
-            
+
             // Sort alphabetically
             dirs.sort_by(|a, b| {
                 a.file_name()
@@ -815,7 +830,7 @@ impl TuiApp {
                             .to_lowercase(),
                     )
             });
-            
+
             self.folder_modal_entries = dirs;
         }
     }
@@ -853,7 +868,10 @@ impl TuiApp {
     pub fn folder_modal_confirm(&mut self) {
         // Set the working directory
         if std::env::set_current_dir(&self.current_working_dir).is_ok() {
-            tracing::info!("Changed working directory to: {:?}", self.current_working_dir);
+            tracing::info!(
+                "Changed working directory to: {:?}",
+                self.current_working_dir
+            );
         }
         self.close_folder_modal();
     }
@@ -890,31 +908,32 @@ impl TuiApp {
 
         while !self.should_quit {
             // Process auto-scroll if dragging selection outside visible area
-            if self.selection.is_dragging() && self.auto_scroll_direction.is_some() {
-                if self.last_auto_scroll.elapsed() >= auto_scroll_interval {
-                    self.last_auto_scroll = Instant::now();
-                    match self.auto_scroll_direction {
-                        Some(-1) => {
-                            // Scroll up
-                            self.activity_scroll_up(auto_scroll_lines);
-                            // Update selection to stay with scroll
-                            if let Some((_, col)) = self.selection.end() {
-                                let new_line = self.activity_state.scroll_offset;
-                                self.selection.update_to(new_line, col);
-                            }
+            if self.selection.is_dragging()
+                && self.auto_scroll_direction.is_some()
+                && self.last_auto_scroll.elapsed() >= auto_scroll_interval
+            {
+                self.last_auto_scroll = Instant::now();
+                match self.auto_scroll_direction {
+                    Some(-1) => {
+                        // Scroll up
+                        self.activity_scroll_up(auto_scroll_lines);
+                        // Update selection to stay with scroll
+                        if let Some((_, col)) = self.selection.end() {
+                            let new_line = self.activity_state.scroll_offset;
+                            self.selection.update_to(new_line, col);
                         }
-                        Some(1) => {
-                            // Scroll down
-                            self.activity_scroll_down(auto_scroll_lines);
-                            if let Some((_, col)) = self.selection.end() {
-                                let new_line = self.activity_state.scroll_offset
-                                    + self.activity_state.viewport_height.saturating_sub(1);
-                                let max_line = self.rendered_lines.len().saturating_sub(1);
-                                self.selection.update_to(new_line.min(max_line), col);
-                            }
-                        }
-                        _ => {}
                     }
+                    Some(1) => {
+                        // Scroll down
+                        self.activity_scroll_down(auto_scroll_lines);
+                        if let Some((_, col)) = self.selection.end() {
+                            let new_line = self.activity_state.scroll_offset
+                                + self.activity_state.viewport_height.saturating_sub(1);
+                            let max_line = self.rendered_lines.len().saturating_sub(1);
+                            self.selection.update_to(new_line.min(max_line), col);
+                        }
+                    }
+                    _ => {}
                 }
             }
 
@@ -929,7 +948,7 @@ impl TuiApp {
             // Handle events and messages
             tokio::select! {
                 biased;  // Prefer bus messages over UI events
-                
+
                 Ok(msg) = bus_receiver.recv() => {
                     tracing::debug!("BUS RECV: {:?}", std::mem::discriminant(&msg));
                     self.handle_bus_message(msg);
@@ -1134,8 +1153,7 @@ impl TuiApp {
                         }
                         return Ok(());
                     }
-                    (KeyModifiers::SHIFT, KeyCode::Enter)
-                    | (KeyModifiers::ALT, KeyCode::Enter) => {
+                    (KeyModifiers::SHIFT, KeyCode::Enter) | (KeyModifiers::ALT, KeyCode::Enter) => {
                         // Shift+Enter or Alt+Enter inserts newline
                         // (Alt+Enter works as fallback when terminal doesn't support
                         // keyboard enhancement for detecting Shift+Enter)
@@ -1156,14 +1174,22 @@ impl TuiApp {
             }
             AppEvent::SelectionStart { row, col } => {
                 self.last_mouse_pos = Some((col, row));
-                
+
                 // ONLY start selection if click is inside the activity area
                 // This prevents selection logic from running on dropdown clicks, etc.
                 let area = self.cached_activity_area;
-                if row >= area.y && row < area.y + area.height 
-                    && col >= area.x && col < area.x + area.width 
+                if row >= area.y
+                    && row < area.y + area.height
+                    && col >= area.x
+                    && col < area.x + area.width
                 {
-                    self.selection.start_selection(Position::new(row, col));
+                    // Convert screen coordinates to content coordinates:
+                    // - screen_line: row offset from top of activity area
+                    // - content_line: actual line in the content (accounting for scroll)
+                    let screen_line = (row - area.y) as usize;
+                    let content_line = self.activity_state.scroll_offset + screen_line;
+                    // Note: col stays as screen X since rendering also uses screen X
+                    self.selection.start_at(content_line, col as usize);
                     self.auto_scroll_direction = None;
                 }
                 // If click is outside activity area, don't start selection
@@ -1193,7 +1219,8 @@ impl TuiApp {
                     let content_line = self.activity_state.scroll_offset
                         + self.activity_state.viewport_height.saturating_sub(1);
                     let max_line = self.rendered_lines.len().saturating_sub(1);
-                    self.selection.update_to(content_line.min(max_line), col as usize);
+                    self.selection
+                        .update_to(content_line.min(max_line), col as usize);
                 } else {
                     // Mouse in visible area - no auto-scroll
                     self.auto_scroll_direction = None;
@@ -1205,6 +1232,17 @@ impl TuiApp {
             AppEvent::SelectionEnd => {
                 self.selection.end_selection();
                 self.auto_scroll_direction = None;
+
+                // Auto-copy to clipboard on mouse release if there's a selection
+                if self.selection.is_active() {
+                    if let Some(selected) = self.get_selected_text_from_activities() {
+                        if !selected.is_empty() {
+                            self.clipboard.copy(&selected);
+                            self.copy_feedback = Some((Instant::now(), "Copied!".to_string()));
+                            self.selection.clear();
+                        }
+                    }
+                }
             }
             AppEvent::Click {
                 row,
@@ -1354,11 +1392,15 @@ impl TuiApp {
                 }
 
                 // Activity feed: update or create Streaming activity
-                if let Some(Activity::Streaming { content, elapsed, .. }) = self.activities.last_mut() {
+                if let Some(Activity::Streaming {
+                    content, elapsed, ..
+                }) = self.activities.last_mut()
+                {
                     content.push_str(&delta.text);
                     *elapsed = self.stream_start.map(|s| s.elapsed()).unwrap_or_default();
                 } else {
-                    self.activities.push(Activity::streaming("Responding", true));
+                    self.activities
+                        .push(Activity::streaming("Responding", true));
                     if let Some(Activity::Streaming { content, .. }) = self.activities.last_mut() {
                         content.push_str(&delta.text);
                     }
@@ -1370,8 +1412,11 @@ impl TuiApp {
                 self.activity_scroll_to_bottom();
             }
             Message::Thinking(thinking) => {
-                tracing::info!("TUI: Received Thinking message, text_len={}, agent={:?}", 
-                    thinking.text.len(), thinking.agent_name);
+                tracing::info!(
+                    "TUI: Received Thinking message, text_len={}, agent={:?}",
+                    thinking.text.len(),
+                    thinking.agent_name
+                );
                 if let Some(agent_name) = &thinking.agent_name {
                     if let Some(section_id) = self.active_section_ids.get(agent_name).cloned() {
                         self.conversation
@@ -1396,8 +1441,12 @@ impl TuiApp {
                 self.activity_scroll_to_bottom();
             }
             Message::Tool(tool) => {
-                tracing::info!("TOOL MSG: name='{}' status={:?} args={:?}", 
-                    tool.tool_name, tool.status, tool.args);
+                tracing::info!(
+                    "TOOL MSG: name='{}' status={:?} args={:?}",
+                    tool.tool_name,
+                    tool.status,
+                    tool.args
+                );
 
                 // Existing conversation-based tool tracking
                 match tool.status {
@@ -1459,20 +1508,33 @@ impl TuiApp {
 
                 // Activity feed: convert tool to activities
                 let new_activities = self.activity_converter.process_tool(&tool);
-                tracing::info!("ACTIVITIES: got {} from converter for '{}' status={:?}", 
-                    new_activities.len(), tool.tool_name, tool.status);
+                tracing::info!(
+                    "ACTIVITIES: got {} from converter for '{}' status={:?}",
+                    new_activities.len(),
+                    tool.tool_name,
+                    tool.status
+                );
                 for activity in new_activities {
-                    tracing::info!("ACTIVITY: processing {:?}", std::mem::discriminant(&activity));
+                    tracing::info!(
+                        "ACTIVITY: processing {:?}",
+                        std::mem::discriminant(&activity)
+                    );
                     // Merge consecutive Explored activities (file reads/lists)
                     if let (
                         Some(Activity::Explored { actions, .. }),
-                        Activity::Explored { actions: new_actions, .. },
+                        Activity::Explored {
+                            actions: new_actions,
+                            ..
+                        },
                     ) = (self.activities.last_mut(), &activity)
                     {
                         tracing::info!("ACTIVITY: merging into existing Explored");
                         actions.extend(new_actions.clone());
                     } else {
-                        tracing::info!("ACTIVITY: pushing new activity, total now {}", self.activities.len() + 1);
+                        tracing::info!(
+                            "ACTIVITY: pushing new activity, total now {}",
+                            self.activities.len() + 1
+                        );
                         self.activities.push(activity);
                     }
                 }

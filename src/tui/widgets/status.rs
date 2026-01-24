@@ -94,10 +94,7 @@ impl Widget for StatusBar {
                 if i > 0 {
                     spans.push(Span::styled(" │ ", separator_style));
                 }
-                spans.push(Span::styled(
-                    format!("{}: {}", key, action),
-                    hint_style,
-                ));
+                spans.push(Span::styled(format!("{}: {}", key, action), hint_style));
             }
         }
 

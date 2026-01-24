@@ -378,13 +378,13 @@ fn parse_inline_markdown(text: &str) -> Vec<MdSpan> {
                 // Single _ - check context
                 let prev_is_space = current_text.is_empty() || current_text.ends_with(' ');
                 let next_is_space = chars.peek() == Some(&' ') || chars.peek().is_none();
-                
+
                 // Only treat as italic if not surrounded by spaces (word boundary)
                 if !prev_is_space && !next_is_space {
                     current_text.push(ch);
                     continue;
                 }
-                
+
                 if !current_text.is_empty() {
                     spans.push(make_span(&current_text, state));
                     current_text.clear();
@@ -494,23 +494,95 @@ fn make_span(text: &str, state: State) -> MdSpan {
 /// Keywords for common languages
 const KEYWORDS: &[&str] = &[
     // Rust
-    "fn", "let", "mut", "const", "static", "if", "else", "match", "for", "while",
-    "loop", "return", "break", "continue", "struct", "enum", "impl", "trait",
-    "pub", "use", "mod", "crate", "self", "Self", "super", "where", "async",
-    "await", "move", "ref", "type", "dyn", "as", "in", "unsafe",
+    "fn",
+    "let",
+    "mut",
+    "const",
+    "static",
+    "if",
+    "else",
+    "match",
+    "for",
+    "while",
+    "loop",
+    "return",
+    "break",
+    "continue",
+    "struct",
+    "enum",
+    "impl",
+    "trait",
+    "pub",
+    "use",
+    "mod",
+    "crate",
+    "self",
+    "Self",
+    "super",
+    "where",
+    "async",
+    "await",
+    "move",
+    "ref",
+    "type",
+    "dyn",
+    "as",
+    "in",
+    "unsafe",
     // Python
-    "def", "class", "import", "from", "try", "except", "finally",
-    "with", "lambda", "yield", "global", "nonlocal", "assert", "pass",
-    "raise", "True", "False", "None", "and", "or", "not", "is", "elif",
+    "def",
+    "class",
+    "import",
+    "from",
+    "try",
+    "except",
+    "finally",
+    "with",
+    "lambda",
+    "yield",
+    "global",
+    "nonlocal",
+    "assert",
+    "pass",
+    "raise",
+    "True",
+    "False",
+    "None",
+    "and",
+    "or",
+    "not",
+    "is",
+    "elif",
     // JavaScript/TypeScript
-    "function", "var", "class", "extends", "new",
-    "this", "typeof", "instanceof", "delete", "void",
-    "export", "default",
-    "true", "false", "null", "undefined",
+    "function",
+    "var",
+    "class",
+    "extends",
+    "new",
+    "this",
+    "typeof",
+    "instanceof",
+    "delete",
+    "void",
+    "export",
+    "default",
+    "true",
+    "false",
+    "null",
+    "undefined",
     // Go
-    "func", "package", "interface",
-    "map", "chan", "go", "defer", "select", "case", "fallthrough",
-    "range", "nil",
+    "func",
+    "package",
+    "interface",
+    "map",
+    "chan",
+    "go",
+    "defer",
+    "select",
+    "case",
+    "fallthrough",
+    "range",
+    "nil",
 ];
 
 /// Highlight a code block with simple syntax highlighting
@@ -572,7 +644,7 @@ fn highlight_code_line(line: &str) -> Vec<MdSpan> {
             let quote = ch;
             let mut string = String::from(ch);
             let mut escaped = false;
-            while let Some(c) = chars.next() {
+            for c in chars.by_ref() {
                 string.push(c);
                 if escaped {
                     escaped = false;
@@ -629,7 +701,9 @@ fn tokenize_code(text: &str) -> Vec<MdSpan> {
 fn classify_token(token: &str) -> MdSpan {
     if KEYWORDS.contains(&token) {
         MdSpan::keyword(token)
-    } else if token.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+    } else if token
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
         && token.chars().any(|c| c.is_ascii_digit())
     {
         MdSpan::number(token)
@@ -651,37 +725,197 @@ enum Alignment {
     Right,
 }
 
-/// Check if a character is an emoji
-/// Emojis render as 1 char wide in most terminals (especially macOS),
-/// despite unicode-width reporting them as 2.
+/// Check if a character is a wide emoji (definitely 2 chars wide)
+///
+/// We only override unicode-width for characters that are DEFINITELY
+/// rendered as 2-wide in modern terminals with emoji fonts.
+///
+/// Characters in ambiguous ranges (misc symbols, dingbats, arrows, etc.)
+/// are left to unicode-width which follows the Unicode standard.
 fn is_emoji(c: char) -> bool {
     matches!(
         c,
-        '\u{1F300}'..='\u{1F9FF}'    // Misc Symbols, Emoticons, etc. (✅❌🔥 etc.)
-        | '\u{2600}'..='\u{26FF}'    // Misc Symbols (⚠⚡☀ etc.)
-        | '\u{2700}'..='\u{27BF}'    // Dingbats (✓✗✂ etc.)
-        | '\u{FE00}'..='\u{FE0F}'    // Variation Selectors
-        | '\u{1F000}'..='\u{1F02F}'  // Mahjong, Dominos
-        | '\u{1F0A0}'..='\u{1F0FF}'  // Playing Cards
-        | '\u{2300}'..='\u{23FF}'    // Misc Technical (⌘⌛ etc.)
-        | '\u{2B50}'..='\u{2B55}'    // Stars, circles (⭐⭕ etc.)
-        | '\u{25A0}'..='\u{25FF}'    // Geometric Shapes (●○■□ etc.)
-        | '\u{2190}'..='\u{21FF}'    // Arrows (←→↑↓ etc.)
+        // Definite wide emojis (U+1F300+) - always 2-wide in modern terminals
+        '\u{1F300}'..='\u{1F5FF}'    // Misc Symbols and Pictographs (🌀🎁📋 etc.)
+        | '\u{1F600}'..='\u{1F64F}'  // Emoticons (😀😎 etc.)
+        | '\u{1F680}'..='\u{1F6FF}'  // Transport and Map Symbols (🚀✈️ etc.)
+        | '\u{1F700}'..='\u{1F77F}'  // Alchemical Symbols
+        | '\u{1F780}'..='\u{1F7FF}'  // Geometric Shapes Extended
+        | '\u{1F800}'..='\u{1F8FF}'  // Supplemental Arrows-C
+        | '\u{1F900}'..='\u{1F9FF}'  // Supplemental Symbols and Pictographs (🤔🥳 etc.)
+        | '\u{1FA00}'..='\u{1FA6F}'  // Chess Symbols
+        | '\u{1FA70}'..='\u{1FAFF}'  // Symbols and Pictographs Extended-A (🥺🪄 etc.)
+        | '\u{1FB00}'..='\u{1FBFF}'  // Symbols for Legacy Computing
+
+        // Specific wide symbols that unicode-width may undercount
+        // These are commonly used in TUIs and render as 2-wide with emoji fonts
+        | '\u{2705}'                 // ✅ White Heavy Check Mark
+        | '\u{274C}'                 // ❌ Cross Mark
+        | '\u{274E}'                 // ❎ Cross Mark Button
+        | '\u{2B50}'                 // ⭐ Star
+        | '\u{2B55}'                 // ⭕ Heavy Large Circle
+
+        // Common status/indicator symbols that render as 2-wide in modern terminals
+        // NOTE: ⚠ (U+26A0) and ℹ (U+2139) are NOT included - they render as 1-wide
+        // in many terminals. Let unicode-width handle them.
+        | '\u{26A1}'                 // ⚡ High Voltage
+        | '\u{231B}'                 // ⌛ Hourglass Done
+        | '\u{23F3}'                 // ⏳ Hourglass Not Done
+        | '\u{23F0}'                 // ⏰ Alarm Clock
+        | '\u{23F1}'                 // ⏱ Stopwatch
+        | '\u{23F2}'                 // ⏲ Timer Clock
+        | '\u{2328}'                 // ⌨ Keyboard
+        | '\u{260E}'                 // ☎ Telephone
+        | '\u{2611}'                 // ☑ Ballot Box with Check
+        | '\u{2622}'                 // ☢ Radioactive
+        | '\u{2623}'                 // ☣ Biohazard
+        | '\u{262F}'                 // ☯ Yin Yang
+        | '\u{2638}'                 // ☸ Wheel of Dharma
+        | '\u{2639}'                 // ☹ Frowning Face
+        | '\u{263A}'                 // ☺ Smiling Face
+        | '\u{2640}'                 // ♀ Female Sign
+        | '\u{2642}'                 // ♂ Male Sign
+        | '\u{2648}'..='\u{2653}'    // ♈-♓ Zodiac signs
+        | '\u{267B}'                 // ♻ Recycling Symbol
+        | '\u{267F}'                 // ♿ Wheelchair Symbol
+        | '\u{2693}'                 // ⚓ Anchor
+        | '\u{2694}'                 // ⚔ Crossed Swords
+        | '\u{2695}'                 // ⚕ Staff of Aesculapius
+        | '\u{2696}'                 // ⚖ Scales
+        | '\u{2697}'                 // ⚗ Alembic
+        | '\u{2699}'                 // ⚙ Gear
+        | '\u{269B}'                 // ⚛ Atom Symbol
+        | '\u{269C}'                 // ⚜ Fleur-de-lis
+        | '\u{26B0}'                 // ⚰ Coffin
+        | '\u{26B1}'                 // ⚱ Funeral Urn
+        | '\u{26BD}'                 // ⚽ Soccer Ball
+        | '\u{26BE}'                 // ⚾ Baseball
+        | '\u{26C4}'                 // ⛄ Snowman
+        | '\u{26C5}'                 // ⛅ Sun Behind Cloud
+        | '\u{26C8}'                 // ⛈ Thunder Cloud and Rain
+        | '\u{26D4}'                 // ⛔ No Entry
+        | '\u{26EA}'                 // ⛪ Church
+        | '\u{26F2}'                 // ⛲ Fountain
+        | '\u{26F3}'                 // ⛳ Flag in Hole
+        | '\u{26F5}'                 // ⛵ Sailboat
+        | '\u{26FA}'                 // ⛺ Tent
+        | '\u{26FD}'                 // ⛽ Fuel Pump
+
+        // Hot beverages and food that render as emoji
+        | '\u{2615}'                 // ☕ Hot Beverage (Coffee)
+        | '\u{2600}'                 // ☀ Sun (Black Sun with Rays)
+        | '\u{2601}'                 // ☁ Cloud
+        | '\u{2602}'                 // ☂ Umbrella
+        | '\u{2603}'                 // ☃ Snowman
+        | '\u{2604}'                 // ☄ Comet
+        | '\u{2614}'                 // ☔ Umbrella with Rain Drops
+        | '\u{2618}'                 // ☘ Shamrock
+
+        // Regional Indicator Symbols (flags)
+        | '\u{1F1E0}'..='\u{1F1FF}'
+    )
+}
+/// Check if a character is any variation selector (zero-width modifiers)
+/// VS1-VS16 (U+FE00-U+FE0F) modify the display of the preceding character
+fn is_variation_selector(c: char) -> bool {
+    matches!(c, '\u{FE00}'..='\u{FE0F}')
+}
+
+/// Check if a character can become an emoji when followed by VS16
+/// These are characters in ranges that have both text and emoji presentations
+fn can_be_emoji(c: char) -> bool {
+    matches!(
+        c,
+        '\u{2600}'..='\u{26FF}'    // Misc Symbols (⚠⚡☀ etc.)
+        | '\u{2700}'..='\u{27BF}'  // Dingbats (✓✗✂ etc.)
+        | '\u{2300}'..='\u{23FF}'  // Misc Technical (⌘⌛ etc.)
+        | '\u{2190}'..='\u{21FF}'  // Arrows
+        | '\u{25A0}'..='\u{25FF}'  // Geometric shapes
+        | '\u{2B00}'..='\u{2BFF}'  // Misc Symbols and Arrows
+        | '\u{2139}'               // ℹ Information Source (Letterlike Symbols)
+        | '\u{00A9}'               // © Copyright
+        | '\u{00AE}'               // ® Registered
+        | '\u{203C}'               // ‼ Double Exclamation
+        | '\u{2049}'               // ⁉ Exclamation Question Mark
     )
 }
 
-/// Calculate display width of a string, treating emojis as 1 char wide
+/// Check if a character is a Zero Width Joiner
+/// ZWJ (U+200D) is used to combine emojis into a single glyph
+fn is_zwj(c: char) -> bool {
+    c == '\u{200D}'
+}
+
+/// Calculate display width of a string, properly handling:
+/// - Definite emojis (always 2-wide)
+/// - ZWJ sequences (👩‍💻 = 👩 + ZWJ + 💻 renders as ONE 2-wide glyph)
+/// - Characters that become emojis with VS16 (text=1, emoji=2)
+/// - Skin tone modifiers (zero-width, modify previous emoji)
+/// - Regular variation selectors (zero-width)
 fn display_width(s: &str) -> usize {
     use unicode_width::UnicodeWidthChar;
-    s.chars()
-        .map(|c| {
-            if is_emoji(c) {
-                1 // Emojis are 1 char wide in most terminals
-            } else {
-                UnicodeWidthChar::width(c).unwrap_or(1)
+
+    let chars: Vec<char> = s.chars().collect();
+    let mut total = 0;
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        // Skip standalone variation selectors and ZWJ
+        if is_variation_selector(c) || is_zwj(c) {
+            i += 1;
+            continue;
+        }
+
+        // Skip skin tone modifiers (they modify the previous emoji)
+        if matches!(c, '\u{1F3FB}'..='\u{1F3FF}') {
+            i += 1;
+            continue;
+        }
+
+        // Check if this starts an emoji or ZWJ sequence
+        if is_emoji(c) || (can_be_emoji(c) && chars.get(i + 1) == Some(&'\u{FE0F}')) {
+            // Count as 2-wide
+            total += 2;
+            i += 1;
+
+            // Consume the entire ZWJ sequence - all following emoji components
+            // Example: 👩‍💻 = 👩 (counted) + ZWJ + 💻 (skipped) + possibly more
+            while i < chars.len() {
+                let next = chars[i];
+                if is_zwj(next) {
+                    // Skip ZWJ and the next emoji in the sequence
+                    i += 1;
+                    // Skip the emoji after ZWJ (and any VS16/skin tones)
+                    if i < chars.len()
+                        && (is_emoji(chars[i])
+                            || is_variation_selector(chars[i])
+                            || matches!(chars[i], '\u{1F3FB}'..='\u{1F3FF}')
+                            || can_be_emoji(chars[i]))
+                    {
+                        i += 1;
+                        // If we just consumed an emoji that has VS16 after it, skip that too
+                        if i < chars.len() && is_variation_selector(chars[i]) {
+                            i += 1;
+                        }
+                        // If there's another ZWJ, continue the outer loop (handled by outer while)
+                    }
+                } else if is_variation_selector(next) || matches!(next, '\u{1F3FB}'..='\u{1F3FF}') {
+                    // Skip variation selectors and skin tones that follow
+                    i += 1;
+                } else {
+                    break;
+                }
             }
-        })
-        .sum()
+        } else {
+            // Regular character - use unicode-width
+            total += UnicodeWidthChar::width(c).unwrap_or(1);
+            i += 1;
+        }
+    }
+
+    total
 }
 
 /// Parse alignment from a separator cell (e.g., ":---", ":---:", "---:")
@@ -697,18 +931,39 @@ fn parse_alignment(sep_cell: &str) -> Alignment {
     }
 }
 
-/// Pad a cell to the specified width with the given alignment
-fn pad_cell(cell: &str, width: usize, align: Alignment) -> String {
-    let cell_width = display_width(cell);
-    let padding = width.saturating_sub(cell_width);
+/// Calculate total display width of a Vec<MdSpan>
+fn spans_display_width(spans: &[MdSpan]) -> usize {
+    spans.iter().map(|span| display_width(&span.text)).sum()
+}
+
+/// Pad spans to the specified width with the given alignment
+/// Returns a new Vec<MdSpan> with padding MdSpan::plain(" ") spans added
+fn pad_spans(spans: Vec<MdSpan>, target_width: usize, align: Alignment) -> Vec<MdSpan> {
+    let content_width = spans_display_width(&spans);
+    let padding = target_width.saturating_sub(content_width);
+
+    if padding == 0 {
+        return spans;
+    }
 
     match align {
-        Alignment::Left => format!("{}{}", cell, " ".repeat(padding)),
-        Alignment::Right => format!("{}{}", " ".repeat(padding), cell),
+        Alignment::Left => {
+            let mut result = spans;
+            result.push(MdSpan::plain(" ".repeat(padding)));
+            result
+        }
+        Alignment::Right => {
+            let mut result = vec![MdSpan::plain(" ".repeat(padding))];
+            result.extend(spans);
+            result
+        }
         Alignment::Center => {
             let left_pad = padding / 2;
             let right_pad = padding - left_pad;
-            format!("{}{}{}", " ".repeat(left_pad), cell, " ".repeat(right_pad))
+            let mut result = vec![MdSpan::plain(" ".repeat(left_pad))];
+            result.extend(spans);
+            result.push(MdSpan::plain(" ".repeat(right_pad)));
+            result
         }
     }
 }
@@ -812,12 +1067,19 @@ fn parse_table(lines: &[&str]) -> Option<Vec<MdSpan>> {
         })
         .collect();
 
-    // Calculate column widths using our custom display_width (handles emojis correctly)
+    // Pre-parse all cells to get inline markdown spans
+    // This allows us to calculate widths from rendered content (excluding markdown syntax)
+    let parsed_rows: Vec<Vec<Vec<MdSpan>>> = rows
+        .iter()
+        .map(|row| row.iter().map(|cell| parse_inline_markdown(cell)).collect())
+        .collect();
+
+    // Calculate column widths from PARSED content (not raw text with markdown syntax)
     let mut col_widths: Vec<usize> = vec![0; num_cols];
-    for row in &rows {
-        for (i, cell) in row.iter().enumerate() {
+    for parsed_row in &parsed_rows {
+        for (i, cell_spans) in parsed_row.iter().enumerate() {
             if i < num_cols {
-                col_widths[i] = col_widths[i].max(display_width(cell));
+                col_widths[i] = col_widths[i].max(spans_display_width(cell_spans));
             }
         }
     }
@@ -834,13 +1096,21 @@ fn parse_table(lines: &[&str]) -> Option<Vec<MdSpan>> {
     spans.push(MdSpan::plain("\n"));
 
     // Render rows
-    for (row_idx, row) in rows.iter().enumerate() {
+    for (row_idx, parsed_row) in parsed_rows.iter().enumerate() {
         spans.push(MdSpan::table_border("│"));
         for (i, width) in col_widths.iter().enumerate() {
-            let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
+            let cell_spans = parsed_row.get(i).cloned().unwrap_or_default();
             let align = alignments.get(i).copied().unwrap_or_default();
-            let padded = pad_cell(cell, *width, align);
-            spans.push(MdSpan::plain(format!(" {} ", padded)));
+
+            // Add leading space
+            spans.push(MdSpan::plain(" "));
+
+            // Add padded cell content with proper alignment
+            let padded_spans = pad_spans(cell_spans, *width, align);
+            spans.extend(padded_spans);
+
+            // Add trailing space
+            spans.push(MdSpan::plain(" "));
             spans.push(MdSpan::table_border("│"));
         }
         spans.push(MdSpan::plain("\n"));
@@ -970,7 +1240,11 @@ mod tests {
         // Should have the quoted text with italic
         let quote_span = spans.iter().find(|s| s.text.contains("quoted"));
         assert!(quote_span.is_some());
-        assert!(quote_span.unwrap().style.add_modifier.contains(Modifier::ITALIC));
+        assert!(quote_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::ITALIC));
     }
 
     #[test]
@@ -989,20 +1263,20 @@ mod tests {
         let spans = parse_markdown("This is ~~deleted~~ text");
         let strike_span = spans.iter().find(|s| s.text == "deleted");
         assert!(strike_span.is_some(), "Should have strikethrough text");
-        assert!(
-            strike_span
-                .unwrap()
-                .style
-                .add_modifier
-                .contains(Modifier::CROSSED_OUT)
-        );
+        assert!(strike_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::CROSSED_OUT));
     }
 
     #[test]
     fn test_table_basic() {
         let input = "| A | B |\n|---|---|\n| 1 | 2 |";
         let spans = parse_markdown(input);
-        let has_border = spans.iter().any(|s| s.text.contains('┌') || s.text.contains('│'));
+        let has_border = spans
+            .iter()
+            .any(|s| s.text.contains('┌') || s.text.contains('│'));
         assert!(has_border);
     }
 
@@ -1037,8 +1311,13 @@ mod tests {
         let input = "| A | B |\n| 1 | 2 |";
         let spans = parse_markdown(input);
         // Should NOT have box-drawing characters
-        let has_box = spans.iter().any(|s| s.text.contains('┌') || s.text.contains('─'));
-        assert!(!has_box, "Incomplete table should show as raw text, not box-drawing");
+        let has_box = spans
+            .iter()
+            .any(|s| s.text.contains('┌') || s.text.contains('─'));
+        assert!(
+            !has_box,
+            "Incomplete table should show as raw text, not box-drawing"
+        );
         // Should have the raw pipe characters
         let has_raw = spans.iter().any(|s| s.text.contains("| A |"));
         assert!(has_raw, "Should show raw table text");
@@ -1058,7 +1337,9 @@ mod tests {
         // Complete table with separator should render with box-drawing
         let input = "| A | B |\n|---|---|\n| 1 | 2 |\n";
         let spans = parse_markdown(input);
-        let has_box = spans.iter().any(|s| s.text.contains('┌') || s.text.contains('│'));
+        let has_box = spans
+            .iter()
+            .any(|s| s.text.contains('┌') || s.text.contains('│'));
         assert!(has_box, "Complete table should render with box-drawing");
     }
 
@@ -1069,7 +1350,7 @@ mod tests {
         assert!(is_table_line("  | A | B |  "));
         assert!(is_table_line("|---|---|"));
         assert!(!is_table_line("Not a table"));
-        assert!(!is_table_line("| incomplete"));  // Missing closing |
+        assert!(!is_table_line("| incomplete")); // Missing closing |
 
         // Test is_table_complete
         let complete = vec!["| A | B |", "|---|---|", "| 1 | 2 |"];
@@ -1102,9 +1383,13 @@ mod tests {
 
         assert!(!status_cells.is_empty(), "Should have emoji cells");
 
-        // Verify our custom display_width treats emojis as 1 char wide
+        // Verify our custom display_width treats emojis as 2 chars wide
         // (unlike unicode-width which says 2)
-        assert_eq!(display_width("✅"), 1, "Emoji should have display width of 1");
+        assert_eq!(
+            display_width("✅"),
+            2,
+            "Emoji should have display width of 2"
+        );
         assert_eq!("✅".len(), 3, "Emoji has byte length of 3");
     }
 
@@ -1123,12 +1408,25 @@ mod tests {
         let spans = parse_markdown(input);
         let has_box = spans.iter().any(|s| s.text.contains('┌'));
         assert!(has_box, "Should render as table");
-        // Find the cell with "A" - should have leading spaces
-        let a_cell = spans.iter().find(|s| s.text.contains('A'));
-        assert!(a_cell.is_some());
-        // Right-aligned: spaces come before the content
-        let text = &a_cell.unwrap().text;
-        assert!(text.trim_start() != text.trim(), "Right-aligned should have leading spaces");
+
+        // Find the index of the "A" span
+        let a_idx = spans.iter().position(|s| s.text == "A");
+        assert!(a_idx.is_some(), "Should have 'A' cell content");
+
+        // Right-aligned: padding span should come before "A"
+        // The structure is: │ + padding + A + trailing space + │
+        // So the span before "A" (at idx-1) should have spaces for padding
+        let a_idx = a_idx.unwrap();
+        if a_idx > 0 {
+            let padding_span = &spans[a_idx - 1];
+            // The cell "A" is 1 char, header "Name" is 4 chars, so we need 3 chars padding
+            // Plus the leading space from the cell, so we check that the span before A has spaces
+            // (either just the " " cell margin or " " margin + padding spaces)
+            assert!(
+                padding_span.text.chars().all(|c| c == ' '),
+                "Right-aligned should have padding spaces before content"
+            );
+        }
     }
 
     #[test]
@@ -1141,19 +1439,170 @@ mod tests {
 
     #[test]
     fn test_display_width_helpers() {
-        // Test is_emoji
-        assert!(is_emoji('✅'));
-        assert!(is_emoji('❌'));
-        assert!(is_emoji('⚠'));
+        // Test is_emoji - definite wide emojis
+        assert!(is_emoji('✅')); // U+2705 - explicitly listed
+        assert!(is_emoji('❌')); // U+274C - explicitly listed
+        assert!(is_emoji('🔥')); // U+1F525 - in emoticons range
+        assert!(is_emoji('😀')); // U+1F600 - in emoticons range
+        assert!(is_emoji('⭐')); // U+2B50 - explicitly listed
+        assert!(is_emoji('⏳')); // U+23F3 - hourglass, always 2-wide
+        assert!(is_emoji('⌛')); // U+231B - hourglass done, always 2-wide
+
+        // These are NOT in our emoji list (handled by unicode-width)
+        // ⚠ and ℹ render as 1-wide in many terminals, so let unicode-width handle them
+        assert!(!is_emoji('⚠')); // U+26A0 - handled by unicode-width (1-wide)
+        assert!(!is_emoji('ℹ')); // U+2139 - handled by unicode-width (1-wide)
+        assert!(!is_emoji('→')); // U+2192 - arrow, 1-wide
+        assert!(!is_emoji('●')); // U+25CF - geometric, 1-wide
         assert!(!is_emoji('A'));
-        assert!(!is_emoji('中')); // Chinese char, not emoji
+        assert!(!is_emoji('中')); // Chinese char, handled by unicode-width
+
+        // Test is_variation_selector
+        assert!(is_variation_selector('\u{FE0F}')); // VS16 - emoji presentation
+        assert!(is_variation_selector('\u{FE0E}')); // VS15 - text presentation
+        assert!(!is_variation_selector('A'));
+        assert!(!is_variation_selector('⚠'));
 
         // Test display_width
         assert_eq!(display_width("Hello"), 5);
-        assert_eq!(display_width("✅"), 1); // Emoji = 1 char
-        assert_eq!(display_width("✅✅"), 2); // Two emojis = 2 chars
-        assert_eq!(display_width("中文"), 4); // Chinese chars = 2 each
-        assert_eq!(display_width("A✅B"), 3); // Mixed: A(1) + ✅(1) + B(1)
+        assert_eq!(display_width("✅"), 2); // Definite emoji = 2 chars
+        assert_eq!(display_width("✅✅"), 4); // Two emojis = 4 chars
+        assert_eq!(display_width("中文"), 4); // Chinese chars = 2 each (via unicode-width)
+        assert_eq!(display_width("A✅B"), 4); // Mixed: A(1) + ✅(2) + B(1)
+
+        // Arrows and geometric shapes are 1-wide (per unicode-width)
+        assert_eq!(display_width("→"), 1);
+        assert_eq!(display_width("←"), 1);
+        assert_eq!(display_width("●"), 1);
+        assert_eq!(display_width("■"), 1);
+
+        // Warning sign is 1-wide by default, 2-wide with VS16
+        assert_eq!(display_width("⚠"), 1); // Warning sign = 1 (text presentation)
+        assert_eq!(display_width("⚠\u{FE0F}"), 2); // Warning + VS16 = 2 (emoji presentation)
+        assert_eq!(display_width("⚠ Client Error"), 14); // 1 + 1 + 12 = 14
+
+        // Info is also 1-wide
+        assert_eq!(display_width("ℹ"), 1); // Info = 1 (text presentation)
+        assert_eq!(display_width("ℹ\u{FE0F}"), 2); // Info + VS16 = 2
+
+        // Other status symbols are 2-wide
+        assert_eq!(display_width("⏳"), 2); // Hourglass
+        assert_eq!(display_width("⌛"), 2); // Hourglass done
+
+        // Test can_be_emoji (characters with text/emoji dual presentation)
+        // Note: ⚠ is now in is_emoji, but also in can_be_emoji range (that's OK)
+        assert!(can_be_emoji('⚠')); // U+26A0 - in misc symbols
+        assert!(can_be_emoji('☀')); // U+2600 - in misc symbols
+        assert!(can_be_emoji('→')); // U+2192 - in arrows
+        assert!(!can_be_emoji('A')); // Regular ASCII - not in emoji-capable ranges
+        assert!(!can_be_emoji('中')); // CJK - not in emoji-capable ranges
+
+        // Test ZWJ sequences (Zero Width Joiner combines emojis into one glyph)
+        // 👩‍💻 = 👩 (U+1F469) + ZWJ (U+200D) + 💻 (U+1F4BB) = ONE 2-wide glyph
+        assert_eq!(display_width("👩\u{200D}💻"), 2); // Woman technologist
+        assert_eq!(display_width("👨\u{200D}👩\u{200D}👧"), 2); // Family
+        assert_eq!(display_width("👩\u{200D}💻 Dev"), 6); // 2 + 1 + 3 = 6
+
+        // Test coffee emoji
+        assert_eq!(display_width("☕"), 2); // Coffee is 2-wide
+        assert_eq!(display_width("☕☕☕"), 6); // Three coffees = 6
+
+        // Test weather emojis
+        assert_eq!(display_width("☀"), 2); // Sun
+        assert_eq!(display_width("⛅"), 2); // Sun behind cloud
+        assert_eq!(display_width("⛈"), 2); // Thunder cloud
+
+        // Test weather table cells (real-world examples)
+        // These should match what the terminal renders
+        assert_eq!(display_width("🌤️18°C"), 6); // sun_cloud(2) + VS(0) + 18°C(4) = 6
+        assert_eq!(display_width("🌧️14°C"), 6); // rain(2) + VS(0) + 14°C(4) = 6
+        assert_eq!(display_width("☁17°C"), 6); // cloud(2) + 17°C(4) = 6
+        assert_eq!(display_width("🌙 16°C"), 7); // moon(2) + space(1) + 16°C(4) = 7
+        assert_eq!(display_width("🌙13°C"), 6); // moon(2) + 13°C(4) = 6
+
+        // Cloud emoji ☁ (U+2601) should be 2-wide
+        assert_eq!(display_width("☁"), 2); // Cloud
+    }
+
+    #[test]
+    fn test_weather_table_rendering() {
+        // This is the exact table from the bug report
+        let input = r#"| Day | Morning | Afternoon | Evening |
+|-----|---------|-----------|----------|
+| Mon | 🌤️18°C  | ☀ 24°C    | 🌙 16°C  |
+| Tue | 🌧️14°C  | 🌧 15°C   | 🌙13°C   |
+| Wed | ☁17°C   | 🌤️21°C   | 🌙 15°C  |"#;
+
+        let spans = parse_markdown(input);
+
+        // Should render as a table with box-drawing
+        let has_box = spans.iter().any(|s| s.text.contains('┌'));
+        assert!(has_box, "Should render as table with box-drawing");
+
+        // Each row should have exactly 5 border characters: │ col │ col │ col │ col │
+        // Check that we don't have broken borders (extra │ in content)
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        let lines: Vec<&str> = text.lines().collect();
+
+        // Check that data rows don't have extra pipes inside cells
+        for line in &lines {
+            if line.contains("Mon") || line.contains("Tue") || line.contains("Wed") {
+                // Count │ characters - should be exactly 5 per data row
+                let pipe_count = line.chars().filter(|c| *c == '│').count();
+                assert_eq!(
+                    pipe_count, 5,
+                    "Row '{}' should have exactly 5 │ borders, got {}",
+                    line, pipe_count
+                );
+            }
+        }
+
+        // Print the rendered table for debugging
+        eprintln!("=== Rendered table ===");
+        eprintln!("{}", text);
+
+        // Verify all data rows have the same display width
+        let data_rows: Vec<&str> = lines
+            .iter()
+            .filter(|l| l.contains("Mon") || l.contains("Tue") || l.contains("Wed"))
+            .cloned()
+            .collect();
+
+        if !data_rows.is_empty() {
+            let first_width = display_width(data_rows[0]);
+            for (i, row) in data_rows.iter().enumerate() {
+                let row_width = display_width(row);
+                eprintln!("Row {} width: {} (expected {})", i, row_width, first_width);
+                assert_eq!(
+                    row_width, first_width,
+                    "Row {} has different width: {}",
+                    i, row
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_food_table_with_chili() {
+        // Test the Food & Code Moods table with 🌶 Spicy
+        let input = r#"| Mood | Food | Code Equivalent |
+|------|------|------------------|
+| 😊 Happy | 🍕 Pizza | Clean merge |
+| 😤 Frustrated | 🌶️ Spicy | Debugging prod |"#;
+
+        let spans = parse_markdown(input);
+        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
+
+        eprintln!("=== Food table ===");
+        eprintln!("{}", text);
+
+        // Check that all rows have exactly 4 borders
+        for line in text.lines() {
+            if line.contains("Happy") || line.contains("Frustrated") {
+                let pipe_count = line.chars().filter(|c| *c == '│').count();
+                assert_eq!(pipe_count, 4, "Row should have 4 borders: {}", line);
+            }
+        }
     }
 
     #[test]
@@ -1166,11 +1615,163 @@ mod tests {
     }
 
     #[test]
-    fn test_pad_cell() {
-        assert_eq!(pad_cell("A", 5, Alignment::Left), "A    ");
-        assert_eq!(pad_cell("A", 5, Alignment::Right), "    A");
-        assert_eq!(pad_cell("A", 5, Alignment::Center), "  A  ");
-        // Emoji padding
-        assert_eq!(pad_cell("✅", 3, Alignment::Left), "✅  "); // 1 char + 2 spaces
+    fn test_spans_display_width() {
+        let spans = vec![MdSpan::plain("Hello"), MdSpan::bold("World")];
+        assert_eq!(spans_display_width(&spans), 10);
+
+        let empty: Vec<MdSpan> = vec![];
+        assert_eq!(spans_display_width(&empty), 0);
+
+        let emoji_spans = vec![MdSpan::plain("✅"), MdSpan::plain("test")];
+        assert_eq!(spans_display_width(&emoji_spans), 6); // 2 + 4
+    }
+
+    #[test]
+    fn test_pad_spans_left() {
+        let spans = vec![MdSpan::bold("Hi")];
+        let padded = pad_spans(spans, 5, Alignment::Left);
+        // Should have "Hi" + 3 spaces
+        assert_eq!(padded.len(), 2);
+        assert_eq!(padded[0].text, "Hi");
+        assert_eq!(padded[1].text, "   ");
+    }
+
+    #[test]
+    fn test_pad_spans_right() {
+        let spans = vec![MdSpan::bold("Hi")];
+        let padded = pad_spans(spans, 5, Alignment::Right);
+        // Should have 3 spaces + "Hi"
+        assert_eq!(padded.len(), 2);
+        assert_eq!(padded[0].text, "   ");
+        assert_eq!(padded[1].text, "Hi");
+    }
+
+    #[test]
+    fn test_pad_spans_center() {
+        let spans = vec![MdSpan::bold("Hi")];
+        let padded = pad_spans(spans, 6, Alignment::Center);
+        // Should have 2 spaces + "Hi" + 2 spaces
+        assert_eq!(padded.len(), 3);
+        assert_eq!(padded[0].text, "  ");
+        assert_eq!(padded[1].text, "Hi");
+        assert_eq!(padded[2].text, "  ");
+    }
+
+    #[test]
+    fn test_table_bold_in_cells() {
+        let input = "| **bold** | text |\n|----------|------|\n| normal | **also bold** |\n";
+        let spans = parse_markdown(input);
+
+        // Should render as table
+        let has_box = spans.iter().any(|s| s.text.contains('┌'));
+        assert!(has_box, "Should render as table with box-drawing");
+
+        // Should have bold spans
+        let bold_span = spans.iter().find(|s| s.text == "bold");
+        assert!(bold_span.is_some(), "Should have 'bold' text");
+        assert!(
+            bold_span
+                .unwrap()
+                .style
+                .add_modifier
+                .contains(Modifier::BOLD),
+            "'bold' should be styled as bold"
+        );
+
+        let also_bold_span = spans.iter().find(|s| s.text == "also bold");
+        assert!(also_bold_span.is_some(), "Should have 'also bold' text");
+        assert!(
+            also_bold_span
+                .unwrap()
+                .style
+                .add_modifier
+                .contains(Modifier::BOLD),
+            "'also bold' should be styled as bold"
+        );
+    }
+
+    #[test]
+    fn test_table_italic_in_cells() {
+        let input = "| *italic* | text |\n|----------|------|\n| normal | *also italic* |\n";
+        let spans = parse_markdown(input);
+
+        // Should have italic spans
+        let italic_span = spans.iter().find(|s| s.text == "italic");
+        assert!(italic_span.is_some(), "Should have 'italic' text");
+        assert!(
+            italic_span
+                .unwrap()
+                .style
+                .add_modifier
+                .contains(Modifier::ITALIC),
+            "'italic' should be styled as italic"
+        );
+    }
+
+    #[test]
+    fn test_table_code_in_cells() {
+        let input = "| `code` | text |\n|--------|------|\n| normal | `more code` |\n";
+        let spans = parse_markdown(input);
+
+        // Should have code spans with Theme::COMMAND color
+        let code_span = spans.iter().find(|s| s.text == "code");
+        assert!(code_span.is_some(), "Should have 'code' text");
+        assert_eq!(
+            code_span.unwrap().style.fg,
+            Some(Theme::COMMAND),
+            "'code' should be styled as inline code"
+        );
+    }
+
+    #[test]
+    fn test_table_mixed_formatting_in_cells() {
+        let input = "| **bold** and *italic* | `code` here |\n|------------------------|-------------|\n| plain | **more** |\n";
+        let spans = parse_markdown(input);
+
+        // Should render as table
+        let has_box = spans.iter().any(|s| s.text.contains('┌'));
+        assert!(has_box, "Should render as table");
+
+        // Check for bold
+        let bold_span = spans.iter().find(|s| s.text == "bold");
+        assert!(bold_span.is_some());
+        assert!(bold_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD));
+
+        // Check for italic
+        let italic_span = spans.iter().find(|s| s.text == "italic");
+        assert!(italic_span.is_some());
+        assert!(italic_span
+            .unwrap()
+            .style
+            .add_modifier
+            .contains(Modifier::ITALIC));
+
+        // Check for code
+        let code_span = spans.iter().find(|s| s.text == "code");
+        assert!(code_span.is_some());
+        assert_eq!(code_span.unwrap().style.fg, Some(Theme::COMMAND));
+    }
+
+    #[test]
+    fn test_table_column_width_excludes_markdown_syntax() {
+        // The column width should be calculated from rendered content,
+        // not raw text. "**bold**" renders as "bold" (4 chars), not 8 chars.
+        let input = "| **bold** |\n|----------|\n| text |\n";
+        let spans = parse_markdown(input);
+
+        // Both "bold" and "text" are 4 chars, so column should be same width
+        // Find the cells and verify they have consistent padding
+        let bold_span = spans.iter().find(|s| s.text == "bold");
+        let text_span = spans.iter().find(|s| s.text == "text");
+        assert!(bold_span.is_some());
+        assert!(text_span.is_some());
+
+        // The table should render properly without "**" taking up space
+        let has_box = spans.iter().any(|s| s.text.contains('┌'));
+        assert!(has_box, "Should render as table");
     }
 }

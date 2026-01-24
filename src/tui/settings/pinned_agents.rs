@@ -40,8 +40,8 @@ pub fn render_pinned_agents_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),  // Default Model section
-            Constraint::Min(10),    // Two-panel layout
+            Constraint::Length(5), // Default Model section
+            Constraint::Min(10),   // Two-panel layout
         ])
         .split(area);
 
@@ -220,7 +220,9 @@ fn render_agent_list(
                     .fg(Theme::ACCENT)
                     .add_modifier(Modifier::BOLD)
             } else if is_selected {
-                Style::default().fg(Theme::TEXT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Theme::TEXT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Theme::TEXT)
             };
@@ -248,6 +250,7 @@ fn render_agent_list(
 }
 
 /// Render the right panel with model list for selected agent
+#[allow(clippy::too_many_arguments)]
 fn render_model_list(
     frame: &mut Frame,
     area: Rect,

@@ -228,7 +228,6 @@ pub struct SettingsState {
     // ─────────────────────────────────────────────────────────────────────────
     // Pinned Agents tab specific state
     // ─────────────────────────────────────────────────────────────────────────
-    
     /// Currently focused panel in Pinned Agents tab
     pub pinned_panel: PinnedAgentsPanel,
     /// Selected agent name
@@ -243,7 +242,6 @@ pub struct SettingsState {
     // ─────────────────────────────────────────────────────────────────────────
     // Models tab specific state
     // ─────────────────────────────────────────────────────────────────────────
-    
     /// Selected index in models tab (0 = OAuth section, 1+ = model groups/items)
     pub models_selected_index: usize,
     /// Which provider groups are expanded (by provider label)
@@ -254,7 +252,6 @@ pub struct SettingsState {
     // ─────────────────────────────────────────────────────────────────────────
     // MCP Servers tab specific state
     // ─────────────────────────────────────────────────────────────────────────
-    
     /// Currently focused panel in MCP tab
     pub mcp_panel: McpPanel,
     /// Selected index in MCP server list
@@ -354,9 +351,9 @@ pub fn render_settings(frame: &mut Frame, area: Rect, app: &TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // Tab bar
-            Constraint::Min(1),     // Content
-            Constraint::Length(2),  // Footer
+            Constraint::Length(2), // Tab bar
+            Constraint::Min(1),    // Content
+            Constraint::Length(2), // Footer
         ])
         .split(inner_area);
 

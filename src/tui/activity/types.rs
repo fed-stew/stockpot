@@ -69,7 +69,6 @@ pub enum Activity {
     // ─────────────────────────────────────────────────────────────────────────
     // Core activities (from rustpuppy)
     // ─────────────────────────────────────────────────────────────────────────
-    
     /// File exploration (reads, directory listings)
     Explored {
         id: String,
@@ -117,7 +116,6 @@ pub enum Activity {
     // ─────────────────────────────────────────────────────────────────────────
     // Stockpot-specific activities
     // ─────────────────────────────────────────────────────────────────────────
-
     /// Model thinking/reasoning block
     Thinking {
         id: String,
@@ -227,10 +225,7 @@ impl Activity {
     }
 
     /// Create a new NestedAgent activity
-    pub fn nested_agent(
-        agent_name: impl Into<String>,
-        display_name: impl Into<String>,
-    ) -> Self {
+    pub fn nested_agent(agent_name: impl Into<String>, display_name: impl Into<String>) -> Self {
         Self::NestedAgent {
             id: generate_id(),
             timestamp: Local::now(),
@@ -311,14 +306,18 @@ impl Activity {
                 1 + content.lines().count().max(1) // Header + content lines
             }
             Self::Task { .. } => 1,
-            Self::Thinking { content, collapsed, .. } => {
+            Self::Thinking {
+                content, collapsed, ..
+            } => {
                 if *collapsed {
                     1 // Just header
                 } else {
                     1 + content.lines().count().max(1)
                 }
             }
-            Self::NestedAgent { content, collapsed, .. } => {
+            Self::NestedAgent {
+                content, collapsed, ..
+            } => {
                 if *collapsed {
                     1 // Just header
                 } else {

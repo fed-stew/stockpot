@@ -1,8 +1,8 @@
+use crate::gui::components::StreamingMarkdownView;
 use gpui::{
     div, list, prelude::*, px, AnyElement, App, Context, Entity, IntoElement, MouseButton,
     SharedString, StatefulInteractiveElement, Styled,
 };
-use crate::gui::components::StreamingMarkdownView;
 
 use super::ChatApp;
 use crate::gui::components::{collapsible_display, list_scrollbar, CollapsibleProps};

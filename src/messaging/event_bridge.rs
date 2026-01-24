@@ -192,7 +192,11 @@ impl EventBridge {
                 success,
                 error,
             } => {
-                tracing::info!("BRIDGE: Processing ToolExecuted for '{}' success={}", tool_name, success);
+                tracing::info!(
+                    "BRIDGE: Processing ToolExecuted for '{}' success={}",
+                    tool_name,
+                    success
+                );
 
                 // Use provided tool_call_id, or find and remove by name
                 let resolved_id = tool_call_id.clone().or_else(|| {

@@ -45,3 +45,8 @@ package-lock.json
 logs_claude/
 mitmproxy_logger_claude.py
 run_with_proxy_claude.sh
+
+# Dev artifacts
+analyze.md
+scripts/
+log.txt

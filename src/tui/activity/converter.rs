@@ -28,8 +28,12 @@ impl ActivityConverter {
     /// Process a tool message and return Activities.
     /// Batching of consecutive Explored activities is handled in app.rs.
     pub fn process_tool(&self, tool: &ToolMessage) -> Vec<Activity> {
-        tracing::info!("CONVERTER: tool='{}' status={:?} has_args={}", 
-            tool.tool_name, tool.status, tool.args.is_some());
+        tracing::info!(
+            "CONVERTER: tool='{}' status={:?} has_args={}",
+            tool.tool_name,
+            tool.status,
+            tool.args.is_some()
+        );
 
         // Some tools need to be processed at Executing (when args are available)
         // Others at Completed/Failed
@@ -168,7 +172,9 @@ impl ActivityConverter {
             .map(|r| parse_diff_output(r))
             .unwrap_or((0, 0, vec![]));
 
-        vec![Activity::edited(file_path, additions, deletions, diff_lines)]
+        vec![Activity::edited(
+            file_path, additions, deletions, diff_lines,
+        )]
     }
 
     fn handle_delete_file(tool: &ToolMessage) -> Vec<Activity> {

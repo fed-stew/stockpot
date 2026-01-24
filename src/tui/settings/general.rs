@@ -33,14 +33,14 @@ pub fn render_general_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // PDF Processing Mode
-            Constraint::Length(1),  // Spacer
-            Constraint::Length(5),  // User Mode
-            Constraint::Length(1),  // Spacer
-            Constraint::Length(3),  // Show Reasoning
-            Constraint::Length(1),  // Spacer
-            Constraint::Length(4),  // YOLO Mode
-            Constraint::Min(0),     // Remaining space
+            Constraint::Length(6), // PDF Processing Mode
+            Constraint::Length(1), // Spacer
+            Constraint::Length(5), // User Mode
+            Constraint::Length(1), // Spacer
+            Constraint::Length(3), // Show Reasoning
+            Constraint::Length(1), // Spacer
+            Constraint::Length(4), // YOLO Mode
+            Constraint::Min(0),    // Remaining space
         ])
         .split(area);
 

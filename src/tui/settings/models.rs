@@ -23,10 +23,10 @@ pub fn render_models_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
     let settings = Settings::new(&app.db);
     let default_model = settings.model();
     let available_models = app.model_registry.list_available(&app.db);
-    
+
     // Group models by provider type
     let by_type = group_models_by_type(app, &available_models);
-    
+
     // Get current state
     let selected_index = app.settings_state.models_selected_index;
     let in_oauth_section = app.settings_state.models_in_oauth_section;
@@ -36,8 +36,8 @@ pub fn render_models_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),  // OAuth Accounts section
-            Constraint::Min(10),    // Available Models section
+            Constraint::Length(8), // OAuth Accounts section
+            Constraint::Min(10),   // Available Models section
         ])
         .split(area);
 
@@ -113,7 +113,10 @@ fn render_oauth_line(name: &str, connected: bool) -> Line<'static> {
 
     Line::from(vec![
         Span::styled(format!("  {:<14}", name), Style::default().fg(Theme::TEXT)),
-        Span::styled(format!("{} ", status_icon), Style::default().fg(status_color)),
+        Span::styled(
+            format!("{} ", status_icon),
+            Style::default().fg(status_color),
+        ),
         Span::styled(status_text.to_string(), Style::default().fg(status_color)),
     ])
 }
@@ -151,7 +154,12 @@ fn render_models_section(
 
     // Header with action hints
     let header_area = Rect::new(inner.x, inner.y, inner.width, 1);
-    let list_area = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
+    let list_area = Rect::new(
+        inner.x,
+        inner.y + 2,
+        inner.width,
+        inner.height.saturating_sub(2),
+    );
 
     let header = Line::from(vec![
         Span::styled("  Enter", Style::default().fg(Theme::ACCENT)),
@@ -226,10 +234,7 @@ fn render_models_section(
 
                 // Show delete indicator for non-OAuth models
                 if !model.is_oauth {
-                    spans.push(Span::styled(
-                        "  [Del]",
-                        Style::default().fg(Theme::MUTED),
-                    ));
+                    spans.push(Span::styled("  [Del]", Style::default().fg(Theme::MUTED)));
                 }
 
                 items.push(ListItem::new(Line::from(spans)));
@@ -313,7 +318,10 @@ fn type_label_for(name: &str, model_type: ModelType) -> String {
                 let provider = &name[..idx];
                 let mut chars = provider.chars();
                 match chars.next() {
-                    Some(c) => format!("Custom: {}", c.to_uppercase().chain(chars).collect::<String>()),
+                    Some(c) => format!(
+                        "Custom: {}",
+                        c.to_uppercase().chain(chars).collect::<String>()
+                    ),
                     None => "Custom".to_string(),
                 }
             } else {
@@ -337,13 +345,10 @@ fn truncate_model_name(name: &str, max_len: usize) -> String {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Count total selectable items in the models tab
-pub fn count_models_items(
-    app: &TuiApp,
-    available_models: &[String],
-) -> usize {
+pub fn count_models_items(app: &TuiApp, available_models: &[String]) -> usize {
     let by_type = group_models_by_type(app, available_models);
     let expanded = &app.settings_state.models_expanded_providers;
-    
+
     let mut count = 0;
     for (type_label, models) in by_type.iter() {
         count += 1; // The group header
@@ -362,14 +367,14 @@ pub fn is_group_header(
 ) -> Option<String> {
     let by_type = group_models_by_type(app, available_models);
     let expanded = &app.settings_state.models_expanded_providers;
-    
+
     let mut current_index = 0;
     for (type_label, models) in by_type.iter() {
         if current_index == selected_index {
             return Some(type_label.clone());
         }
         current_index += 1;
-        
+
         if expanded.contains(type_label) {
             current_index += models.len();
         }
@@ -385,14 +390,14 @@ pub fn get_model_at_index(
 ) -> Option<String> {
     let by_type = group_models_by_type(app, available_models);
     let expanded = &app.settings_state.models_expanded_providers;
-    
+
     let mut current_index = 0;
     for (type_label, models) in by_type.iter() {
         if current_index == selected_index {
             return None; // It's a group header
         }
         current_index += 1;
-        
+
         if expanded.contains(type_label) {
             for model in models {
                 if current_index == selected_index {

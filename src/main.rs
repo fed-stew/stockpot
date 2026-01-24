@@ -126,7 +126,12 @@ fn run_tui(args: Args) -> anyhow::Result<()> {
                 .with_writer(std::sync::Mutex::new(log_file)),
         )
         .init();
-    
+
+    // Enable debug stream event logging if --debug flag is set
+    if args.debug {
+        stockpot::enable_debug_stream_events();
+    }
+
     // Use LocalSet to allow spawn_local for non-Send futures (Database uses RefCell)
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let local = tokio::task::LocalSet::new();
@@ -169,6 +174,11 @@ fn run_gui(args: Args) -> anyhow::Result<()> {
                 .with_writer(std::io::stderr),
         )
         .init();
+
+    // Enable debug stream event logging if --debug flag is set
+    if args.debug {
+        stockpot::enable_debug_stream_events();
+    }
 
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let _guard = runtime.enter();
