@@ -7,7 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  BINARY_NAME: spot
 
 jobs:
   build:
@@ -72,15 +71,24 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build release binaries
+        run: |
+          # Smart binary (needs both GUI and TUI features for display detection fallback)
+          cargo build --release --target ${{ matrix.target }} --features gui,tui --bin spot
+          
+          # GUI-only binary
+          cargo build --release --target ${{ matrix.target }} --features gui --no-default-features --bin spot-gui
+          
+          # TUI-only binary
+          cargo build --release --target ${{ matrix.target }} --features tui --no-default-features --bin spot-cli
 
-      - name: Package binary (Unix)
+      - name: Package binaries (Unix)
         if: matrix.archive_ext == 'tar.gz'
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          tar czvf ../../../${{ matrix.artifact_name }}.tar.gz ${{ env.BINARY_NAME }}
+          # Package all three binaries
+          tar czvf ../../../${{ matrix.artifact_name }}.tar.gz spot spot-gui spot-cli
           cd ../../..
           # Generate checksum (use shasum on macOS, sha256sum on Linux)
           if command -v sha256sum &> /dev/null; then
@@ -89,12 +97,13 @@ jobs:
             shasum -a 256 ${{ matrix.artifact_name }}.tar.gz > ${{ matrix.artifact_name }}.tar.gz.sha256
           fi
 
-      - name: Package binary (Windows)
+      - name: Package binaries (Windows)
         if: matrix.archive_ext == 'zip'
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path "${{ env.BINARY_NAME }}.exe" -DestinationPath "../../../${{ matrix.artifact_name }}.zip"
+          # Package all three binaries
+          Compress-Archive -Path "spot.exe", "spot-gui.exe", "spot-cli.exe" -DestinationPath "../../../${{ matrix.artifact_name }}.zip"
           cd ../../..
           # Generate checksum
           $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.artifact_name }}.zip").Hash.ToLower()

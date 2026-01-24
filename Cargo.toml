@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.20.4"
+version = "0.21.0"
 edition = "2021"
 description = "AI-powered coding assistant with native GUI"
 license = "MIT"
@@ -11,7 +11,15 @@ categories = ["development-tools", "gui"]
 
 [[bin]]
 name = "spot"
-path = "src/main.rs"
+path = "src/bin/spot.rs"
+
+[[bin]]
+name = "spot-gui"
+path = "src/bin/spot_gui.rs"
+
+[[bin]]
+name = "spot-cli"
+path = "src/bin/spot_cli.rs"
 
 [dependencies]
 # SerdesAI - AI agent framework

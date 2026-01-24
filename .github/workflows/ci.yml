@@ -53,8 +53,19 @@ jobs:
           cache-on-failure: false
           prefix-key: "v1"
 
-      - name: Run cargo check
-        run: cargo check --all-features
+      - name: Check all feature combinations
+        run: |
+          echo "=== Checking smart binary (gui + tui) ==="
+          cargo check --features gui,tui --bin spot
+          
+          echo "=== Checking GUI-only binary ==="
+          cargo check --features gui --no-default-features --bin spot-gui
+          
+          echo "=== Checking TUI-only binary ==="
+          cargo check --features tui --no-default-features --bin spot-cli
+          
+          echo "=== Checking library with all features ==="
+          cargo check --lib --all-features
 
   test:
     name: Tests
@@ -147,8 +158,19 @@ jobs:
           cache-on-failure: false
           prefix-key: "v1"
 
-      - name: Run clippy
-        run: cargo clippy --all-features -- -D warnings
+      - name: Run clippy on all feature combinations
+        run: |
+          echo "=== Linting smart binary (gui + tui) ==="
+          cargo clippy --features gui,tui --bin spot -- -D warnings
+          
+          echo "=== Linting GUI-only binary ==="
+          cargo clippy --features gui --no-default-features --bin spot-gui -- -D warnings
+          
+          echo "=== Linting TUI-only binary ==="
+          cargo clippy --features tui --no-default-features --bin spot-cli -- -D warnings
+          
+          echo "=== Linting library with all features ==="
+          cargo clippy --lib --all-features -- -D warnings
 
   fmt:
     name: Formatting
