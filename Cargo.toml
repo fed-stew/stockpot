@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.21.2"
+version = "0.21.3"
 edition = "2021"
 description = "AI-powered coding assistant with native GUI"
 license = "MIT"
@@ -128,7 +128,7 @@ predicates = "3.1"
 serial_test = "3"
 
 [features]
-default = ["gui"]
+default = ["gui", "tui"]
 gui = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets", "dep:rfd", "dep:unicode-segmentation", "dep:open"]
 tui = ["dep:ratatui", "dep:arboard", "dep:tui-textarea"]
 
