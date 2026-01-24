@@ -407,8 +407,7 @@ impl ChatApp {
         let is_expanded = self.system_executions.expanded_terminal.as_ref() == Some(&process_id);
 
         // Status indicator
-        let (status_color, status_text) = if snapshot.exit_code.is_some() {
-            let code = snapshot.exit_code.unwrap();
+        let (status_color, status_text) = if let Some(code) = snapshot.exit_code {
             if code == 0 {
                 (theme.success, format!("Exit: {}", code))
             } else {
