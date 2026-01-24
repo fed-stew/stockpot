@@ -213,6 +213,7 @@ fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
         app.selection.is_active(),
         app.context_percentage(),
     )
+    .with_error_message(app.error_message.clone())
     .with_copy_feedback(copy_feedback);
 
     frame.render_widget(status, area);

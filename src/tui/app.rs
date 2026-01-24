@@ -148,6 +148,8 @@ pub struct TuiApp {
     pub copy_feedback: Option<(Instant, String)>,
     /// Stream start time for elapsed calculation
     pub stream_start: Option<Instant>,
+    /// Error message to display (e.g., folder change failures)
+    pub error_message: Option<String>,
 }
 
 impl TuiApp {
@@ -244,6 +246,7 @@ impl TuiApp {
             cached_activity_area: Rect::default(),
             copy_feedback: None,
             stream_start: None,
+            error_message: None,
         })
     }
 
@@ -792,6 +795,10 @@ impl TuiApp {
 
     /// Open the folder modal and load directory entries
     pub fn open_folder_modal(&mut self) {
+        // Sync with actual current directory before opening
+        if let Ok(actual) = std::env::current_dir() {
+            self.current_working_dir = actual;
+        }
         self.show_folder_modal = true;
         self.folder_modal_selected = 0;
         self.folder_modal_scroll = 0;
@@ -845,17 +852,32 @@ impl TuiApp {
     /// Navigate to a directory in the folder modal
     pub fn folder_modal_navigate(&mut self, index: usize) {
         // Index 0 is ".." (parent directory)
-        if index == 0 {
+        let new_path = if index == 0 {
             // Go to parent
-            if let Some(parent) = self.current_working_dir.parent() {
-                self.current_working_dir = parent.to_path_buf();
-                self.folder_modal_selected = 0;
-                self.folder_modal_scroll = 0;
-                self.load_folder_entries();
-            }
-        } else if let Some(path) = self.folder_modal_entries.get(index - 1) {
+            self.current_working_dir.parent().map(|p| p.to_path_buf())
+        } else {
             // Navigate into the selected directory
-            self.current_working_dir = path.clone();
+            self.folder_modal_entries.get(index - 1).cloned()
+        };
+
+        if let Some(path) = new_path {
+            // Actually change the working directory
+            match std::env::set_current_dir(&path) {
+                Ok(()) => {
+                    self.current_working_dir = path;
+                    self.error_message = None;
+                    tracing::info!(
+                        "Changed working directory to: {:?}",
+                        self.current_working_dir
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to navigate to {:?}: {}", path, e);
+                    self.error_message = Some(format!("Cannot access: {}", e));
+                    // Don't update current_working_dir - stay where we are
+                    return;
+                }
+            }
             self.folder_modal_selected = 0;
             self.folder_modal_scroll = 0;
             self.load_folder_entries();
@@ -873,13 +895,7 @@ impl TuiApp {
 
     /// Confirm the current folder selection and close modal
     pub fn folder_modal_confirm(&mut self) {
-        // Set the working directory
-        if std::env::set_current_dir(&self.current_working_dir).is_ok() {
-            tracing::info!(
-                "Changed working directory to: {:?}",
-                self.current_working_dir
-            );
-        }
+        // Directory is already set during navigation, just close the modal
         self.close_folder_modal();
     }
 
@@ -998,6 +1014,9 @@ impl TuiApp {
         match event {
             AppEvent::Key(key) => {
                 use crossterm::event::{KeyCode, KeyModifiers};
+
+                // Clear any error message on keypress
+                self.error_message = None;
 
                 // Global shortcuts that bypass textarea
                 match (key.modifiers, key.code) {

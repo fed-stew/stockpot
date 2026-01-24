@@ -19,6 +19,7 @@ pub struct StatusBar {
     is_selecting: bool,
     context_percentage: u8,
     copy_feedback: Option<String>,
+    error_message: Option<String>,
 }
 
 impl StatusBar {
@@ -29,12 +30,19 @@ impl StatusBar {
             is_selecting,
             context_percentage,
             copy_feedback: None,
+            error_message: None,
         }
     }
 
     /// Add copy feedback message (shown instead of hints)
     pub fn with_copy_feedback(mut self, feedback: Option<String>) -> Self {
         self.copy_feedback = feedback;
+        self
+    }
+
+    /// Add error message (shown in red, takes priority over other feedback)
+    pub fn with_error_message(mut self, error: Option<String>) -> Self {
+        self.error_message = error;
         self
     }
 
@@ -73,9 +81,18 @@ impl Widget for StatusBar {
         );
 
         // Build left side: mode + hints or feedback
+        // Priority: error_message > copy_feedback > hints
         let mut spans = vec![mode_span, Span::styled(" │ ", separator_style)];
 
-        if let Some(feedback) = &self.copy_feedback {
+        if let Some(error) = &self.error_message {
+            // Show error message in red with warning icon
+            spans.push(Span::styled(
+                format!("⚠ {}", error),
+                Style::default()
+                    .fg(Theme::ERROR)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else if let Some(feedback) = &self.copy_feedback {
             // Show copy feedback in green
             spans.push(Span::styled(
                 feedback.clone(),
