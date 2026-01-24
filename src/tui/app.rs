@@ -30,7 +30,7 @@ use super::state::TuiConversation;
 use super::theme::Theme;
 use super::ui;
 use super::widgets::{self, ActivityFeedState};
-use crate::agents::AgentManager;
+use crate::agents::{AgentManager, UserMode};
 use crate::config::Settings;
 use crate::db::Database;
 use crate::mcp::McpManager;
@@ -66,6 +66,8 @@ pub struct TuiApp {
     pub current_agent: String,
     /// Current model name
     pub current_model: String,
+    /// Current user mode (affects agent visibility)
+    pub user_mode: UserMode,
     /// Whether we're currently generating
     pub is_generating: bool,
     /// Text input area
@@ -177,6 +179,7 @@ impl TuiApp {
         // Load settings
         let settings = Settings::new(&db);
         let current_model = settings.model();
+        let user_mode = settings.user_mode();
 
         // Initialize components
         let model_registry = Arc::new(ModelRegistry::load_from_db(&db).unwrap_or_default());
@@ -205,6 +208,7 @@ impl TuiApp {
             clipboard: ClipboardManager::new(),
             current_agent,
             current_model,
+            user_mode,
             is_generating: false,
             input,
             selection: SelectionState::default(),
@@ -549,6 +553,7 @@ impl TuiApp {
                             UserMode::Developer => UserMode::Normal,
                         };
                         let _ = settings.set_user_mode(new_mode);
+                        self.user_mode = new_mode;
                     }
                     2 => {
                         // Show Reasoning - toggle
@@ -701,6 +706,7 @@ impl TuiApp {
                             UserMode::Developer => UserMode::Expert,
                         };
                         let _ = settings.set_user_mode(new_mode);
+                        self.user_mode = new_mode;
                     }
                     _ => {}
                 }
@@ -745,6 +751,7 @@ impl TuiApp {
                             UserMode::Developer => UserMode::Normal,
                         };
                         let _ = settings.set_user_mode(new_mode);
+                        self.user_mode = new_mode;
                     }
                     _ => {}
                 }
@@ -965,6 +972,14 @@ impl TuiApp {
         self.events = Some(events);
 
         Ok(())
+    }
+
+    /// Get effective model for an agent (pinned or default)
+    fn effective_model_for_agent(&self, agent_name: &str) -> String {
+        let settings = Settings::new(&self.db);
+        settings
+            .get_agent_pinned_model(agent_name)
+            .unwrap_or_else(|| self.current_model.clone())
     }
 
     /// Update context usage tracking
@@ -1695,7 +1710,7 @@ impl TuiApp {
         let agent_name = self.current_agent.clone();
         let prompt = final_content;
         let history = self.message_history.clone();
-        let model_name = self.current_model.clone();
+        let model_name = self.effective_model_for_agent(&self.current_agent);
         let db = self.db.clone();
         let agent_manager = self.agents.clone();
         let model_registry = self.model_registry.clone();

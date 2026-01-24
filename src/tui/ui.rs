@@ -222,7 +222,7 @@ fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect)
     use crate::config::Settings;
 
     let settings = Settings::new(&app.db);
-    let available_agents = app.agents.list();
+    let available_agents = app.agents.list_filtered(app.user_mode);
 
     // Build items with pinned model info
     // Format: "Agent Name (model)" or "Agent Name (default)"
