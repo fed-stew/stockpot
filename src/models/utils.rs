@@ -647,6 +647,7 @@ mod tests {
     // =========================================================================
 
     #[test]
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_resolve_api_key_with_pool_from_pool() {
         let (_temp, db) = setup_test_db();
         let db_arc =
@@ -668,6 +669,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_resolve_api_key_with_pool_falls_back_to_single() {
         let (_temp, db) = setup_test_db();
         let db_arc =
@@ -701,6 +703,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_resolve_api_key_with_pool_not_found() {
         let (_temp, db) = setup_test_db();
         let db_arc =
@@ -717,6 +720,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_resolve_api_key_with_pool_prefers_pool_over_single() {
         let (_temp, db) = setup_test_db();
         let db_arc =

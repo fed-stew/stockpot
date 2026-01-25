@@ -59,7 +59,7 @@ mod tests {
     fn has_display_returns_bool() {
         // Just verify the function compiles and returns a bool
         let result = has_display();
-        assert!(result || !result); // tautology to prove it returns bool
+        let _: bool = result; // Type check proves it returns bool
     }
 
     #[cfg(target_os = "linux")]

@@ -144,6 +144,7 @@ impl serdes_ai_agent::ToolExecutor<()> for InvokeAgentExecutor {
                 });
 
                 // Create retry handler for automatic key rotation on 429s
+                #[allow(clippy::arc_with_non_send_sync)]
                 let retry_handler = RetryHandler::new(std::sync::Arc::new(
                     Database::open_at(db.path().clone()).expect("Failed to open retry DB")
                 ));

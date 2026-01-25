@@ -171,6 +171,7 @@ pub async fn invoke_agent_with_executor(
     let model_registry = ModelRegistry::load_from_db(db).unwrap_or_default();
 
     // Create retry handler for automatic key rotation on 429s
+    #[allow(clippy::arc_with_non_send_sync)]
     let retry_handler = match Database::open_at(db.path().clone()) {
         Ok(retry_db) => Some(RetryHandler::new(std::sync::Arc::new(retry_db))),
         Err(e) => {

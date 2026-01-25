@@ -206,6 +206,7 @@ pub async fn get_model(
 }
 
 /// Information about the current API key being used
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct KeyInfo {
     /// Provider name (e.g., "openai", "anthropic")
@@ -226,6 +227,7 @@ pub struct KeyInfo {
 ///
 /// # Returns
 /// The model instance or an error if the model can't be created.
+#[allow(dead_code)]
 pub fn create_model_with_key(
     model_name: &str,
     registry: &crate::models::ModelRegistry,
@@ -283,6 +285,7 @@ pub fn create_model_with_key(
 ///     Some(&retry_handler),
 /// ).await?;
 /// ```
+#[allow(dead_code)]
 pub async fn get_model_with_retry(
     db: &Database,
     model_name: &str,
@@ -335,16 +338,11 @@ pub async fn get_model_with_retry(
     Ok((model, None))
 }
 
-/// Extract provider name from model configuration.
+/// Convert a provider name to its env var format.
 ///
-/// The provider is determined by:
-/// 1. For custom endpoints: The full env var name (e.g., "CEREBRAS_API_KEY" from "$CEREBRAS_API_KEY")
-///    This matches how keys are stored in the api_key_pools table via the UI.
-/// 2. For known model types: The type name (e.g., "openai", "anthropic")
-/// 3. Fallback: The model name prefix before ":" or the full name
-/// Convert a provider name to its env var format
 /// e.g., "cerebras" → "CEREBRAS_API_KEY", "openai" → "OPENAI_API_KEY"
-/// If already in env var format (contains '_' and is uppercase), return as-is
+/// If already in env var format (contains '_' and is uppercase), return as-is.
+#[allow(dead_code)]
 fn provider_to_env_var(provider: &str) -> String {
     // If it already looks like an env var name, return as-is
     if provider.contains('_') && provider == provider.to_uppercase() {
@@ -354,6 +352,14 @@ fn provider_to_env_var(provider: &str) -> String {
     format!("{}_API_KEY", provider.to_uppercase())
 }
 
+/// Extract provider name from model configuration.
+///
+/// The provider is determined by:
+/// 1. For custom endpoints: The full env var name (e.g., "CEREBRAS_API_KEY" from "$CEREBRAS_API_KEY")
+///    This matches how keys are stored in the api_key_pools table via the UI.
+/// 2. For known model types: The type name (e.g., "openai", "anthropic")
+/// 3. Fallback: The model name prefix before ":" or the full name
+#[allow(dead_code)]
 fn extract_provider_from_config(model_name: &str, config: &crate::models::ModelConfig) -> String {
     // Try to extract from API key env var - return the FULL env var name
     // This ensures it matches what's stored in api_key_pools.provider_name
@@ -725,6 +731,7 @@ mod tests {
         assert!(key_info.is_none(), "No key info when no retry handler");
     }
 
+    #[allow(clippy::arc_with_non_send_sync)]
     fn setup_test_db_arc() -> (TempDir, Arc<Database>) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");

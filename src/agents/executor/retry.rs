@@ -33,6 +33,7 @@ impl Default for RetryConfig {
 }
 
 /// Events emitted during retry operations
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum RetryEvent {
     /// Key rotation occurred
@@ -78,6 +79,7 @@ pub struct RetryHandler {
 
 impl RetryHandler {
     /// Create a new retry handler with default configuration
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn new(db: Arc<Database>) -> Self {
         let pool_config = KeyPoolConfig::default();
         Self {
@@ -87,6 +89,7 @@ impl RetryHandler {
     }
 
     /// Create a retry handler with custom configuration
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn with_config(db: Arc<Database>, config: RetryConfig) -> Self {
         let pool_config = KeyPoolConfig {
             max_retry_cycles: config.max_cycles,
@@ -211,6 +214,7 @@ impl RetryHandler {
 }
 
 /// Extract HTTP status code from an error string
+#[allow(dead_code)]
 pub fn extract_status_code(error: &str) -> Option<u16> {
     // Look for patterns like "status: 429" or "status:429"
     let patterns = ["status: ", "status:"];
@@ -238,6 +242,7 @@ mod tests {
     // Test Helpers
     // =========================================================================
 
+    #[allow(clippy::arc_with_non_send_sync)]
     fn setup_test_db() -> (TempDir, Arc<Database>) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");

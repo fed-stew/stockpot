@@ -605,6 +605,7 @@ impl<'a> AgentExecutor<'a> {
     ///
     /// This variant is used when retrying after a rate limit, where we need to
     /// create a new model with a rotated API key.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn execute_stream_internal_with_key(
         &self,
         spot_agent: &dyn SpotAgent,

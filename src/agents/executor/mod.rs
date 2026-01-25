@@ -18,8 +18,8 @@ mod sub_agents;
 mod types;
 
 // Re-export public API
-pub use model_factory::{create_model_with_key, get_model, get_model_with_retry, KeyInfo};
-pub use retry::{extract_status_code, RetryConfig, RetryDecision, RetryEvent, RetryHandler};
+pub use model_factory::get_model;
+pub use retry::{RetryDecision, RetryHandler};
 pub use types::{ExecuteContext, ExecutorError, ExecutorResult, ExecutorStreamReceiver};
 
 use crate::agents::SpotAgent;
@@ -442,6 +442,7 @@ impl<'a> AgentExecutor<'a> {
     }
 
     /// Execute with bus and retry on rate limits.
+    #[allow(clippy::too_many_arguments)]
     async fn execute_with_bus_retry(
         &self,
         spot_agent: &dyn SpotAgent,
@@ -1393,6 +1394,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_agent_executor_with_retry_handler() {
         use std::sync::Arc;
         // Create a separate database for the retry handler
@@ -1409,6 +1411,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_agent_executor_builder_chaining() {
         use std::sync::Arc;
         // Create a separate database for the retry handler

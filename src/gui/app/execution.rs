@@ -322,6 +322,7 @@ impl ChatApp {
 
             // Create retry handler for automatic key rotation on 429s
             // Note: We create a separate Arc<Database> for the retry handler since GPUI uses Rc
+            #[allow(clippy::arc_with_non_send_sync)]
             let retry_handler = match crate::db::Database::open_at(db.path().clone()) {
                 Ok(retry_db) => Some(RetryHandler::new(std::sync::Arc::new(retry_db))),
                 Err(e) => {

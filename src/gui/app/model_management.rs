@@ -308,7 +308,7 @@ impl ChatApp {
         let priority = self.key_pool_keys.len() as i32; // Add at end
         let _ = self
             .db
-            .save_pool_key(&provider, &key_value, label.as_deref(), Some(priority));
+            .save_pool_key(provider, &key_value, label.as_deref(), Some(priority));
 
         // Clear inputs
         if let Some(input) = &self.key_pool_new_key_input {

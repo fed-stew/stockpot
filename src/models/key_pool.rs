@@ -290,6 +290,7 @@ mod tests {
     // Test Helpers
     // =========================================================================
 
+    #[allow(clippy::arc_with_non_send_sync)]
     fn setup_test_db() -> (TempDir, Arc<Database>) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
