@@ -306,7 +306,11 @@ pub fn read_file(
             .map(|n| (start_idx + n).min(total_lines))
             .unwrap_or(total_lines);
 
-        lines[start_idx..end_idx].join("\n")
+        // Safe slicing: use .get() to avoid panics when start_idx is out of bounds
+        lines
+            .get(start_idx..end_idx)
+            .map(|slice| slice.join("\n"))
+            .unwrap_or_default()
     } else {
         content
     };
@@ -697,5 +701,46 @@ mod tests {
 
         assert_eq!(root_entry.depth, 0);
         assert_eq!(child_entry.depth, 1);
+    }
+
+    #[test]
+    fn read_file_handles_out_of_bounds_start_line() {
+        // Regression test: requesting a start_line beyond the file length should not panic
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let file_path = dir.path().join("small.txt");
+
+        // Create a file with only 25 lines
+        let lines: Vec<String> = (1..=25).map(|i| format!("Line {}", i)).collect();
+        let content = lines.join("\n");
+        fs::write(&file_path, &content).expect("write failed");
+
+        // Request start_line=120 (way beyond the 25-line file)
+        // This should NOT panic, just return empty content
+        let result = read_file(file_path.to_str().unwrap(), Some(120), Some(10), None);
+
+        assert!(result.is_ok());
+        let read_result = result.unwrap();
+        assert!(read_result.content.is_empty());
+        assert_eq!(read_result.lines, 25); // total lines in file
+    }
+
+    #[test]
+    fn read_file_handles_partial_out_of_bounds() {
+        // Test when start_line is valid but num_lines goes beyond EOF
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let file_path = dir.path().join("small.txt");
+
+        let lines: Vec<String> = (1..=10).map(|i| format!("Line {}", i)).collect();
+        let content = lines.join("\n");
+        fs::write(&file_path, &content).expect("write failed");
+
+        // Request lines 8-17 (but file only has 10 lines)
+        let result = read_file(file_path.to_str().unwrap(), Some(8), Some(10), None);
+
+        assert!(result.is_ok());
+        let read_result = result.unwrap();
+        assert!(read_result.content.contains("Line 8"));
+        assert!(read_result.content.contains("Line 10"));
+        // Should gracefully stop at EOF, not panic
     }
 }

@@ -24,7 +24,7 @@ impl ChatApp {
             .map(|s| s.as_str())
             .unwrap_or("API_KEY");
 
-        let has_existing_key = self.db.has_api_key(env_var) || std::env::var(env_var).is_ok();
+        let has_existing_key = crate::models::utils::has_any_api_key(&self.db, env_var);
         let has_key_input = self
             .add_model_api_key_input_entity
             .as_ref()
@@ -73,6 +73,7 @@ impl ChatApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme.clone();
+        let pool_key_count = self.db.count_active_pool_keys(env_var).unwrap_or(0);
 
         div()
             .px(px(16.))
@@ -82,37 +83,66 @@ impl ChatApp {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(self.render_api_key_header(env_var, has_existing_key))
-            .child(self.render_api_key_input(cx))
+            .child(self.render_api_key_header(env_var, has_existing_key, pool_key_count))
+            .child(self.render_api_key_input(env_var, cx))
     }
 
     /// Render the API key section header.
-    fn render_api_key_header(&self, env_var: &str, has_existing_key: bool) -> impl IntoElement {
+    fn render_api_key_header(
+        &self,
+        env_var: &str,
+        _has_existing_key: bool,
+        pool_key_count: usize,
+    ) -> impl IntoElement {
         let theme = self.theme.clone();
+
+        // Count keys from pool (primary) + legacy table + env (for backward compat display)
+        // Note: pool_key_count is already passed in. Check legacy table separately.
+        let legacy_key_count = if self.db.has_api_key(env_var) { 1 } else { 0 };
+        let env_key_count =
+            if legacy_key_count == 0 && pool_key_count == 0 && std::env::var(env_var).is_ok() {
+                1
+            } else {
+                0
+            };
+        let total_keys = pool_key_count + legacy_key_count + env_key_count;
 
         div()
             .flex()
             .items_center()
             .justify_between()
             .child(
-                div()
-                    .text_size(px(12.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.text_muted)
-                    .child(format!("API Key ({})", env_var)),
-            )
-            .when(has_existing_key, |d| {
-                d.child(
+                div().flex().items_center().gap(px(8.)).child(
                     div()
-                        .text_size(px(11.))
-                        .text_color(rgb(0x4ade80))
-                        .child("✓ Key configured"),
-                )
-            })
+                        .text_size(px(12.))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(theme.text_muted)
+                        .child(format!("API Key ({})", env_var)),
+                ),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(if total_keys > 0 {
+                        rgb(0x4ade80)
+                    } else {
+                        theme.text_muted
+                    })
+                    .child(if total_keys > 0 {
+                        format!(
+                            "✓ {} key{} configured",
+                            total_keys,
+                            if total_keys == 1 { "" } else { "s" }
+                        )
+                    } else {
+                        "No keys configured".to_string()
+                    }),
+            )
     }
 
     /// Render the API key input field with paste button.
-    fn render_api_key_input(&self, cx: &Context<Self>) -> impl IntoElement {
+    /// This is for the ADD MODEL dialog - simple flow, just input the initial API key.
+    fn render_api_key_input(&self, _env_var: &str, cx: &Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .gap(px(8.))

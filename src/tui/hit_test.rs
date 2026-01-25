@@ -23,6 +23,34 @@ pub enum ClickTarget {
     SectionToggle(String), // section_id
     /// Message content (for text selection)
     MessageContent,
+    /// Settings button in header
+    SettingsButton,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Settings Dialog Click Targets
+    // ─────────────────────────────────────────────────────────────────────────
+    /// Settings tab clicked (tab index)
+    SettingsTab(usize),
+    /// Settings close area (clicking outside the dialog)
+    SettingsClose,
+    /// General tab: toggle switch clicked (setting ID)
+    SettingsToggle(String),
+    /// General tab: radio option clicked (setting ID, option index)
+    SettingsRadio(String, usize),
+    /// Models tab: provider row clicked to expand/collapse
+    ModelsProvider(String),
+    /// Models tab: model row clicked to set as default
+    ModelsItem(String),
+    /// Pinned Agents tab: agent selected
+    PinnedAgentItem(usize),
+    /// Pinned Agents tab: model selected for pinning
+    PinnedModelItem(usize),
+    /// MCP tab: server selected
+    McpServerItem(usize),
+    /// MCP tab: agent selected
+    McpAgentItem(usize),
+    /// MCP tab: checkbox toggled (server index)
+    McpCheckbox(usize),
 }
 
 /// Tracks clickable regions for hit testing

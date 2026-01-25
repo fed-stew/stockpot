@@ -18,7 +18,7 @@ pub mod json_agent;
 mod manager;
 
 pub use base::SpotAgent;
-pub use executor::{AgentExecutor, ExecuteContext};
+pub use executor::{AgentExecutor, ExecuteContext, RetryHandler};
 pub use manager::{AgentInfo, AgentManager};
 
 /// Agent capability flags.

@@ -120,3 +120,23 @@ impl Theme {
         Theme
     }
 }
+
+/// Dim the background behind a modal overlay to create visual separation
+///
+/// Iterates over every cell in the given area and reduces RGB values by 1/3,
+/// creating a "dimmed" effect for the background behind modals/dropdowns.
+pub fn dim_background(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    for y in area.y..area.y + area.height {
+        for x in area.x..area.x + area.width {
+            let cell = &mut frame.buffer_mut()[(x, y)];
+            // Dim the foreground color
+            if let Color::Rgb(r, g, b) = cell.fg {
+                cell.fg = Color::Rgb(r / 3, g / 3, b / 3);
+            }
+            // Dim the background color by blending with dark
+            if let Color::Rgb(r, g, b) = cell.bg {
+                cell.bg = Color::Rgb(r / 3, g / 3, b / 3);
+            }
+        }
+    }
+}

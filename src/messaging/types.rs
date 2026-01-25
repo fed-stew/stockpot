@@ -179,6 +179,22 @@ pub struct HistoryUpdateMessage {
     pub messages: Vec<serdes_ai_core::ModelRequest>,
 }
 
+/// API key retry/rotation notification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryMessage {
+    /// The provider being retried (e.g., "openai", "anthropic")
+    pub provider: String,
+    /// Current retry attempt number
+    pub attempt: u32,
+    /// Reason for retry (e.g., "Rate limited (429)")
+    pub reason: String,
+    /// Seconds to wait (if in cooldown)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wait_secs: Option<u64>,
+    /// True if this is a key rotation, false if waiting for cooldown
+    pub is_rotation: bool,
+}
+
 /// Any message type (for serialization).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -196,6 +212,7 @@ pub enum Message {
     TextDelta(TextDeltaMessage),
     Thinking(ThinkingMessage),
     HistoryUpdate(HistoryUpdateMessage),
+    Retry(RetryMessage),
     Divider,
     Clear,
 }
@@ -503,6 +520,28 @@ impl Message {
         Self::Thinking(ThinkingMessage {
             text: text.to_string(),
             agent_name: Some(agent_name.to_string()),
+        })
+    }
+
+    /// Create a retry message for key rotation.
+    pub fn retry_rotation(provider: &str, attempt: u32, reason: &str) -> Self {
+        Self::Retry(RetryMessage {
+            provider: provider.to_string(),
+            attempt,
+            reason: reason.to_string(),
+            wait_secs: None,
+            is_rotation: true,
+        })
+    }
+
+    /// Create a retry message for cooldown wait.
+    pub fn retry_cooldown(provider: &str, attempt: u32, reason: &str, wait_secs: u64) -> Self {
+        Self::Retry(RetryMessage {
+            provider: provider.to_string(),
+            attempt,
+            reason: reason.to_string(),
+            wait_secs: Some(wait_secs),
+            is_rotation: false,
         })
     }
 }
@@ -1322,5 +1361,104 @@ mod tests {
 
         let parsed: Message = serde_json::from_str(&json).unwrap();
         matches!(parsed, Message::Clear);
+    }
+
+    // =========================================================================
+    // RetryMessage Tests
+    // =========================================================================
+
+    #[test]
+    fn test_retry_message_rotation() {
+        let msg = RetryMessage {
+            provider: "openai".to_string(),
+            attempt: 1,
+            reason: "Rate limited (429)".to_string(),
+            wait_secs: None,
+            is_rotation: true,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: RetryMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.provider, "openai");
+        assert_eq!(parsed.attempt, 1);
+        assert!(parsed.is_rotation);
+        assert!(parsed.wait_secs.is_none());
+    }
+
+    #[test]
+    fn test_retry_message_cooldown() {
+        let msg = RetryMessage {
+            provider: "anthropic".to_string(),
+            attempt: 3,
+            reason: "All keys exhausted".to_string(),
+            wait_secs: Some(15),
+            is_rotation: false,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: RetryMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.provider, "anthropic");
+        assert_eq!(parsed.attempt, 3);
+        assert!(!parsed.is_rotation);
+        assert_eq!(parsed.wait_secs, Some(15));
+    }
+
+    #[test]
+    fn test_retry_message_skip_serializing_none_wait() {
+        let msg = RetryMessage {
+            provider: "openai".to_string(),
+            attempt: 1,
+            reason: "429".to_string(),
+            wait_secs: None,
+            is_rotation: true,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        // wait_secs should not appear in JSON when None
+        assert!(!json.contains("wait_secs"));
+    }
+
+    #[test]
+    fn test_message_retry_rotation_helper() {
+        let msg = Message::retry_rotation("openai", 1, "Rate limited");
+        match msg {
+            Message::Retry(rm) => {
+                assert_eq!(rm.provider, "openai");
+                assert_eq!(rm.attempt, 1);
+                assert_eq!(rm.reason, "Rate limited");
+                assert!(rm.is_rotation);
+                assert!(rm.wait_secs.is_none());
+            }
+            _ => panic!("Expected Message::Retry"),
+        }
+    }
+
+    #[test]
+    fn test_message_retry_cooldown_helper() {
+        let msg = Message::retry_cooldown("anthropic", 2, "Keys exhausted", 30);
+        match msg {
+            Message::Retry(rm) => {
+                assert_eq!(rm.provider, "anthropic");
+                assert_eq!(rm.attempt, 2);
+                assert_eq!(rm.reason, "Keys exhausted");
+                assert!(!rm.is_rotation);
+                assert_eq!(rm.wait_secs, Some(30));
+            }
+            _ => panic!("Expected Message::Retry"),
+        }
+    }
+
+    #[test]
+    fn test_message_enum_retry_serde() {
+        let msg = Message::Retry(RetryMessage {
+            provider: "google".to_string(),
+            attempt: 5,
+            reason: "Quota exceeded".to_string(),
+            wait_secs: Some(60),
+            is_rotation: false,
+        });
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"retry\""));
+        assert!(json.contains("\"provider\":\"google\""));
+
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+        matches!(parsed, Message::Retry(_));
     }
 }

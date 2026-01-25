@@ -178,11 +178,17 @@ pub fn prompt_api_key(db: &Database, provider: &ProviderInfo) -> Result<Option<S
 
     println!("\n\x1b[1m🔑 API Key Configuration\x1b[0m");
 
-    // Check if already in database
-    if db.has_api_key(env_var) {
+    // Check if already in database (pool first, then legacy)
+    let pool_key_count = db.count_active_pool_keys(env_var).unwrap_or(0);
+    if pool_key_count > 0 || db.has_api_key(env_var) {
+        let key_desc = if pool_key_count > 0 {
+            format!("{} key{} in pool", pool_key_count, if pool_key_count == 1 { "" } else { "s" })
+        } else {
+            "1 key".to_string()
+        };
         println!(
-            "\x1b[32m✓ {} is already configured in stockpot\x1b[0m",
-            env_var
+            "\x1b[32m✓ {} is already configured in stockpot ({})\x1b[0m",
+            env_var, key_desc
         );
         print!("\nUse existing key? [Y/n]: ");
         io::stdout().flush()?;
@@ -207,11 +213,19 @@ pub fn prompt_api_key(db: &Database, provider: &ProviderInfo) -> Result<Option<S
             let input = input.trim().to_lowercase();
 
             if input.is_empty() || input == "y" || input == "yes" {
-                // Save to database for persistence
-                if let Err(e) = db.save_api_key(env_var, &existing) {
-                    println!("\x1b[33m⚠️  Failed to save API key: {}\x1b[0m", e);
-                } else {
-                    println!("\x1b[32m✓ API key saved to stockpot database\x1b[0m");
+                // Save to pool for persistence (using unified pool system)
+                match db.save_pool_key(env_var, &existing, Some("From environment"), Some(0)) {
+                    Ok(_) => {
+                        println!("\x1b[32m✓ API key saved to stockpot database\x1b[0m");
+                    }
+                    Err(e) => {
+                        // Handle duplicate key gracefully
+                        if e.to_string().contains("UNIQUE constraint") {
+                            println!("\x1b[32m✓ API key already exists in database\x1b[0m");
+                        } else {
+                            println!("\x1b[33m⚠️  Failed to save API key: {}\x1b[0m", e);
+                        }
+                    }
                 }
                 return Ok(Some(env_var.to_string()));
             }
@@ -252,11 +266,19 @@ pub fn prompt_api_key(db: &Database, provider: &ProviderInfo) -> Result<Option<S
                 return Ok(None);
             }
 
-            // Save to database
-            if let Err(e) = db.save_api_key(env_var, key) {
-                println!("\x1b[33m⚠️  Failed to save API key: {}\x1b[0m", e);
-            } else {
-                println!("\x1b[32m✓ API key saved to stockpot database\x1b[0m");
+            // Save to pool (using unified pool system)
+            match db.save_pool_key(env_var, key, None, Some(0)) {
+                Ok(_) => {
+                    println!("\x1b[32m✓ API key saved to stockpot database\x1b[0m");
+                }
+                Err(e) => {
+                    // Handle duplicate key gracefully
+                    if e.to_string().contains("UNIQUE constraint") {
+                        println!("\x1b[32m✓ API key already exists in database\x1b[0m");
+                    } else {
+                        println!("\x1b[33m⚠️  Failed to save API key: {}\x1b[0m", e);
+                    }
+                }
             }
 
             // Also set in current process for immediate use

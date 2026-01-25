@@ -25,17 +25,29 @@ use crate::messaging::EventBridge;
 use crate::models::settings::ModelSettings as SpotModelSettings;
 
 use super::adapters::{ArcModel, RecordingToolExecutor, ToolExecutorAdapter};
-use super::model_factory::get_model;
+use super::model_factory::{create_model_with_key, get_model};
 use super::sub_agents::{InvokeAgentExecutor, ListAgentsExecutor};
 use super::types::{ExecuteContext, ExecutorError, ExecutorStreamReceiver};
 use super::{AgentExecutor, SpotAgent, StreamEvent};
+
+/// Safely truncate a string to at most `max_bytes` bytes, respecting UTF-8 character boundaries.
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
 
 /// Format a StreamEvent to a human-readable debug string.
 fn format_stream_event(event: &StreamEvent) -> String {
     match event {
         StreamEvent::TextDelta { text } => {
             let preview = if text.len() > 100 {
-                format!("{}...", &text[..100])
+                format!("{}...", safe_truncate(text, 100))
             } else {
                 text.clone()
             };
@@ -43,7 +55,7 @@ fn format_stream_event(event: &StreamEvent) -> String {
         }
         StreamEvent::ThinkingDelta { text } => {
             let preview = if text.len() > 100 {
-                format!("{}...", &text[..100])
+                format!("{}...", safe_truncate(text, 100))
             } else {
                 text.clone()
             };
@@ -63,7 +75,7 @@ fn format_stream_event(event: &StreamEvent) -> String {
             tool_call_id,
         } => {
             let preview = if delta.len() > 100 {
-                format!("{}...", &delta[..100])
+                format!("{}...", safe_truncate(delta, 100))
             } else {
                 delta.clone()
             };
@@ -575,6 +587,216 @@ impl<'a> AgentExecutor<'a> {
                     log_http_error(&error_str);
 
                     // Send error event
+                    let _ = tx
+                        .send(Ok(StreamEvent::Error {
+                            message: error_str.clone(),
+                        }))
+                        .await;
+                    let _ = tx.send(Err(ExecutorError::Execution(error_str))).await;
+                }
+            }
+            debug!("Streaming task exiting");
+        });
+
+        Ok(ExecutorStreamReceiver::new(rx))
+    }
+
+    /// Internal streaming execution with explicit API key for retry scenarios.
+    ///
+    /// This variant is used when retrying after a rate limit, where we need to
+    /// create a new model with a rotated API key.
+    pub(super) async fn execute_stream_internal_with_key(
+        &self,
+        spot_agent: &dyn SpotAgent,
+        model_name: &str,
+        prompt: UserContent,
+        message_history: Option<Vec<ModelRequest>>,
+        context: &ExecuteContext<'_>,
+        tool_return_recorder: Option<Arc<Mutex<Vec<ToolReturnPart>>>>,
+        api_key: &str,
+    ) -> Result<ExecutorStreamReceiver, ExecutorError> {
+        // Create model with the explicit API key
+        let model = create_model_with_key(model_name, self.registry, api_key)?;
+
+        // Get original tool list (before filtering) to check for special tools
+        let original_tools = spot_agent.available_tools();
+        let wants_invoke = self.wants_invoke_agent(&original_tools);
+        let wants_list = self.wants_list_agents(&original_tools);
+
+        // Get the tools this agent should have access to (filtered by settings)
+        let tool_names = self.filter_tools(original_tools);
+        let tools = context.tool_registry.tools_by_name(&tool_names);
+
+        // Collect tool definitions and Arc references
+        let mut tool_data: Vec<(ToolDefinition, Arc<dyn Tool + Send + Sync>)> =
+            tools.into_iter().map(|t| (t.definition(), t)).collect();
+
+        // Collect MCP tools from running servers (filtered by agent attachments)
+        let mcp_tool_calls = self
+            .collect_mcp_tools(context.mcp_manager, Some(spot_agent.name()))
+            .await;
+        tool_data.extend(mcp_tool_calls);
+
+        // Load per-model settings from database
+        let spot_settings = SpotModelSettings::load(self.db, model_name).unwrap_or_default();
+
+        // Check if this model has thinking enabled (supports it and not explicitly disabled)
+        let model_supports_thinking = self
+            .registry
+            .get(model_name)
+            .map(|c| c.supports_thinking)
+            .unwrap_or(false);
+        let thinking_explicitly_disabled = spot_settings.extended_thinking == Some(false);
+        let thinking_enabled = model_supports_thinking && !thinking_explicitly_disabled;
+
+        // Convert to serdes_ai_core::ModelSettings
+        let effective_temp = if thinking_enabled {
+            1.0
+        } else {
+            spot_settings.effective_temperature() as f64
+        };
+
+        let core_settings = serdes_ai_core::ModelSettings::new()
+            .temperature(effective_temp)
+            .top_p(spot_settings.effective_top_p() as f64)
+            .max_tokens(30000);
+
+        // Prepare data for the spawned task
+        let system_prompt = spot_agent.system_prompt();
+        let model_name_owned = model_name.to_string();
+        let db_path = self.db.path().to_path_buf();
+        let bus = self.bus.clone();
+        let tool_return_recorder = tool_return_recorder.clone();
+        let (tx, rx) = mpsc::channel(32);
+
+        debug!(
+            tool_count = tool_data.len(),
+            "Spawning streaming task with rotated key"
+        );
+
+        // Spawn a task that owns the agent and sends events through the channel
+        tokio::spawn(async move {
+            debug!("Streaming task started (with rotated key)");
+
+            let wrapped_model = ArcModel(model);
+
+            // Build the serdesAI agent
+            debug!("Building serdesAI agent");
+            let mut builder = agent(wrapped_model)
+                .system_prompt(system_prompt)
+                .temperature(1.0)
+                .max_tokens(30000);
+
+            match tool_return_recorder {
+                Some(recorder) => {
+                    // Register tools with recording executors
+                    for (def, tool) in tool_data {
+                        builder = builder.tool_with_executor(
+                            def,
+                            RecordingToolExecutor::new(
+                                ToolExecutorAdapter::new(tool),
+                                recorder.clone(),
+                            ),
+                        );
+                    }
+
+                    if wants_invoke {
+                        let invoke_executor = InvokeAgentExecutor::new_with_path(
+                            db_path.clone(),
+                            &model_name_owned,
+                            bus.clone(),
+                        );
+                        builder = builder.tool_with_executor(
+                            InvokeAgentExecutor::definition(),
+                            RecordingToolExecutor::new(invoke_executor, recorder.clone()),
+                        );
+                    }
+
+                    if wants_list {
+                        builder = builder.tool_with_executor(
+                            ListAgentsExecutor::definition(),
+                            RecordingToolExecutor::new(
+                                ListAgentsExecutor::new_with_path(db_path.clone()),
+                                recorder.clone(),
+                            ),
+                        );
+                    }
+                }
+                None => {
+                    for (def, tool) in tool_data {
+                        builder = builder.tool_with_executor(def, ToolExecutorAdapter::new(tool));
+                    }
+
+                    if wants_invoke {
+                        let invoke_executor = InvokeAgentExecutor::new_with_path(
+                            db_path.clone(),
+                            &model_name_owned,
+                            bus.clone(),
+                        );
+                        builder = builder
+                            .tool_with_executor(InvokeAgentExecutor::definition(), invoke_executor);
+                    }
+
+                    if wants_list {
+                        builder = builder.tool_with_executor(
+                            ListAgentsExecutor::definition(),
+                            ListAgentsExecutor::new_with_path(db_path.clone()),
+                        );
+                    }
+                }
+            }
+
+            let serdes_agent = builder.build();
+            debug!("Agent built successfully");
+
+            let options = match message_history {
+                Some(history) => RunOptions::new()
+                    .model_settings(core_settings)
+                    .message_history(history),
+                None => RunOptions::new().model_settings(core_settings),
+            };
+
+            debug!("Calling run_stream_with_options");
+
+            match serdes_agent
+                .run_stream_with_options(prompt, (), options)
+                .await
+            {
+                Ok(mut stream) => {
+                    debug!("Stream started, forwarding events");
+                    let mut event_count = 0u32;
+
+                    while let Some(event_result) = stream.next().await {
+                        event_count += 1;
+                        match event_result {
+                            Ok(event) => {
+                                if tx.send(Ok(event)).await.is_err() {
+                                    warn!("Receiver dropped, stopping stream");
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                let error_str = e.to_string();
+                                error!(error = %error_str, "Stream error");
+                                log_http_error(&error_str);
+
+                                let _ = tx
+                                    .send(Ok(StreamEvent::Error {
+                                        message: error_str.clone(),
+                                    }))
+                                    .await;
+                                let _ = tx.send(Err(ExecutorError::Execution(error_str))).await;
+                                break;
+                            }
+                        }
+                    }
+                    debug!(total_events = event_count, "Stream completed");
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    error!(error = %error_str, "Failed to start stream");
+                    log_http_error(&error_str);
+
                     let _ = tx
                         .send(Ok(StreamEvent::Error {
                             message: error_str.clone(),

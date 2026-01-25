@@ -14,7 +14,7 @@ use super::app::TuiApp;
 use super::layout::AppLayout;
 use super::settings::render_settings;
 use crate::tui::hit_test::ClickTarget;
-use crate::tui::theme::Theme;
+use crate::tui::theme::{dim_background, Theme};
 use crate::tui::widgets::{ActivityFeed, DropdownWidget, Header, StatusBar, TextSelection};
 
 /// Render the entire UI
@@ -84,10 +84,12 @@ fn render_header(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
 
     let header = Header::new(&agent_display, &model_display, &app.current_working_dir);
 
-    // Calculate hit target positions
+    // Calculate hit target positions (before render consumes header)
     let agent_section_width = header.agent_section_width();
     let folder_offset = header.folder_offset();
     let folder_width = header.folder_width();
+    let settings_offset = header.settings_offset();
+    let settings_width = header.settings_width();
 
     frame.render_widget(header, area);
 
@@ -102,6 +104,17 @@ fn render_header(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
     app.hit_registry.register(
         Rect::new(area.x + folder_offset, area.y, folder_width, 1),
         ClickTarget::FolderDropdown,
+    );
+    // Settings button trigger - make it more generous
+    // Add extra width and allow for emoji width variations (emojis take 2 cells but count as 1 char)
+    app.hit_registry.register(
+        Rect::new(
+            (area.x + settings_offset).saturating_sub(2), // Start a bit earlier
+            area.y,
+            settings_width + 6, // Extra clickable width
+            area.height,        // Use full header height
+        ),
+        ClickTarget::SettingsButton,
     );
 }
 
@@ -222,6 +235,9 @@ fn render_status_bar(frame: &mut Frame, app: &TuiApp, area: Rect) {
 fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
     use crate::config::Settings;
 
+    // Dim background for modal effect
+    dim_background(frame, frame.area());
+
     let settings = Settings::new(&app.db);
     let available_agents = app.agents.list_filtered(app.user_mode);
 
@@ -277,6 +293,9 @@ fn render_agent_dropdown(frame: &mut Frame, app: &mut TuiApp, header_area: Rect)
 }
 
 fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
+    // Dim background for modal effect
+    dim_background(frame, frame.area());
+
     // Modal dimensions
     let modal_width: u16 = 50;
     let modal_height: u16 = 15; // Fixed height for consistency

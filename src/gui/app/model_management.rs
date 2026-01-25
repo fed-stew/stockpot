@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use gpui::{AsyncApp, Context, WeakEntity};
+use gpui::{AppContext, AsyncApp, Context, WeakEntity};
 
 use crate::models::ModelRegistry;
 
@@ -88,10 +88,22 @@ impl ChatApp {
             .unwrap_or_default();
 
         if !api_key_value.is_empty() {
-            if let Err(e) = self.db.save_api_key(env_var, &api_key_value) {
-                self.add_model_error = Some(format!("Failed to save API key: {}", e));
-                cx.notify();
-                return;
+            // Save to the unified api_key_pools table (not the legacy api_keys table)
+            // This ensures all keys are managed through the pool system
+            if let Err(e) = self
+                .db
+                .save_pool_key(env_var, &api_key_value, None, Some(0))
+            {
+                // Handle duplicate key error gracefully - key already exists
+                let err_str = e.to_string();
+                if err_str.contains("UNIQUE constraint") {
+                    // Key already exists, that's fine - just continue
+                    tracing::debug!(env_var = %env_var, "API key already exists in pool, skipping save");
+                } else {
+                    self.add_model_error = Some(format!("Failed to save API key: {}", e));
+                    cx.notify();
+                    return;
+                }
             }
         }
 
@@ -219,5 +231,140 @@ impl ChatApp {
     /// Refresh the API keys list from database
     pub(super) fn refresh_api_keys_list(&mut self) {
         self.api_keys_list = self.db.list_api_keys().unwrap_or_default();
+    }
+
+    // =========================================================================
+    // Key Pool Dialog Methods
+    // =========================================================================
+
+    /// Open the key pool dialog for a specific provider
+    pub fn open_key_pool_dialog(
+        &mut self,
+        provider: &str,
+        display_name: &str,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        use gpui_component::input::InputState;
+
+        self.show_key_pool_dialog = true;
+        self.key_pool_provider = Some(provider.to_string());
+        self.key_pool_provider_display = Some(display_name.to_string());
+        self.refresh_key_pool_list();
+
+        // Create input entities
+        self.key_pool_new_key_input = Some(cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Paste API key here...")
+                .masked(true)
+        }));
+        self.key_pool_new_label_input = Some(cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Label (optional, e.g., 'Personal')")
+        }));
+
+        cx.notify();
+    }
+
+    /// Close the key pool dialog
+    pub fn close_key_pool_dialog(&mut self, cx: &mut Context<Self>) {
+        self.show_key_pool_dialog = false;
+        self.key_pool_provider = None;
+        self.key_pool_provider_display = None;
+        self.key_pool_keys.clear();
+        self.key_pool_new_key_input = None;
+        self.key_pool_new_label_input = None;
+        cx.notify();
+    }
+
+    /// Refresh the key list from database
+    pub fn refresh_key_pool_list(&mut self) {
+        if let Some(provider) = &self.key_pool_provider {
+            self.key_pool_keys = self.db.get_pool_keys(provider).unwrap_or_default();
+        }
+    }
+
+    /// Add a new key to the pool
+    pub fn add_key_to_pool(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        let Some(provider) = &self.key_pool_provider.clone() else {
+            return;
+        };
+
+        let key_value = self
+            .key_pool_new_key_input
+            .as_ref()
+            .map(|e| e.read(cx).value().to_string())
+            .unwrap_or_default();
+
+        let label = self
+            .key_pool_new_label_input
+            .as_ref()
+            .map(|e| e.read(cx).value().to_string())
+            .filter(|s| !s.is_empty());
+
+        if key_value.is_empty() {
+            return;
+        }
+
+        let priority = self.key_pool_keys.len() as i32; // Add at end
+        let _ = self
+            .db
+            .save_pool_key(&provider, &key_value, label.as_deref(), Some(priority));
+
+        // Clear inputs
+        if let Some(input) = &self.key_pool_new_key_input {
+            input.update(cx, |state, cx| state.set_value("".to_string(), window, cx));
+        }
+        if let Some(input) = &self.key_pool_new_label_input {
+            input.update(cx, |state, cx| state.set_value("".to_string(), window, cx));
+        }
+
+        self.refresh_key_pool_list();
+        cx.notify();
+    }
+
+    /// Delete a key from the pool
+    pub fn delete_pool_key(&mut self, key_id: i64, cx: &mut Context<Self>) {
+        let _ = self.db.delete_pool_key(key_id);
+        self.refresh_key_pool_list();
+        cx.notify();
+    }
+
+    /// Toggle key active status
+    pub fn toggle_pool_key_active(&mut self, key_id: i64, is_active: bool, cx: &mut Context<Self>) {
+        let _ = self.db.set_key_active(key_id, !is_active);
+        self.refresh_key_pool_list();
+        cx.notify();
+    }
+
+    /// Move a key up in priority (lower priority number = higher priority)
+    pub fn move_key_up(&mut self, key_id: i64, cx: &mut Context<Self>) {
+        if let Some(idx) = self.key_pool_keys.iter().position(|k| k.id == key_id) {
+            if idx > 0 {
+                let new_priority = self.key_pool_keys[idx - 1].priority;
+                let old_priority = self.key_pool_keys[idx].priority;
+                let _ = self.db.update_key_priority(key_id, new_priority);
+                let _ = self
+                    .db
+                    .update_key_priority(self.key_pool_keys[idx - 1].id, old_priority);
+                self.refresh_key_pool_list();
+                cx.notify();
+            }
+        }
+    }
+
+    /// Move a key down in priority
+    pub fn move_key_down(&mut self, key_id: i64, cx: &mut Context<Self>) {
+        if let Some(idx) = self.key_pool_keys.iter().position(|k| k.id == key_id) {
+            if idx < self.key_pool_keys.len() - 1 {
+                let new_priority = self.key_pool_keys[idx + 1].priority;
+                let old_priority = self.key_pool_keys[idx].priority;
+                let _ = self.db.update_key_priority(key_id, new_priority);
+                let _ = self
+                    .db
+                    .update_key_priority(self.key_pool_keys[idx + 1].id, old_priority);
+                self.refresh_key_pool_list();
+                cx.notify();
+            }
+        }
     }
 }

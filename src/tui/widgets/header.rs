@@ -46,10 +46,24 @@ impl Header {
     /// Truncate model name for display (max 30 chars)
     fn truncate_model(model: &str) -> String {
         if model.len() > 30 {
-            format!("{}...", &model[..27])
+            // Use safe truncation to respect UTF-8 character boundaries
+            let end = Self::safe_truncate_index(model, 27);
+            format!("{}...", &model[..end])
         } else {
             model.to_string()
         }
+    }
+
+    /// Find the last valid UTF-8 char boundary at or before max_bytes
+    fn safe_truncate_index(s: &str, max_bytes: usize) -> usize {
+        if s.len() <= max_bytes {
+            return s.len();
+        }
+        let mut end = max_bytes;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        end
     }
 
     /// Format folder path for display (truncate if too long, use ~ for home)
@@ -91,6 +105,18 @@ impl Header {
     pub fn folder_width(&self) -> u16 {
         // "📁 " (2) + folder_path + " ▾" (2)
         (2 + self.folder_path.chars().count() + 2) as u16
+    }
+
+    /// Get the x offset where the settings section starts (for hit testing)
+    pub fn settings_offset(&self) -> u16 {
+        // folder_offset + folder_width + " │ " (3)
+        self.folder_offset() + self.folder_width() + 3
+    }
+
+    /// Get the width of the settings section (for hit testing)
+    pub fn settings_width(&self) -> u16 {
+        // "F2" (2) + " ⚙" (2)
+        4
     }
 }
 

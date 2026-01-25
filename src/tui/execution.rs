@@ -1,6 +1,6 @@
 //! Agent execution for TUI mode
 
-use crate::agents::{AgentExecutor, AgentManager};
+use crate::agents::{AgentExecutor, AgentManager, RetryHandler};
 use crate::db::Database;
 use crate::mcp::McpManager;
 use crate::messaging::{HistoryUpdateMessage, Message, MessageSender};
@@ -32,8 +32,13 @@ pub async fn execute_agent(
         }
     };
 
-    // Create executor with references
-    let executor = AgentExecutor::new(&db, &model_registry).with_bus(sender.clone());
+    // Create retry handler for automatic key rotation on 429s
+    let retry_handler = RetryHandler::new(Arc::clone(&db));
+
+    // Create executor with references and retry handler
+    let executor = AgentExecutor::new(&db, &model_registry)
+        .with_retry_handler(retry_handler)
+        .with_bus(sender.clone());
 
     // Execute and get result with updated messages
     let result = executor

@@ -3,6 +3,18 @@
 //! The main content widget that renders activities with pill headers,
 //! tree connectors, diffs, and selection highlighting.
 
+/// Safely truncate a string to at most `max_bytes` bytes, respecting UTF-8 character boundaries.
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -233,7 +245,7 @@ fn render_header(activity: &Activity) -> (LineData, Color) {
         Activity::Explored { .. } => ("Read File", String::new(), Theme::ACCENT),
         Activity::Ran { command, .. } => {
             let cmd_preview = if command.len() > 40 {
-                format!("{}...", &command[..37])
+                format!("{}...", safe_truncate(command, 37))
             } else {
                 command.clone()
             };

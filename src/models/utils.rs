@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use crate::auth::TokenStorage;
 use crate::db::Database;
 
+use super::key_pool::ApiKeyPoolManager;
 use super::types::{CustomEndpoint, ModelConfigError, ModelType};
 
 /// Parse a model type string from the database.
@@ -49,8 +50,27 @@ pub fn build_custom_endpoint(
 }
 
 /// Check if an API key is available (in database or environment).
+/// DEPRECATED: Use `has_any_api_key` for unified pool + legacy support.
 pub fn has_api_key(db: &Database, key_name: &str) -> bool {
     db.has_api_key(key_name) || std::env::var(key_name).is_ok()
+}
+
+/// Check if an API key is available from ANY source.
+/// Checks in order:
+/// 1. Pool keys (new unified system)
+/// 2. Legacy api_keys table (backward compatibility)
+/// 3. Environment variables
+pub fn has_any_api_key(db: &Database, key_name: &str) -> bool {
+    // Check pool first (new unified system)
+    if db.has_pool_keys(key_name) {
+        return true;
+    }
+    // Fall back to legacy table
+    if db.has_api_key(key_name) {
+        return true;
+    }
+    // Finally check environment
+    std::env::var(key_name).is_ok()
 }
 
 /// Check if valid OAuth tokens exist for a provider.
@@ -84,15 +104,47 @@ pub fn has_oauth_tokens(db: &Database, provider: &str) -> bool {
     result
 }
 
-/// Resolve an API key, checking database first, then environment.
-/// Returns None if the key is not found in either location.
+/// Resolve an API key, checking all sources.
+/// Checks in order:
+/// 1. Pool keys (new unified system) - returns first active key
+/// 2. Legacy api_keys table (backward compatibility)
+/// 3. Environment variables
+///
+/// Returns None if the key is not found in any location.
 pub fn resolve_api_key(db: &Database, key_name: &str) -> Option<String> {
-    // First check database
+    // First check pool (new unified system)
+    if let Ok(keys) = db.get_active_pool_keys(key_name) {
+        if let Some(first_key) = keys.first() {
+            return Some(first_key.api_key.clone());
+        }
+    }
+    // Fall back to legacy single-key table
     if let Ok(Some(key)) = db.get_api_key(key_name) {
         return Some(key);
     }
     // Fall back to environment variable
     std::env::var(key_name).ok()
+}
+
+/// Resolve an API key, checking the key pool first for multi-key support.
+/// Falls back to single-key storage and environment variables.
+///
+/// Returns a tuple of (api_key, optional_key_id). The key_id is Some if the key
+/// came from the pool (useful for tracking usage and errors).
+pub fn resolve_api_key_with_pool(
+    db: &Database,
+    key_name: &str,
+    pool_manager: Option<&ApiKeyPoolManager>,
+) -> Option<(String, Option<i64>)> {
+    // If pool manager provided, check for pooled keys first
+    if let Some(pool) = pool_manager {
+        if let Some((key, key_id)) = pool.get_current_key(key_name) {
+            return Some((key, Some(key_id)));
+        }
+    }
+
+    // Fall back to single key resolution (existing behavior)
+    resolve_api_key(db, key_name).map(|k| (k, None))
 }
 
 /// Resolve environment variable references in a string.
@@ -226,6 +278,57 @@ mod tests {
     }
 
     // =========================================================================
+    // has_any_api_key Tests (unified pool + legacy + env)
+    // =========================================================================
+
+    #[test]
+    fn test_has_any_api_key_from_pool() {
+        let (_temp, db) = setup_test_db();
+        db.save_pool_key("POOL_KEY_TEST", "sk-pool", None, None)
+            .unwrap();
+
+        assert!(has_any_api_key(&db, "POOL_KEY_TEST"));
+    }
+
+    #[test]
+    fn test_has_any_api_key_from_legacy() {
+        let (_temp, db) = setup_test_db();
+        db.save_api_key("LEGACY_KEY_TEST", "sk-legacy").unwrap();
+
+        assert!(has_any_api_key(&db, "LEGACY_KEY_TEST"));
+    }
+
+    #[test]
+    fn test_has_any_api_key_from_env() {
+        let (_temp, db) = setup_test_db();
+        std::env::set_var("STOCKPOT_ENV_UNIFIED_TEST", "sk-env");
+
+        assert!(has_any_api_key(&db, "STOCKPOT_ENV_UNIFIED_TEST"));
+
+        std::env::remove_var("STOCKPOT_ENV_UNIFIED_TEST");
+    }
+
+    #[test]
+    fn test_has_any_api_key_missing() {
+        let (_temp, db) = setup_test_db();
+        std::env::remove_var("NONEXISTENT_UNIFIED_KEY");
+
+        assert!(!has_any_api_key(&db, "NONEXISTENT_UNIFIED_KEY"));
+    }
+
+    #[test]
+    fn test_has_any_api_key_pool_preferred() {
+        let (_temp, db) = setup_test_db();
+        // Key in pool should make it return true even without legacy
+        db.save_pool_key("POOL_PREFERRED", "sk-pool", None, None)
+            .unwrap();
+
+        assert!(has_any_api_key(&db, "POOL_PREFERRED"));
+        // Legacy should NOT have this key
+        assert!(!db.has_api_key("POOL_PREFERRED"));
+    }
+
+    // =========================================================================
     // resolve_api_key Tests
     // =========================================================================
 
@@ -273,6 +376,30 @@ mod tests {
         assert_eq!(result, Some("db-value".to_string()));
 
         std::env::remove_var("PRIORITY_KEY");
+    }
+
+    #[test]
+    fn test_resolve_api_key_pool_preferred_over_legacy() {
+        let (_temp, db) = setup_test_db();
+
+        // Set both pool and legacy
+        db.save_pool_key("POOL_VS_LEGACY", "pool-value", None, None)
+            .unwrap();
+        db.save_api_key("POOL_VS_LEGACY", "legacy-value").unwrap();
+
+        let result = resolve_api_key(&db, "POOL_VS_LEGACY");
+        // Pool should take precedence over legacy
+        assert_eq!(result, Some("pool-value".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_api_key_from_pool() {
+        let (_temp, db) = setup_test_db();
+        db.save_pool_key("POOL_ONLY_KEY", "pool-secret", None, None)
+            .unwrap();
+
+        let result = resolve_api_key(&db, "POOL_ONLY_KEY");
+        assert_eq!(result, Some("pool-secret".to_string()));
     }
 
     // =========================================================================
@@ -513,5 +640,102 @@ mod tests {
             ModelType::CustomOpenai
         ));
         assert!(matches!(parse_model_type(""), ModelType::CustomOpenai));
+    }
+
+    // =========================================================================
+    // resolve_api_key_with_pool Tests
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_api_key_with_pool_from_pool() {
+        let (_temp, db) = setup_test_db();
+        let db_arc =
+            std::sync::Arc::new(Database::open_at(_temp.path().join("test_pool.db")).unwrap());
+        db_arc.migrate().unwrap();
+
+        // Add a pool key
+        db_arc
+            .save_pool_key("OPENAI_API_KEY", "sk-pool-key", None, Some(1))
+            .unwrap();
+
+        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+
+        let result = resolve_api_key_with_pool(&db, "OPENAI_API_KEY", Some(&pool));
+        assert!(result.is_some());
+        let (key, key_id) = result.unwrap();
+        assert_eq!(key, "sk-pool-key");
+        assert!(key_id.is_some()); // Key came from pool
+    }
+
+    #[test]
+    fn test_resolve_api_key_with_pool_falls_back_to_single() {
+        let (_temp, db) = setup_test_db();
+        let db_arc =
+            std::sync::Arc::new(Database::open_at(_temp.path().join("test_pool2.db")).unwrap());
+        db_arc.migrate().unwrap();
+
+        // Add a single key (not pool)
+        db.save_api_key("MY_API_KEY", "sk-single-key").unwrap();
+
+        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+
+        let result = resolve_api_key_with_pool(&db, "MY_API_KEY", Some(&pool));
+        assert!(result.is_some());
+        let (key, key_id) = result.unwrap();
+        assert_eq!(key, "sk-single-key");
+        assert!(key_id.is_none()); // Key came from single storage, not pool
+    }
+
+    #[test]
+    fn test_resolve_api_key_with_pool_no_pool_manager() {
+        let (_temp, db) = setup_test_db();
+
+        // Add a single key
+        db.save_api_key("ENV_KEY", "sk-env-key").unwrap();
+
+        let result = resolve_api_key_with_pool(&db, "ENV_KEY", None);
+        assert!(result.is_some());
+        let (key, key_id) = result.unwrap();
+        assert_eq!(key, "sk-env-key");
+        assert!(key_id.is_none());
+    }
+
+    #[test]
+    fn test_resolve_api_key_with_pool_not_found() {
+        let (_temp, db) = setup_test_db();
+        let db_arc =
+            std::sync::Arc::new(Database::open_at(_temp.path().join("test_pool3.db")).unwrap());
+        db_arc.migrate().unwrap();
+
+        // Remove any potential env var
+        std::env::remove_var("NONEXISTENT_POOL_KEY_XYZ");
+
+        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+
+        let result = resolve_api_key_with_pool(&db, "NONEXISTENT_POOL_KEY_XYZ", Some(&pool));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_api_key_with_pool_prefers_pool_over_single() {
+        let (_temp, db) = setup_test_db();
+        let db_arc =
+            std::sync::Arc::new(Database::open_at(_temp.path().join("test_pool4.db")).unwrap());
+        db_arc.migrate().unwrap();
+
+        // Add both a pool key and a single key with the same name
+        db_arc
+            .save_pool_key("DUAL_KEY", "sk-pool-version", None, Some(1))
+            .unwrap();
+        db.save_api_key("DUAL_KEY", "sk-single-version").unwrap();
+
+        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+
+        let result = resolve_api_key_with_pool(&db, "DUAL_KEY", Some(&pool));
+        assert!(result.is_some());
+        let (key, key_id) = result.unwrap();
+        // Pool should take precedence
+        assert_eq!(key, "sk-pool-version");
+        assert!(key_id.is_some());
     }
 }

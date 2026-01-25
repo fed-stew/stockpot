@@ -478,7 +478,6 @@ impl ChatApp {
             });
 
         let model_name_for_save = model_name.to_string();
-        let api_key_env_for_save = api_key_env.clone();
 
         div()
             .px(px(12.))
@@ -491,15 +490,16 @@ impl ChatApp {
             .flex_col()
             .gap(px(12.))
             // API Key section (only if model has api_key_env)
-            .when_some(api_key_env.clone(), |d, env_var| {
+            // Shows "Manage API Keys" button to open key pool dialog
+            .when_some(api_key_env, |d, env_var| {
                 d.child(self.render_api_key_setting_row(&env_var, cx))
             })
             // Temperature
             .child(self.render_temp_input(cx))
             // Top P
             .child(self.render_top_p_input(cx))
-            // Save button
-            .child(self.render_save_settings_button(&model_name_for_save, api_key_env_for_save, cx))
+            // Save button (for temp/top_p; API keys managed via dialog)
+            .child(self.render_save_settings_button(&model_name_for_save, cx))
     }
 
     /// Render the temperature input row.
@@ -548,10 +548,23 @@ impl ChatApp {
             )
     }
 
-    /// Render the API key setting row.
-    fn render_api_key_setting_row(&self, env_var: &str, _cx: &Context<Self>) -> impl IntoElement {
+    /// Render the API key setting row for EXISTING configured models.
+    /// Shows key count status and "Manage API Keys" button instead of input field.
+    fn render_api_key_setting_row(&self, env_var: &str, cx: &Context<Self>) -> impl IntoElement {
         let theme = self.theme.clone();
-        let has_key = self.db.has_api_key(env_var) || std::env::var(env_var).is_ok();
+        // Count pool keys (the unified system - this is the primary source now)
+        let pool_key_count = self.db.count_active_pool_keys(env_var).unwrap_or(0);
+        // Only count env var if no pool keys exist (env is fallback)
+        let env_key_count = if pool_key_count == 0 && std::env::var(env_var).is_ok() {
+            1
+        } else {
+            0
+        };
+        // Note: We don't count legacy api_keys table separately since keys are migrated to pool on startup
+        let total_keys = pool_key_count + env_key_count;
+
+        let env_var_owned = env_var.to_string();
+        let env_var_for_btn = env_var.to_string();
 
         div()
             .flex()
@@ -566,31 +579,65 @@ impl ChatApp {
                         div()
                             .text_size(px(12.))
                             .text_color(theme.text_muted)
-                            .child(format!("API Key ({})", env_var)),
+                            .child(format!("API Keys ({})", env_var_owned)),
                     )
-                    .when(has_key, |d| {
-                        d.child(
-                            div()
-                                .text_size(px(10.))
-                                .text_color(rgb(0x4ade80))
-                                .child("✓"),
-                        )
-                    }),
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(if total_keys > 0 {
+                                rgb(0x4ade80)
+                            } else {
+                                theme.text_muted
+                            })
+                            .child(if total_keys > 0 {
+                                format!(
+                                    "✓ {} key{} configured",
+                                    total_keys,
+                                    if total_keys == 1 { "" } else { "s" }
+                                )
+                            } else {
+                                "No keys".to_string()
+                            }),
+                    ),
             )
             .child(
                 div()
-                    .w(px(200.))
-                    .when_some(self.model_api_key_input_entity.as_ref(), |d, input| {
-                        d.child(Input::new(input))
-                    }),
+                    .id(SharedString::from(format!(
+                        "manage-keys-{}",
+                        env_var_for_btn
+                    )))
+                    .px(px(12.))
+                    .py(px(6.))
+                    .rounded(px(6.))
+                    .bg(theme.accent)
+                    .text_color(rgb(0xffffff))
+                    .text_size(px(12.))
+                    .cursor_pointer()
+                    .hover(|s| s.opacity(0.9))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                    })
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.open_key_pool_dialog(
+                                &env_var_for_btn,
+                                &env_var_for_btn,
+                                window,
+                                cx,
+                            );
+                        }),
+                    )
+                    .child("Manage API Keys"),
             )
     }
 
     /// Render the save settings button.
+    /// Note: API key saving is now handled via the "Manage API Keys" dialog.
     fn render_save_settings_button(
         &self,
         model_name: &str,
-        api_key_env: Option<String>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme.clone();
@@ -624,9 +671,9 @@ impl ChatApp {
                 })
                 .on_mouse_up(
                     MouseButton::Left,
-                    cx.listener(move |this, _, window, cx| {
+                    cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
-                        this.save_model_settings(&model_name, api_key_env.clone(), window, cx);
+                        this.save_model_settings(&model_name, cx);
                     }),
                 )
                 .child(button_text),
@@ -669,47 +716,14 @@ impl ChatApp {
                 .default_value(top_p_value)
         }));
 
-        // Create API key input - show masked value if key exists
-        let api_key_env = self
-            .model_registry
-            .get(model_name)
-            .and_then(|c| c.custom_endpoint.as_ref())
-            .and_then(|e| e.api_key.as_ref())
-            .and_then(|k| {
-                if k.starts_with('$') {
-                    Some(
-                        k.trim_start_matches('$')
-                            .trim_matches(|c| c == '{' || c == '}')
-                            .to_string(),
-                    )
-                } else {
-                    None
-                }
-            });
-
-        let has_existing_key = api_key_env
-            .as_ref()
-            .map(|env| self.db.has_api_key(env) || std::env::var(env).is_ok())
-            .unwrap_or(false);
-
-        self.model_api_key_input_entity = Some(cx.new(|cx| {
-            let input = InputState::new(window, cx);
-            if has_existing_key {
-                input.placeholder("••••••••••••  (enter new key to replace)")
-            } else {
-                input.placeholder("Enter API key...")
-            }
-        }));
+        // Note: API key management is now handled via the "Manage API Keys" button
+        // which opens the key pool dialog. No input entity needed here.
+        self.model_api_key_input_entity = None;
     }
 
     /// Save model settings from the input fields.
-    pub(crate) fn save_model_settings(
-        &mut self,
-        model_name: &str,
-        api_key_env: Option<String>,
-        window: &mut gpui::Window,
-        cx: &mut Context<Self>,
-    ) {
+    /// Note: API key saving is now handled via the "Manage API Keys" dialog.
+    pub(crate) fn save_model_settings(&mut self, model_name: &str, cx: &mut Context<Self>) {
         let mut had_error = false;
 
         // Save temperature
@@ -734,24 +748,6 @@ impl ChatApp {
                 {
                     self.error_message = Some(format!("Failed to save top_p: {}", e));
                     had_error = true;
-                }
-            }
-        }
-
-        // Save API key if provided
-        if let Some(env_var) = api_key_env {
-            if let Some(input) = &self.model_api_key_input_entity {
-                let value = input.read(cx).value().to_string();
-                if !value.is_empty() {
-                    if let Err(e) = self.db.save_api_key(&env_var, &value) {
-                        self.error_message = Some(format!("Failed to save API key: {}", e));
-                        had_error = true;
-                    } else {
-                        // Clear the input after saving
-                        input.update(cx, |state, cx| {
-                            state.set_value("", window, cx);
-                        });
-                    }
                 }
             }
         }

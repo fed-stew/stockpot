@@ -8,6 +8,24 @@ use std::path::PathBuf;
 
 pub use schema::*;
 
+// =========================================================================
+// Types for API Key Pool Management
+// =========================================================================
+
+/// Represents an API key in the pool for multi-key rotation support.
+#[derive(Debug, Clone)]
+pub struct PoolKey {
+    pub id: i64,
+    pub provider_name: String,
+    pub api_key: String,
+    pub priority: i32,
+    pub label: Option<String>,
+    pub is_active: bool,
+    pub last_used_at: Option<i64>,
+    pub last_error_at: Option<i64>,
+    pub error_count: i32,
+}
+
 /// Database connection wrapper.
 pub struct Database {
     conn: Connection,
@@ -62,6 +80,42 @@ impl Database {
 
         // Clear active session state on startup so we always start fresh.
         self.conn.execute("DELETE FROM active_sessions", [])?;
+
+        // Migrate legacy API keys from api_keys table to api_key_pools table
+        // This ensures all keys are in the unified pool system
+        self.migrate_legacy_api_keys()?;
+
+        Ok(())
+    }
+
+    /// Migrate existing API keys from the legacy `api_keys` table to the new `api_key_pools` table.
+    /// This preserves backward compatibility while moving to the unified pool system.
+    /// Keys are only migrated if they don't already exist in the pool.
+    fn migrate_legacy_api_keys(&self) -> anyhow::Result<()> {
+        // Get all legacy keys
+        let legacy_keys = self.list_api_keys().unwrap_or_default();
+
+        for key_name in legacy_keys {
+            // Check if this key already exists in the pool
+            if self.has_pool_keys(&key_name) {
+                continue; // Already migrated or manually added to pool
+            }
+
+            // Get the actual key value
+            if let Ok(Some(api_key)) = self.get_api_key(&key_name) {
+                // Add to pool with label indicating it was migrated
+                match self.save_pool_key(&key_name, &api_key, Some("Migrated from legacy"), Some(0))
+                {
+                    Ok(_) => {
+                        tracing::info!(key_name = %key_name, "Migrated API key to pool");
+                    }
+                    Err(e) => {
+                        // Log but don't fail - the key might already exist with same value
+                        tracing::debug!(key_name = %key_name, error = %e, "Failed to migrate API key (may already exist)");
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -122,6 +176,164 @@ impl Database {
         self.conn
             .execute("DELETE FROM api_keys WHERE name = ?", [name])?;
         Ok(())
+    }
+
+    // =========================================================================
+    // API Key Pool Storage (Multi-key support)
+    // =========================================================================
+
+    /// Save a new API key to the pool for a provider.
+    /// Returns the ID of the inserted key.
+    pub fn save_pool_key(
+        &self,
+        provider: &str,
+        api_key: &str,
+        label: Option<&str>,
+        priority: Option<i32>,
+    ) -> Result<i64, rusqlite::Error> {
+        let priority = priority.unwrap_or(0);
+        self.conn.execute(
+            "INSERT INTO api_key_pools (provider_name, api_key, label, priority, updated_at)
+             VALUES (?, ?, ?, ?, unixepoch())",
+            rusqlite::params![provider, api_key, label, priority],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Get all keys for a provider, ordered by priority (active keys first).
+    pub fn get_pool_keys(&self, provider: &str) -> Result<Vec<PoolKey>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, provider_name, api_key, priority, label, is_active,
+                    last_used_at, last_error_at, error_count
+             FROM api_key_pools
+             WHERE provider_name = ?
+             ORDER BY is_active DESC, priority ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([provider], |row| {
+            Ok(PoolKey {
+                id: row.get(0)?,
+                provider_name: row.get(1)?,
+                api_key: row.get(2)?,
+                priority: row.get(3)?,
+                label: row.get(4)?,
+                is_active: row.get::<_, i32>(5)? == 1,
+                last_used_at: row.get(6)?,
+                last_error_at: row.get(7)?,
+                error_count: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Get only active keys for a provider, ordered by priority.
+    pub fn get_active_pool_keys(&self, provider: &str) -> Result<Vec<PoolKey>, rusqlite::Error> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, provider_name, api_key, priority, label, is_active,
+                    last_used_at, last_error_at, error_count
+             FROM api_key_pools
+             WHERE provider_name = ? AND is_active = 1
+             ORDER BY priority ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([provider], |row| {
+            Ok(PoolKey {
+                id: row.get(0)?,
+                provider_name: row.get(1)?,
+                api_key: row.get(2)?,
+                priority: row.get(3)?,
+                label: row.get(4)?,
+                is_active: row.get::<_, i32>(5)? == 1,
+                last_used_at: row.get(6)?,
+                last_error_at: row.get(7)?,
+                error_count: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Update key usage statistics (call after successful use).
+    pub fn mark_key_used(&self, key_id: i64) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE api_key_pools
+             SET last_used_at = unixepoch(), updated_at = unixepoch()
+             WHERE id = ?",
+            [key_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update key error statistics (call after 429 or other error).
+    pub fn mark_key_error(&self, key_id: i64) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE api_key_pools
+             SET last_error_at = unixepoch(), error_count = error_count + 1, updated_at = unixepoch()
+             WHERE id = ?",
+            [key_id],
+        )?;
+        Ok(())
+    }
+
+    /// Reset error count for a key (call after successful use following errors).
+    pub fn reset_key_errors(&self, key_id: i64) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE api_key_pools
+             SET error_count = 0, updated_at = unixepoch()
+             WHERE id = ?",
+            [key_id],
+        )?;
+        Ok(())
+    }
+
+    /// Toggle key active status.
+    pub fn set_key_active(&self, key_id: i64, is_active: bool) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE api_key_pools
+             SET is_active = ?, updated_at = unixepoch()
+             WHERE id = ?",
+            rusqlite::params![if is_active { 1 } else { 0 }, key_id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a key from the pool.
+    pub fn delete_pool_key(&self, key_id: i64) -> Result<(), rusqlite::Error> {
+        self.conn
+            .execute("DELETE FROM api_key_pools WHERE id = ?", [key_id])?;
+        Ok(())
+    }
+
+    /// Update key priority (for reordering).
+    pub fn update_key_priority(
+        &self,
+        key_id: i64,
+        new_priority: i32,
+    ) -> Result<(), rusqlite::Error> {
+        self.conn.execute(
+            "UPDATE api_key_pools
+             SET priority = ?, updated_at = unixepoch()
+             WHERE id = ?",
+            rusqlite::params![new_priority, key_id],
+        )?;
+        Ok(())
+    }
+
+    /// Check if a provider has any pool keys configured.
+    pub fn has_pool_keys(&self, provider: &str) -> bool {
+        let result: Result<i32, _> = self.conn.query_row(
+            "SELECT 1 FROM api_key_pools WHERE provider_name = ? LIMIT 1",
+            [provider],
+            |row| row.get(0),
+        );
+        result.is_ok()
+    }
+
+    /// Count active keys for a provider.
+    pub fn count_active_pool_keys(&self, provider: &str) -> Result<usize, rusqlite::Error> {
+        let count: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM api_key_pools WHERE provider_name = ? AND is_active = 1",
+            [provider],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
     }
 }
 
@@ -550,5 +762,359 @@ mod tests {
             .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
             .unwrap();
         assert_eq!(fk_status, 1, "Foreign keys should be enabled");
+    }
+
+    // =========================================================================
+    // API Key Pool Tests
+    // =========================================================================
+
+    #[test]
+    fn test_save_pool_key_inserts_new_key() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db
+            .save_pool_key("OPENAI_API_KEY", "sk-test123", Some("Personal"), None)
+            .unwrap();
+
+        assert!(id > 0);
+        let keys = db.get_pool_keys("OPENAI_API_KEY").unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].api_key, "sk-test123");
+        assert_eq!(keys[0].label, Some("Personal".to_string()));
+        assert!(keys[0].is_active);
+    }
+
+    #[test]
+    fn test_save_pool_key_with_priority() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db
+            .save_pool_key("OPENAI_API_KEY", "sk-test", None, Some(5))
+            .unwrap();
+
+        let keys = db.get_pool_keys("OPENAI_API_KEY").unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].id, id);
+        assert_eq!(keys[0].priority, 5);
+    }
+
+    #[test]
+    fn test_save_pool_key_default_priority_is_zero() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("OPENAI_API_KEY", "sk-test", None, None)
+            .unwrap();
+
+        let keys = db.get_pool_keys("OPENAI_API_KEY").unwrap();
+        assert_eq!(keys[0].priority, 0);
+    }
+
+    #[test]
+    fn test_save_pool_key_prevents_duplicates() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("OPENAI_API_KEY", "sk-same-key", None, None)
+            .unwrap();
+
+        // Trying to insert the same key again should fail due to UNIQUE constraint
+        let result = db.save_pool_key("OPENAI_API_KEY", "sk-same-key", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_save_pool_key_allows_same_key_different_provider() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("OPENAI_API_KEY", "sk-shared", None, None)
+            .unwrap();
+        let result = db.save_pool_key("ANTHROPIC_API_KEY", "sk-shared", None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_pool_keys_returns_empty_for_unknown_provider() {
+        let (_temp, db) = setup_test_db();
+
+        let keys = db.get_pool_keys("NONEXISTENT_PROVIDER").unwrap();
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn test_get_pool_keys_orders_by_active_then_priority() {
+        let (_temp, db) = setup_test_db();
+
+        // Insert keys with various priorities
+        let id1 = db
+            .save_pool_key("TEST", "key-low-priority", None, Some(10))
+            .unwrap();
+        let id2 = db
+            .save_pool_key("TEST", "key-high-priority", None, Some(1))
+            .unwrap();
+        let id3 = db
+            .save_pool_key("TEST", "key-medium-priority", None, Some(5))
+            .unwrap();
+
+        // Disable one active key
+        db.set_key_active(id2, false).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys.len(), 3);
+
+        // Active keys should come first, ordered by priority
+        assert!(keys[0].is_active); // key-medium (priority 5, active)
+        assert!(keys[1].is_active); // key-low (priority 10, active)
+        assert!(!keys[2].is_active); // key-high (priority 1, but inactive)
+        assert_eq!(keys[0].id, id3);
+        assert_eq!(keys[1].id, id1);
+        assert_eq!(keys[2].id, id2);
+    }
+
+    #[test]
+    fn test_get_active_pool_keys_filters_inactive() {
+        let (_temp, db) = setup_test_db();
+
+        let id1 = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+        db.save_pool_key("TEST", "key-2", None, None).unwrap();
+
+        // Disable one key
+        db.set_key_active(id1, false).unwrap();
+
+        let active_keys = db.get_active_pool_keys("TEST").unwrap();
+        assert_eq!(active_keys.len(), 1);
+        assert_eq!(active_keys[0].api_key, "key-2");
+    }
+
+    #[test]
+    fn test_get_active_pool_keys_orders_by_priority() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("TEST", "key-3", None, Some(3)).unwrap();
+        db.save_pool_key("TEST", "key-1", None, Some(1)).unwrap();
+        db.save_pool_key("TEST", "key-2", None, Some(2)).unwrap();
+
+        let keys = db.get_active_pool_keys("TEST").unwrap();
+        assert_eq!(keys.len(), 3);
+        assert_eq!(keys[0].api_key, "key-1");
+        assert_eq!(keys[1].api_key, "key-2");
+        assert_eq!(keys[2].api_key, "key-3");
+    }
+
+    #[test]
+    fn test_mark_key_used_updates_timestamp() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        // Initially last_used_at should be None
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert!(keys[0].last_used_at.is_none());
+
+        db.mark_key_used(id).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert!(keys[0].last_used_at.is_some());
+    }
+
+    #[test]
+    fn test_mark_key_error_increments_count() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        // Initially error_count should be 0
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 0);
+        assert!(keys[0].last_error_at.is_none());
+
+        db.mark_key_error(id).unwrap();
+        db.mark_key_error(id).unwrap();
+        db.mark_key_error(id).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 3);
+        assert!(keys[0].last_error_at.is_some());
+    }
+
+    #[test]
+    fn test_reset_key_errors_clears_count() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        db.mark_key_error(id).unwrap();
+        db.mark_key_error(id).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 2);
+
+        db.reset_key_errors(id).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 0);
+    }
+
+    #[test]
+    fn test_set_key_active_toggles_status() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        // Should start active
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert!(keys[0].is_active);
+
+        // Deactivate
+        db.set_key_active(id, false).unwrap();
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert!(!keys[0].is_active);
+
+        // Reactivate
+        db.set_key_active(id, true).unwrap();
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert!(keys[0].is_active);
+    }
+
+    #[test]
+    fn test_delete_pool_key_removes_key() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys.len(), 1);
+
+        db.delete_pool_key(id).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn test_delete_pool_key_nonexistent_succeeds() {
+        let (_temp, db) = setup_test_db();
+
+        // Should not error when deleting non-existent key
+        db.delete_pool_key(99999).unwrap();
+    }
+
+    #[test]
+    fn test_update_key_priority() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, Some(5)).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].priority, 5);
+
+        db.update_key_priority(id, 10).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].priority, 10);
+    }
+
+    #[test]
+    fn test_has_pool_keys_returns_true_when_exists() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        assert!(db.has_pool_keys("TEST"));
+    }
+
+    #[test]
+    fn test_has_pool_keys_returns_false_when_missing() {
+        let (_temp, db) = setup_test_db();
+
+        assert!(!db.has_pool_keys("NONEXISTENT"));
+    }
+
+    #[test]
+    fn test_has_pool_keys_returns_true_even_for_inactive() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+        db.set_key_active(id, false).unwrap();
+
+        // Should still return true - key exists even if inactive
+        assert!(db.has_pool_keys("TEST"));
+    }
+
+    #[test]
+    fn test_count_active_pool_keys() {
+        let (_temp, db) = setup_test_db();
+
+        let id1 = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+        db.save_pool_key("TEST", "key-2", None, None).unwrap();
+        db.save_pool_key("TEST", "key-3", None, None).unwrap();
+
+        assert_eq!(db.count_active_pool_keys("TEST").unwrap(), 3);
+
+        db.set_key_active(id1, false).unwrap();
+
+        assert_eq!(db.count_active_pool_keys("TEST").unwrap(), 2);
+    }
+
+    #[test]
+    fn test_count_active_pool_keys_returns_zero_when_none() {
+        let (_temp, db) = setup_test_db();
+
+        assert_eq!(db.count_active_pool_keys("NONEXISTENT").unwrap(), 0);
+    }
+
+    #[test]
+    fn test_pool_key_multiple_providers() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("OPENAI_API_KEY", "sk-openai-1", None, None)
+            .unwrap();
+        db.save_pool_key("OPENAI_API_KEY", "sk-openai-2", None, None)
+            .unwrap();
+        db.save_pool_key("ANTHROPIC_API_KEY", "sk-anthropic-1", None, None)
+            .unwrap();
+
+        let openai_keys = db.get_pool_keys("OPENAI_API_KEY").unwrap();
+        let anthropic_keys = db.get_pool_keys("ANTHROPIC_API_KEY").unwrap();
+
+        assert_eq!(openai_keys.len(), 2);
+        assert_eq!(anthropic_keys.len(), 1);
+        assert_eq!(anthropic_keys[0].api_key, "sk-anthropic-1");
+    }
+
+    #[test]
+    fn test_pool_key_with_label() {
+        let (_temp, db) = setup_test_db();
+
+        db.save_pool_key("TEST", "key-1", Some("Work Account"), None)
+            .unwrap();
+        db.save_pool_key("TEST", "key-2", None, None).unwrap();
+
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].label, Some("Work Account".to_string()));
+        assert_eq!(keys[1].label, None);
+    }
+
+    #[test]
+    fn test_pool_key_error_count_persists() {
+        let (_temp, db) = setup_test_db();
+
+        let id = db.save_pool_key("TEST", "key-1", None, None).unwrap();
+
+        db.mark_key_error(id).unwrap();
+
+        // Verify error state persists
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 1);
+
+        // Mark used (but don't reset errors explicitly)
+        db.mark_key_used(id).unwrap();
+
+        // Error count should NOT be reset by mark_key_used
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 1);
+
+        // Explicitly reset
+        db.reset_key_errors(id).unwrap();
+        let keys = db.get_pool_keys("TEST").unwrap();
+        assert_eq!(keys[0].error_count, 0);
     }
 }

@@ -16,10 +16,16 @@ use crate::config::Settings;
 use crate::models::utils::has_oauth_tokens;
 use crate::models::ModelType;
 use crate::tui::app::TuiApp;
+use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
 
 /// Render the Models settings tab content
-pub fn render_models_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
+pub fn render_models_tab(
+    frame: &mut Frame,
+    area: Rect,
+    app: &TuiApp,
+    hit_registry: &mut HitTestRegistry,
+) {
     let settings = Settings::new(&app.db);
     let default_model = settings.model();
     let available_models = app.model_registry.list_available(&app.db);
@@ -58,6 +64,51 @@ pub fn render_models_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
         !in_oauth_section,
         expanded,
     );
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Register hit targets for models section
+    // ─────────────────────────────────────────────────────────────────────────
+    // The models section has a 1-cell border, then a 1-line header, then the list
+    let models_inner = inner_rect(chunks[1]);
+    let list_start_y = models_inner.y + 2; // Skip header line and blank
+    let list_width = models_inner.width;
+    let list_max_y = models_inner.y + models_inner.height;
+
+    let mut current_y = list_start_y;
+
+    for (type_label, models) in by_type.iter() {
+        // Register provider group header
+        if current_y < list_max_y {
+            hit_registry.register(
+                Rect::new(models_inner.x, current_y, list_width, 1),
+                ClickTarget::ModelsProvider(type_label.clone()),
+            );
+        }
+        current_y += 1;
+
+        // If expanded, register each model
+        if expanded.contains(type_label) {
+            for model in models {
+                if current_y < list_max_y {
+                    hit_registry.register(
+                        Rect::new(models_inner.x, current_y, list_width, 1),
+                        ClickTarget::ModelsItem(model.name.clone()),
+                    );
+                }
+                current_y += 1;
+            }
+        }
+    }
+}
+
+/// Calculate inner rect (inside 1-cell border)
+fn inner_rect(area: Rect) -> Rect {
+    Rect::new(
+        area.x + 1,
+        area.y + 1,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+    )
 }
 
 /// Render the OAuth accounts status section
@@ -408,4 +459,49 @@ pub fn get_model_at_index(
         }
     }
     None
+}
+
+/// Get the provider info for a type label (for key pool management)
+/// Returns (provider_name, display_name) if the provider supports API keys
+pub fn provider_for_type_label(type_label: &str) -> Option<(&'static str, &'static str)> {
+    match type_label {
+        "OpenAI" => Some(("openai", "OpenAI")),
+        "Anthropic" => Some(("anthropic", "Anthropic")),
+        "Google Gemini" => Some(("gemini", "Google Gemini")),
+        "Azure OpenAI" => Some(("azure_openai", "Azure OpenAI")),
+        "OpenRouter" => Some(("openrouter", "OpenRouter")),
+        _ => None, // OAuth and custom providers don't use key pools
+    }
+}
+
+/// Get the type label for the currently selected item (or nearest group header)
+pub fn get_current_type_label(
+    app: &TuiApp,
+    available_models: &[String],
+    selected_index: usize,
+) -> Option<String> {
+    let by_type = group_models_by_type(app, available_models);
+    let expanded = &app.settings_state.models_expanded_providers;
+
+    let mut current_index = 0;
+    let mut last_type_label: Option<String> = None;
+
+    for (type_label, models) in by_type.iter() {
+        last_type_label = Some(type_label.clone());
+
+        if current_index == selected_index {
+            return Some(type_label.clone());
+        }
+        current_index += 1;
+
+        if expanded.contains(type_label) {
+            for _ in models {
+                if current_index == selected_index {
+                    return Some(type_label.clone());
+                }
+                current_index += 1;
+            }
+        }
+    }
+    last_type_label
 }

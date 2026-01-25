@@ -13,6 +13,7 @@ use ratatui::{
 use crate::config::Settings;
 use crate::mcp::McpConfig;
 use crate::tui::app::TuiApp;
+use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
 
 use super::McpPanel;
@@ -51,7 +52,12 @@ pub fn load_servers() -> Vec<ServerInfo> {
 }
 
 /// Render the MCP Servers settings tab content
-pub fn render_mcp_servers_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
+pub fn render_mcp_servers_tab(
+    frame: &mut Frame,
+    area: Rect,
+    app: &TuiApp,
+    hit_registry: &mut HitTestRegistry,
+) {
     let servers = load_servers();
     let settings = Settings::new(&app.db);
     let agents = app.agents.list();
@@ -85,6 +91,23 @@ pub fn render_mcp_servers_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
         app.settings_state.mcp_panel == McpPanel::Servers,
     );
 
+    // Register hit targets for server list items
+    // Each server item is 4 lines tall (name, status, command, empty)
+    // There's a 2-line header before the list
+    if !servers.is_empty() {
+        let server_panel_inner = inner_rect(chunks[0]);
+        let list_start_y = server_panel_inner.y + 2; // Skip 2-line header
+        for (idx, _) in servers.iter().enumerate() {
+            let item_y = list_start_y + (idx as u16 * 4); // 4 lines per item
+            if item_y + 3 < server_panel_inner.y + server_panel_inner.height {
+                hit_registry.register(
+                    Rect::new(server_panel_inner.x, item_y, server_panel_inner.width, 4),
+                    ClickTarget::McpServerItem(idx),
+                );
+            }
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Right Panel: Agent MCP Assignments (two sub-columns)
     // ─────────────────────────────────────────────────────────────────────────
@@ -98,6 +121,58 @@ pub fn render_mcp_servers_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
         &agent_mcps,
         &all_attachments,
     );
+
+    // Calculate the sub-column areas for hit target registration
+    // The right panel has a border, then splits into two sub-columns
+    let right_inner = inner_rect(chunks[1]);
+    let sub_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(right_inner);
+
+    // Register hit targets for agent list (left sub-column)
+    // Each agent item is 1 line tall
+    let agent_panel_inner = inner_rect(sub_chunks[0]);
+    for (idx, _) in agents.iter().enumerate() {
+        let item_y = agent_panel_inner.y + idx as u16;
+        if item_y < agent_panel_inner.y + agent_panel_inner.height {
+            hit_registry.register(
+                Rect::new(agent_panel_inner.x, item_y, agent_panel_inner.width, 1),
+                ClickTarget::McpAgentItem(idx),
+            );
+        }
+    }
+
+    // Register hit targets for MCP checkboxes (right sub-column)
+    // Only enabled servers are shown, each is 1 line tall
+    let checkbox_panel_inner = inner_rect(sub_chunks[1]);
+    let enabled_servers: Vec<_> = servers.iter().filter(|s| s.enabled).collect();
+    if !selected_agent_name.is_empty() {
+        for (idx, _) in enabled_servers.iter().enumerate() {
+            let item_y = checkbox_panel_inner.y + idx as u16;
+            if item_y < checkbox_panel_inner.y + checkbox_panel_inner.height {
+                hit_registry.register(
+                    Rect::new(
+                        checkbox_panel_inner.x,
+                        item_y,
+                        checkbox_panel_inner.width,
+                        1,
+                    ),
+                    ClickTarget::McpCheckbox(idx),
+                );
+            }
+        }
+    }
+}
+
+/// Calculate inner rect (inside 1-cell border)
+fn inner_rect(area: Rect) -> Rect {
+    Rect::new(
+        area.x + 1,
+        area.y + 1,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+    )
 }
 
 /// Render the left panel with MCP servers list

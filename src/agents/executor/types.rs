@@ -69,6 +69,31 @@ pub enum ExecutorError {
     Execution(String),
     #[error("Configuration error: {0}")]
     Config(String),
+    #[error("Rate limit exceeded: {0}")]
+    RateLimit(String),
+}
+
+impl ExecutorError {
+    /// Check if this error indicates a rate limit.
+    pub fn is_rate_limit(&self) -> bool {
+        match self {
+            ExecutorError::RateLimit(_) => true,
+            ExecutorError::Execution(msg) | ExecutorError::Model(msg) => {
+                let lower = msg.to_lowercase();
+                // Check for HTTP status codes
+                msg.contains("status: 429")
+                    || msg.contains("status:429")
+                    // Check for various rate limit message patterns (case insensitive)
+                    || lower.contains("rate limit")   // matches "rate limit", "rate limited", "rate-limit"
+                    || lower.contains("rate_limit")   // matches "rate_limit_error"
+                    || lower.contains("ratelimit")    // matches "ratelimited"
+                    || lower.contains("too many requests")
+                    || lower.contains("quota exceeded")
+                    || lower.contains("throttle") // some APIs use "throttled"
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -103,6 +128,62 @@ mod tests {
     fn executor_error_display_config() {
         let err = ExecutorError::Config("missing model".into());
         assert_eq!(err.to_string(), "Configuration error: missing model");
+    }
+
+    #[test]
+    fn executor_error_display_rate_limit() {
+        let err = ExecutorError::RateLimit("All keys exhausted".into());
+        assert_eq!(err.to_string(), "Rate limit exceeded: All keys exhausted");
+    }
+
+    #[test]
+    fn executor_error_is_rate_limit_direct() {
+        let err = ExecutorError::RateLimit("test".into());
+        assert!(err.is_rate_limit());
+    }
+
+    #[test]
+    fn executor_error_is_rate_limit_from_status_429() {
+        let err = ExecutorError::Execution("HTTP error status: 429".into());
+        assert!(err.is_rate_limit());
+    }
+
+    #[test]
+    fn executor_error_is_rate_limit_from_message() {
+        assert!(ExecutorError::Execution("Rate limit exceeded".into()).is_rate_limit());
+        assert!(ExecutorError::Model("rate_limit_error".into()).is_rate_limit());
+        assert!(ExecutorError::Execution("Too Many Requests".into()).is_rate_limit());
+        assert!(ExecutorError::Model("quota exceeded".into()).is_rate_limit());
+    }
+
+    #[test]
+    fn executor_error_is_rate_limit_from_model_error() {
+        // This is the exact error format we see from the API
+        let err =
+            ExecutorError::Execution("Model error: Rate limited, retry after Some(60s)".into());
+        assert!(
+            err.is_rate_limit(),
+            "Should detect 'Rate limited' as rate limit error"
+        );
+
+        // Also test the raw message
+        let err2 = ExecutorError::Execution("Rate limited, retry after Some(60s)".into());
+        assert!(err2.is_rate_limit());
+
+        // Test "ratelimited" without space
+        let err3 = ExecutorError::Execution("Request ratelimited".into());
+        assert!(err3.is_rate_limit());
+
+        // Test "throttled"
+        let err4 = ExecutorError::Execution("Request was throttled".into());
+        assert!(err4.is_rate_limit());
+    }
+
+    #[test]
+    fn executor_error_is_rate_limit_false_for_others() {
+        assert!(!ExecutorError::Auth("invalid key".into()).is_rate_limit());
+        assert!(!ExecutorError::Config("missing".into()).is_rate_limit());
+        assert!(!ExecutorError::Execution("timeout".into()).is_rate_limit());
     }
 
     #[test]

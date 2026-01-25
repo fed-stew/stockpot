@@ -56,6 +56,12 @@ impl StreamingMarkdownView {
             self.append_content(content, cx);
             self.source_text = content.to_string();
         }
+
+        // Flush any remaining content that doesn't end with newline
+        if !self.line_buffer.is_empty() {
+            let remaining = std::mem::take(&mut self.line_buffer);
+            self.append_text(&remaining, cx);
+        }
     }
 
     pub fn append_delta(&mut self, delta: &str, cx: &mut Context<Self>) {

@@ -17,15 +17,21 @@ use ratatui::{
 use crate::config::Settings;
 use crate::db::Database;
 use crate::tui::app::TuiApp;
-use crate::tui::theme::Theme;
+use crate::tui::hit_test::ClickTarget;
+use crate::tui::theme::{dim_background, Theme};
 use anyhow::Result;
 
 // Submodules for each settings tab
+pub mod api_keys;
 mod general;
 pub mod mcp_servers;
 pub mod models;
 mod pinned_agents;
 
+pub use api_keys::{
+    handle_key_pool_event, refresh_key_pool, render_key_pool_overlay, KeyPoolEventResult,
+    KeyPoolInputMode, KeyPoolState,
+};
 pub use general::render_general_tab;
 pub use mcp_servers::render_mcp_servers_tab;
 pub use models::render_models_tab;
@@ -260,6 +266,12 @@ pub struct SettingsState {
     pub mcp_agent_index: usize,
     /// Selected index in MCP checkboxes
     pub mcp_checkbox_index: usize,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // API Key Pool management state
+    // ─────────────────────────────────────────────────────────────────────────
+    /// State for the key pool management overlay
+    pub key_pool: KeyPoolState,
 }
 
 impl SettingsState {
@@ -280,7 +292,7 @@ impl SettingsState {
     }
 
     /// Reset state when switching tabs
-    fn reset_tab_state(&mut self) {
+    pub fn reset_tab_state(&mut self) {
         self.selected_index = 0;
         self.editing = false;
         self.current_items.clear();
@@ -322,11 +334,14 @@ impl SettingsState {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Render the settings overlay
-pub fn render_settings(frame: &mut Frame, area: Rect, app: &TuiApp) {
+pub fn render_settings(frame: &mut Frame, area: Rect, app: &mut TuiApp) {
+    // Dim the entire background first to create modal overlay effect
+    dim_background(frame, area);
+
     // Create a centered overlay (80% width, 80% height)
     let overlay_area = centered_rect(80, 80, area);
 
-    // Clear the area first
+    // Clear the overlay area (now renders on top of dimmed background)
     frame.render_widget(Clear, overlay_area);
 
     // Main settings block with border
@@ -364,16 +379,107 @@ pub fn render_settings(frame: &mut Frame, area: Rect, app: &TuiApp) {
     // Render tab bar
     render_tab_bar(frame, tabs_area, &app.settings_state);
 
-    // Render active tab content
-    match app.settings_state.active_tab {
-        SettingsTab::General => render_general_tab(frame, content_area, app),
-        SettingsTab::Models => render_models_tab(frame, content_area, app),
-        SettingsTab::PinnedAgents => render_pinned_agents_tab(frame, content_area, app),
-        SettingsTab::McpServers => render_mcp_servers_tab(frame, content_area, app),
+    // Temporarily take hit_registry to split the borrow (we need &TuiApp + &mut HitTestRegistry)
+    let mut hit_registry = std::mem::take(&mut app.hit_registry);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Register click-outside-to-close targets (the dimmed background areas)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Top strip
+    if overlay_area.y > area.y {
+        hit_registry.register(
+            Rect::new(area.x, area.y, area.width, overlay_area.y - area.y),
+            ClickTarget::SettingsClose,
+        );
     }
+    // Bottom strip
+    let bottom_y = overlay_area.y + overlay_area.height;
+    if bottom_y < area.y + area.height {
+        hit_registry.register(
+            Rect::new(
+                area.x,
+                bottom_y,
+                area.width,
+                area.y + area.height - bottom_y,
+            ),
+            ClickTarget::SettingsClose,
+        );
+    }
+    // Left strip
+    if overlay_area.x > area.x {
+        hit_registry.register(
+            Rect::new(
+                area.x,
+                overlay_area.y,
+                overlay_area.x - area.x,
+                overlay_area.height,
+            ),
+            ClickTarget::SettingsClose,
+        );
+    }
+    // Right strip
+    let right_x = overlay_area.x + overlay_area.width;
+    if right_x < area.x + area.width {
+        hit_registry.register(
+            Rect::new(
+                right_x,
+                overlay_area.y,
+                area.x + area.width - right_x,
+                overlay_area.height,
+            ),
+            ClickTarget::SettingsClose,
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Register tab bar hit targets
+    // ─────────────────────────────────────────────────────────────────────────
+    // Tab layout: "General │ Models │ Pinned Agents │ MCP Servers"
+    // Make hit targets more generous - each tab's area extends to include the divider
+    let tab_labels = ["General", "Models", "Pinned Agents", "MCP Servers"];
+    let mut x_offset = tabs_area.x;
+    for (idx, label) in tab_labels.iter().enumerate() {
+        // Width includes the label plus the divider (or remaining space for last tab)
+        let label_width = label.chars().count() as u16;
+        let target_width = if idx < tab_labels.len() - 1 {
+            label_width + 3 // label + " │ " divider
+        } else {
+            label_width + 4 // last tab gets extra padding
+        };
+
+        hit_registry.register(
+            Rect::new(x_offset, tabs_area.y, target_width, tabs_area.height),
+            ClickTarget::SettingsTab(idx),
+        );
+        x_offset += label_width + 3; // Move to next tab position
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render active tab content (pass hit_registry for click target registration)
+    // ─────────────────────────────────────────────────────────────────────────
+    match app.settings_state.active_tab {
+        SettingsTab::General => render_general_tab(frame, content_area, app, &mut hit_registry),
+        SettingsTab::Models => render_models_tab(frame, content_area, app, &mut hit_registry),
+        SettingsTab::PinnedAgents => {
+            render_pinned_agents_tab(frame, content_area, app, &mut hit_registry)
+        }
+        SettingsTab::McpServers => {
+            render_mcp_servers_tab(frame, content_area, app, &mut hit_registry)
+        }
+    }
+
+    // Restore hit_registry back to app
+    app.hit_registry = hit_registry;
 
     // Render footer with navigation hints
     render_footer(frame, footer_area, &app.settings_state);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render key pool overlay (on top of settings if active)
+    // ─────────────────────────────────────────────────────────────────────────
+    if app.settings_state.key_pool.active {
+        render_key_pool_overlay(frame, area, &app.settings_state.key_pool);
+    }
 }
 
 /// Render the tab bar at the top of the settings panel
@@ -420,14 +526,14 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &SettingsState) {
             Span::styled(" close", Style::default().fg(Theme::MUTED)),
         ]),
         SettingsTab::Models => Line::from(vec![
-            Span::styled("Tab", Style::default().fg(Theme::ACCENT)),
-            Span::styled("/", Style::default().fg(Theme::MUTED)),
-            Span::styled("Shift+Tab", Style::default().fg(Theme::ACCENT)),
-            Span::styled(" switch tabs  ", Style::default().fg(Theme::MUTED)),
             Span::styled("↑↓", Style::default().fg(Theme::ACCENT)),
             Span::styled(" navigate  ", Style::default().fg(Theme::MUTED)),
             Span::styled("Enter", Style::default().fg(Theme::ACCENT)),
-            Span::styled(" expand/set default  ", Style::default().fg(Theme::MUTED)),
+            Span::styled(" expand/default  ", Style::default().fg(Theme::MUTED)),
+            Span::styled("k", Style::default().fg(Theme::ACCENT)),
+            Span::styled(" manage keys  ", Style::default().fg(Theme::MUTED)),
+            Span::styled("Del", Style::default().fg(Theme::ACCENT)),
+            Span::styled(" remove  ", Style::default().fg(Theme::MUTED)),
             Span::styled("Esc", Style::default().fg(Theme::ACCENT)),
             Span::styled(" close", Style::default().fg(Theme::MUTED)),
         ]),

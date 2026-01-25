@@ -681,6 +681,71 @@ impl TuiApp {
         }
     }
 
+    /// Handle toggle click in General settings tab
+    fn handle_settings_toggle_click(&mut self, id: &str) {
+        use crate::config::Settings;
+
+        let settings = Settings::new(&self.db);
+        match id {
+            "show_reasoning" => {
+                let current = settings.get_bool("show_reasoning").unwrap_or(true);
+                let _ = settings.set("show_reasoning", if current { "false" } else { "true" });
+            }
+            "yolo_mode" => {
+                let current = settings.yolo_mode();
+                let _ = settings.set_yolo_mode(!current);
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle radio button click in General settings tab
+    fn handle_settings_radio_click(&mut self, id: &str, option: usize) {
+        use crate::agents::UserMode;
+        use crate::config::{PdfMode, Settings};
+
+        let settings = Settings::new(&self.db);
+        match id {
+            "pdf_mode" => {
+                let mode = if option == 0 {
+                    PdfMode::Image
+                } else {
+                    PdfMode::TextExtract
+                };
+                let _ = settings.set_pdf_mode(mode);
+            }
+            "user_mode" => {
+                let mode = match option {
+                    0 => UserMode::Normal,
+                    1 => UserMode::Expert,
+                    2 => UserMode::Developer,
+                    _ => UserMode::Normal,
+                };
+                let _ = settings.set_user_mode(mode);
+                self.user_mode = mode;
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle model click in Models settings tab
+    fn handle_settings_model_click(&mut self, model_name: &str) {
+        use crate::config::Settings;
+
+        let settings = Settings::new(&self.db);
+        let _ = settings.set("model", model_name);
+        self.current_model = model_name.to_string();
+        self.update_context_usage();
+    }
+
+    /// Update selected agent from current index in Pinned Agents tab
+    fn update_selected_agent_from_index(&mut self) {
+        let agents = self.agents.list();
+        if let Some(agent) = agents.get(self.settings_state.agent_list_index) {
+            self.settings_state.selected_agent = Some(agent.name.clone());
+        }
+    }
+
     /// Handle Left key in settings
     fn handle_settings_left_key(&mut self) {
         use super::settings::SettingsTab;
@@ -785,6 +850,42 @@ impl TuiApp {
                 if self.settings_state.mcp_server_index >= server_count.saturating_sub(1) {
                     self.settings_state.mcp_server_index = server_count.saturating_sub(2);
                 }
+            }
+        }
+    }
+
+    /// Handle 'k' key to open key pool management in Models tab
+    fn handle_settings_key_pool_open(&mut self) {
+        use super::settings::SettingsTab;
+
+        // Only works in Models tab and when not in OAuth section
+        if self.settings_state.active_tab != SettingsTab::Models {
+            return;
+        }
+
+        if self.settings_state.models_in_oauth_section {
+            return;
+        }
+
+        // Get the available models
+        let available_models = self.model_registry.list_available(&self.db);
+        let selected_index = self.settings_state.models_selected_index;
+
+        // Get the type label for the current selection
+        if let Some(type_label) =
+            super::settings::models::get_current_type_label(self, &available_models, selected_index)
+        {
+            // Check if this provider supports API key pools
+            if let Some((provider, display_name)) =
+                super::settings::models::provider_for_type_label(&type_label)
+            {
+                // Load keys from database
+                let keys = self.db.get_pool_keys(provider).unwrap_or_default();
+
+                // Open the key pool overlay
+                self.settings_state
+                    .key_pool
+                    .open(provider, display_name, keys);
             }
         }
     }
@@ -1093,6 +1194,20 @@ impl TuiApp {
                         self.show_settings = !self.show_settings;
                         return Ok(());
                     }
+                    // ─────────────────────────────────────────────────────────────
+                    // Key Pool overlay takes priority when active
+                    // ─────────────────────────────────────────────────────────────
+                    _ if self.settings_state.key_pool.active => {
+                        let clipboard_text = self.clipboard.paste();
+                        let _result = super::settings::handle_key_pool_event(
+                            &mut self.settings_state.key_pool,
+                            &self.db,
+                            key,
+                            clipboard_text.as_deref(),
+                        );
+                        // Key pool absorbs all events when active
+                        return Ok(());
+                    }
                     // Settings navigation when settings is open
                     (KeyModifiers::NONE, KeyCode::Tab) if self.show_settings => {
                         self.handle_settings_tab_key(false);
@@ -1194,6 +1309,11 @@ impl TuiApp {
                         self.input.insert_newline();
                         return Ok(());
                     }
+                    // 'k' key opens key pool management in Models tab
+                    (KeyModifiers::NONE, KeyCode::Char('k')) if self.show_settings => {
+                        self.handle_settings_key_pool_open();
+                        return Ok(());
+                    }
                     // Absorb all other keys when settings is open
                     _ if self.show_settings => {
                         return Ok(());
@@ -1207,6 +1327,15 @@ impl TuiApp {
                 }
             }
             AppEvent::SelectionStart { row, col } => {
+                // Don't start selection when dialogs/overlays are open
+                if self.show_settings
+                    || self.show_agent_dropdown
+                    || self.show_folder_modal
+                    || self.show_help
+                {
+                    return Ok(());
+                }
+
                 self.last_mouse_pos = Some((col, row));
 
                 // ONLY start selection if click is inside the activity area
@@ -1230,6 +1359,15 @@ impl TuiApp {
                 // (let the Click event handle dropdowns, etc.)
             }
             AppEvent::SelectionUpdate { row, col } => {
+                // Don't update selection when dialogs/overlays are open
+                if self.show_settings
+                    || self.show_agent_dropdown
+                    || self.show_folder_modal
+                    || self.show_help
+                {
+                    return Ok(());
+                }
+
                 self.last_mouse_pos = Some((col, row));
 
                 // Only process if selection is active (was started in activity area)
@@ -1317,6 +1455,87 @@ impl TuiApp {
                     }
                 }
 
+                // Handle settings clicks when settings is open
+                if self.show_settings {
+                    use super::settings::{McpPanel, PinnedAgentsPanel, SettingsTab};
+
+                    if let Some(target) = &target {
+                        match target {
+                            ClickTarget::SettingsClose => {
+                                self.show_settings = false;
+                                return Ok(());
+                            }
+                            ClickTarget::SettingsTab(idx) => {
+                                self.settings_state.active_tab = SettingsTab::from_index(*idx);
+                                self.settings_state.reset_tab_state();
+                                return Ok(());
+                            }
+                            ClickTarget::SettingsToggle(id) => {
+                                self.handle_settings_toggle_click(id);
+                                return Ok(());
+                            }
+                            ClickTarget::SettingsRadio(id, option_idx) => {
+                                self.handle_settings_radio_click(id, *option_idx);
+                                return Ok(());
+                            }
+                            ClickTarget::ModelsProvider(provider) => {
+                                // Toggle provider expansion
+                                if self
+                                    .settings_state
+                                    .models_expanded_providers
+                                    .contains(provider)
+                                {
+                                    self.settings_state
+                                        .models_expanded_providers
+                                        .remove(provider);
+                                } else {
+                                    self.settings_state
+                                        .models_expanded_providers
+                                        .insert(provider.clone());
+                                }
+                                return Ok(());
+                            }
+                            ClickTarget::ModelsItem(model_name) => {
+                                self.handle_settings_model_click(model_name);
+                                return Ok(());
+                            }
+                            ClickTarget::PinnedAgentItem(idx) => {
+                                self.settings_state.agent_list_index = *idx;
+                                self.settings_state.pinned_panel = PinnedAgentsPanel::Agents;
+                                self.update_selected_agent_from_index();
+                                return Ok(());
+                            }
+                            ClickTarget::PinnedModelItem(idx) => {
+                                self.settings_state.model_list_index = *idx;
+                                self.settings_state.pinned_panel = PinnedAgentsPanel::Models;
+                                // Trigger model pinning
+                                self.handle_settings_enter_key();
+                                return Ok(());
+                            }
+                            ClickTarget::McpServerItem(idx) => {
+                                self.settings_state.mcp_server_index = *idx;
+                                self.settings_state.mcp_panel = McpPanel::Servers;
+                                return Ok(());
+                            }
+                            ClickTarget::McpAgentItem(idx) => {
+                                self.settings_state.mcp_agent_index = *idx;
+                                self.settings_state.mcp_panel = McpPanel::Agents;
+                                return Ok(());
+                            }
+                            ClickTarget::McpCheckbox(idx) => {
+                                self.settings_state.mcp_checkbox_index = *idx;
+                                self.settings_state.mcp_panel = McpPanel::McpCheckboxes;
+                                // Trigger checkbox toggle
+                                self.handle_settings_enter_key();
+                                return Ok(());
+                            }
+                            _ => {} // Other targets fall through
+                        }
+                    }
+                    // If settings is open but no settings target hit, absorb the click
+                    return Ok(());
+                }
+
                 // Handle the click on a specific target
                 if let Some(target) = target {
                     match target {
@@ -1358,6 +1577,11 @@ impl TuiApp {
                         ClickTarget::FolderItem(index) => {
                             self.folder_modal_navigate(index);
                         }
+                        ClickTarget::SettingsButton => {
+                            self.show_settings = !self.show_settings;
+                            self.show_agent_dropdown = false;
+                            self.show_folder_modal = false;
+                        }
                         _ => {}
                     }
                     // If we hit a UI element, stop processing click
@@ -1378,13 +1602,23 @@ impl TuiApp {
                 use crossterm::event::MouseEventKind;
                 match mouse.kind {
                     MouseEventKind::ScrollUp => {
-                        // Scroll both for now (activity feed takes precedence)
-                        self.activity_scroll_up(3);
-                        self.message_list_state.scroll_up(3);
+                        if self.show_settings {
+                            // Scroll up in settings - decrease selection index
+                            self.handle_settings_up_key();
+                        } else {
+                            // Scroll both for now (activity feed takes precedence)
+                            self.activity_scroll_up(3);
+                            self.message_list_state.scroll_up(3);
+                        }
                     }
                     MouseEventKind::ScrollDown => {
-                        self.activity_scroll_down(3);
-                        self.message_list_state.scroll_down(3);
+                        if self.show_settings {
+                            // Scroll down in settings - increase selection index
+                            self.handle_settings_down_key();
+                        } else {
+                            self.activity_scroll_down(3);
+                            self.message_list_state.scroll_down(3);
+                        }
                     }
                     _ => {}
                 }

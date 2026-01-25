@@ -13,10 +13,16 @@ use ratatui::{
 use crate::agents::UserMode;
 use crate::config::{PdfMode, Settings};
 use crate::tui::app::TuiApp;
+use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
 
 /// Render the General settings tab content
-pub fn render_general_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
+pub fn render_general_tab(
+    frame: &mut Frame,
+    area: Rect,
+    app: &TuiApp,
+    hit_registry: &mut HitTestRegistry,
+) {
     let settings = Settings::new(&app.db);
     let selected_index = app.settings_state.selected_index;
 
@@ -45,36 +51,76 @@ pub fn render_general_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
         .split(area);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // PDF Processing Mode
+    // PDF Processing Mode (Radio buttons)
     // ─────────────────────────────────────────────────────────────────────────
     let pdf_area = chunks[0];
     let pdf_selected = selected_index == selectable_index;
     render_pdf_mode_section(frame, pdf_area, pdf_mode, pdf_selected);
     selectable_index += 1;
 
+    // Register hit targets for PDF mode radio buttons
+    // Line 2 (y+2): "    ◉ 📷 Image Mode" - Image option
+    // Line 4 (y+4): "    ○ 📝 Text Mode" - Text option
+    hit_registry.register(
+        Rect::new(pdf_area.x + 4, pdf_area.y + 2, 20, 1),
+        ClickTarget::SettingsRadio("pdf_mode".to_string(), 0), // Image
+    );
+    hit_registry.register(
+        Rect::new(pdf_area.x + 4, pdf_area.y + 4, 18, 1),
+        ClickTarget::SettingsRadio("pdf_mode".to_string(), 1), // Text
+    );
+
     // ─────────────────────────────────────────────────────────────────────────
-    // User Mode
+    // User Mode (Radio buttons - horizontal layout)
     // ─────────────────────────────────────────────────────────────────────────
     let user_mode_area = chunks[2];
     let user_mode_selected = selected_index == selectable_index;
     render_user_mode_section(frame, user_mode_area, user_mode, user_mode_selected);
     selectable_index += 1;
 
+    // Register hit targets for User Mode radio buttons (all on line 3, y+3)
+    // Layout: "    ◉ Normal   ○ Expert   ○ Developer"
+    //          ^4   ^5      ^15        ^26
+    hit_registry.register(
+        Rect::new(user_mode_area.x + 4, user_mode_area.y + 3, 9, 1),
+        ClickTarget::SettingsRadio("user_mode".to_string(), 0), // Normal
+    );
+    hit_registry.register(
+        Rect::new(user_mode_area.x + 15, user_mode_area.y + 3, 9, 1),
+        ClickTarget::SettingsRadio("user_mode".to_string(), 1), // Expert
+    );
+    hit_registry.register(
+        Rect::new(user_mode_area.x + 26, user_mode_area.y + 3, 12, 1),
+        ClickTarget::SettingsRadio("user_mode".to_string(), 2), // Developer
+    );
+
     // ─────────────────────────────────────────────────────────────────────────
-    // Show Agent Reasoning
+    // Show Agent Reasoning (Toggle)
     // ─────────────────────────────────────────────────────────────────────────
     let reasoning_area = chunks[4];
     let reasoning_selected = selected_index == selectable_index;
     render_reasoning_toggle(frame, reasoning_area, show_reasoning, reasoning_selected);
     selectable_index += 1;
 
+    // Register hit target for the entire reasoning toggle row
+    hit_registry.register(
+        Rect::new(reasoning_area.x, reasoning_area.y, reasoning_area.width, 1),
+        ClickTarget::SettingsToggle("show_reasoning".to_string()),
+    );
+
     // ─────────────────────────────────────────────────────────────────────────
-    // YOLO Mode
+    // YOLO Mode (Toggle)
     // ─────────────────────────────────────────────────────────────────────────
     let yolo_area = chunks[6];
     let yolo_selected = selected_index == selectable_index;
     render_yolo_mode_toggle(frame, yolo_area, yolo_mode, yolo_selected);
     // selectable_index += 1; // Uncomment when adding more items
+
+    // Register hit target for the entire YOLO toggle row
+    hit_registry.register(
+        Rect::new(yolo_area.x, yolo_area.y, yolo_area.width, 1),
+        ClickTarget::SettingsToggle("yolo_mode".to_string()),
+    );
 }
 
 /// Render PDF Processing Mode section

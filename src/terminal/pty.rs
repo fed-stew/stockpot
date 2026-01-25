@@ -123,8 +123,10 @@ pub fn spawn_pty(config: PtyConfig) -> Result<SpawnedPty, String> {
         cmd
     };
 
-    // Set working directory
-    if let Some(cwd) = &config.cwd {
+    // Set working directory - default to current process directory if not specified
+    // This ensures commands run in the expected directory even when LLM doesn't specify one
+    let effective_cwd = config.cwd.clone().or_else(|| std::env::current_dir().ok());
+    if let Some(cwd) = effective_cwd {
         cmd.cwd(cwd);
     }
 

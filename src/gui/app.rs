@@ -195,6 +195,20 @@ pub struct ChatApp {
     /// MCP settings: import error message
     mcp_import_error: Option<String>,
 
+    // ── Key Pool Dialog State ──────────────────────────────────────────────────
+    /// Whether the key pool management dialog is open
+    show_key_pool_dialog: bool,
+    /// The provider being managed (e.g., "OPENAI_API_KEY")
+    key_pool_provider: Option<String>,
+    /// The provider's display name for the dialog title
+    key_pool_provider_display: Option<String>,
+    /// List of keys for the current provider
+    key_pool_keys: Vec<crate::db::PoolKey>,
+    /// Input for new key value
+    key_pool_new_key_input: Option<Entity<InputState>>,
+    /// Input for new key label
+    key_pool_new_label_input: Option<Entity<InputState>>,
+
     /// System Executions sidebar state
     system_executions: system_executions::SystemExecutionsState,
 
@@ -361,6 +375,14 @@ impl ChatApp {
             show_mcp_import_dialog: false,
             mcp_import_json: String::new(),
             mcp_import_error: None,
+
+            // Key pool dialog state
+            show_key_pool_dialog: false,
+            key_pool_provider: None,
+            key_pool_provider_display: None,
+            key_pool_keys: Vec::new(),
+            key_pool_new_key_input: None,
+            key_pool_new_label_input: None,
 
             system_executions: system_executions::SystemExecutionsState::new(),
 
@@ -967,6 +989,7 @@ impl Render for ChatApp {
             .child(self.render_approval_dialog(cx))
             .child(self.render_add_model_dialog(cx))
             .child(self.render_api_keys_dialog(cx))
+            .child(self.render_key_pool_dialog(cx))
             .child(self.render_mcp_import_dialog(cx))
     }
 }

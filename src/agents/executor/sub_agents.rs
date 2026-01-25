@@ -21,7 +21,7 @@ use crate::session::SessionManager;
 use crate::tools::agent_tools::InvokeAgentTool;
 use crate::tools::SpotToolRegistry;
 
-use super::AgentExecutor;
+use super::{AgentExecutor, RetryHandler};
 
 /// Executor for invoke_agent that has access to all required dependencies.
 pub(super) struct InvokeAgentExecutor {
@@ -143,8 +143,14 @@ impl serdes_ai_agent::ToolExecutor<()> for InvokeAgentExecutor {
                     }
                 });
 
+                // Create retry handler for automatic key rotation on 429s
+                let retry_handler = RetryHandler::new(std::sync::Arc::new(
+                    Database::open_at(db.path().clone()).expect("Failed to open retry DB")
+                ));
+
                 // Create executor - with bus if available for visible sub-agent output
-                let executor = AgentExecutor::new(&db, &model_registry);
+                let executor = AgentExecutor::new(&db, &model_registry)
+                    .with_retry_handler(retry_handler);
 
                 let result = if let Some(bus) = bus {
                     // Use execute_with_bus - events flow to the same bus!

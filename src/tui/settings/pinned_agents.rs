@@ -13,10 +13,16 @@ use ratatui::{
 use super::PinnedAgentsPanel;
 use crate::config::Settings;
 use crate::tui::app::TuiApp;
+use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
 
 /// Render the Pinned Agents settings tab content
-pub fn render_pinned_agents_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
+pub fn render_pinned_agents_tab(
+    frame: &mut Frame,
+    area: Rect,
+    app: &TuiApp,
+    hit_registry: &mut HitTestRegistry,
+) {
     let settings = Settings::new(&app.db);
     let agents = app.agents.list();
     let available_models = app.model_registry.list_available(&app.db);
@@ -66,18 +72,32 @@ pub fn render_pinned_agents_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
         .split(chunks[1]);
 
     // Left Panel - Agent List
+    let agents_data: Vec<_> = agents
+        .iter()
+        .map(|a| (a.name.clone(), a.display_name.clone()))
+        .collect();
     render_agent_list(
         frame,
         panels[0],
-        &agents
-            .iter()
-            .map(|a| (a.name.clone(), a.display_name.clone()))
-            .collect::<Vec<_>>(),
+        &agents_data,
         &pins,
         &default_model,
         agent_list_index,
         pinned_panel == PinnedAgentsPanel::Agents,
     );
+
+    // Register hit targets for agent list items
+    // Each agent item is 2 lines tall (name + status)
+    let agent_panel_inner = inner_rect(panels[0]);
+    for (idx, _) in agents_data.iter().enumerate() {
+        let item_y = agent_panel_inner.y + (idx as u16 * 2); // 2 lines per item
+        if item_y + 1 < agent_panel_inner.y + agent_panel_inner.height {
+            hit_registry.register(
+                Rect::new(agent_panel_inner.x, item_y, agent_panel_inner.width, 2),
+                ClickTarget::PinnedAgentItem(idx),
+            );
+        }
+    }
 
     // Right Panel - Model List for selected agent
     if let Some(ref agent_name) = selected_agent {
@@ -92,9 +112,33 @@ pub fn render_pinned_agents_tab(frame: &mut Frame, area: Rect, app: &TuiApp) {
             model_list_index,
             pinned_panel == PinnedAgentsPanel::Models,
         );
+
+        // Register hit targets for model list items
+        // "Use Default" is index 0, then models are index 1+
+        let model_panel_inner = inner_rect(panels[1]);
+        let total_model_items = available_models.len() + 1; // +1 for "Use Default"
+        for idx in 0..total_model_items {
+            let item_y = model_panel_inner.y + idx as u16; // 1 line per item
+            if item_y < model_panel_inner.y + model_panel_inner.height {
+                hit_registry.register(
+                    Rect::new(model_panel_inner.x, item_y, model_panel_inner.width, 1),
+                    ClickTarget::PinnedModelItem(idx),
+                );
+            }
+        }
     } else {
         render_no_agent_selected(frame, panels[1]);
     }
+}
+
+/// Calculate inner rect (inside 1-cell border)
+fn inner_rect(area: Rect) -> Rect {
+    Rect::new(
+        area.x + 1,
+        area.y + 1,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+    )
 }
 
 /// Render the Default Model dropdown section
@@ -373,10 +417,23 @@ fn render_no_agent_selected(frame: &mut Frame, area: Rect) {
 // Helper functions
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Find the last valid UTF-8 char boundary at or before max_bytes
+fn safe_truncate_index(s: &str, max_bytes: usize) -> usize {
+    if s.len() <= max_bytes {
+        return s.len();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
+
 /// Truncate model name for display
 fn truncate_model_name(name: &str) -> String {
     if name.len() > 35 {
-        format!("{}...", &name[..32])
+        let end = safe_truncate_index(name, 32);
+        format!("{}...", &name[..end])
     } else {
         name.to_string()
     }
@@ -385,7 +442,8 @@ fn truncate_model_name(name: &str) -> String {
 /// Truncate any name to a max length
 fn truncate_name(name: &str, max_len: usize) -> String {
     if name.len() > max_len {
-        format!("{}...", &name[..max_len - 3])
+        let end = safe_truncate_index(name, max_len.saturating_sub(3));
+        format!("{}...", &name[..end])
     } else {
         name.to_string()
     }

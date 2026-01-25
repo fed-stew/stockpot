@@ -14,7 +14,7 @@ use crate::db::Database;
 
 use super::model_config::ModelConfig;
 use super::types::{ModelConfigError, ModelType};
-use super::utils::{build_custom_endpoint, has_api_key, has_oauth_tokens, parse_model_type};
+use super::utils::{build_custom_endpoint, has_any_api_key, has_oauth_tokens, parse_model_type};
 
 /// Registry of available models loaded from configuration files.
 #[derive(Debug, Default)]
@@ -277,12 +277,13 @@ impl ModelRegistry {
     }
 
     /// Check if a model's provider is available (has API key in DB/env or OAuth tokens).
+    /// Uses the unified key check that looks in pool -> legacy table -> env vars.
     fn is_provider_available(&self, db: &Database, _name: &str, config: &ModelConfig) -> bool {
         match config.model_type {
-            ModelType::Openai => has_api_key(db, "OPENAI_API_KEY"),
-            ModelType::Anthropic => has_api_key(db, "ANTHROPIC_API_KEY"),
+            ModelType::Openai => has_any_api_key(db, "OPENAI_API_KEY"),
+            ModelType::Anthropic => has_any_api_key(db, "ANTHROPIC_API_KEY"),
             ModelType::Gemini => {
-                has_api_key(db, "GEMINI_API_KEY") || has_api_key(db, "GOOGLE_API_KEY")
+                has_any_api_key(db, "GEMINI_API_KEY") || has_any_api_key(db, "GOOGLE_API_KEY")
             }
             ModelType::ClaudeCode => {
                 // Check if we have valid OAuth tokens
@@ -297,7 +298,8 @@ impl ModelRegistry {
                 has_oauth_tokens(db, "google")
             }
             ModelType::AzureOpenai => {
-                has_api_key(db, "AZURE_OPENAI_API_KEY") || has_api_key(db, "AZURE_OPENAI_ENDPOINT")
+                has_any_api_key(db, "AZURE_OPENAI_API_KEY")
+                    || has_any_api_key(db, "AZURE_OPENAI_ENDPOINT")
             }
             ModelType::CustomOpenai | ModelType::CustomAnthropic => {
                 // Custom endpoints - check if API key is configured
@@ -308,11 +310,11 @@ impl ModelRegistry {
                     .map(|e| {
                         e.api_key.as_ref().is_some_and(|key| {
                             if key.starts_with('$') {
-                                // It's an env var reference, check DB then env
+                                // It's an env var reference, check all sources (pool, legacy, env)
                                 let var_name = key
                                     .trim_start_matches('$')
                                     .trim_matches(|c| c == '{' || c == '}');
-                                has_api_key(db, var_name)
+                                has_any_api_key(db, var_name)
                             } else {
                                 // It's a literal key
                                 !key.is_empty()
@@ -321,7 +323,7 @@ impl ModelRegistry {
                     })
                     .unwrap_or(false)
             }
-            ModelType::Openrouter => has_api_key(db, "OPENROUTER_API_KEY"),
+            ModelType::Openrouter => has_any_api_key(db, "OPENROUTER_API_KEY"),
             ModelType::RoundRobin => true, // Round robin is always "available" if it exists
         }
     }

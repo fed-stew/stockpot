@@ -4,6 +4,18 @@
 
 use serde_json::Value;
 
+/// Safely truncate a string to at most `max_bytes` bytes, respecting UTF-8 character boundaries.
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Role of a message sender
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageRole {
@@ -99,7 +111,7 @@ pub fn get_tool_display_info(name: &str, args: &Value) -> ToolDisplayInfo {
         "run_shell_command" | "agent_run_shell_command" => {
             let cmd = args.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let preview = if cmd.len() > 60 {
-                format!("{}...", &cmd[..57])
+                format!("{}...", safe_truncate(cmd, 57))
             } else {
                 cmd.to_string()
             };

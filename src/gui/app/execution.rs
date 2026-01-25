@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use gpui::{AsyncApp, Context, WeakEntity, Window};
 
-use crate::agents::{AgentExecutor, AgentManager, ExecuteContext};
+use crate::agents::{AgentExecutor, AgentManager, ExecuteContext, RetryHandler};
 use crate::config::{PdfMode, Settings};
 use crate::db::Database;
 use crate::mcp::McpManager;
@@ -320,8 +320,21 @@ impl ChatApp {
                 return;
             };
 
-            // Create executor with message bus
-            let executor = AgentExecutor::new(&db, &model_registry).with_bus(message_bus_sender);
+            // Create retry handler for automatic key rotation on 429s
+            // Note: We create a separate Arc<Database> for the retry handler since GPUI uses Rc
+            let retry_handler = match crate::db::Database::open_at(db.path().clone()) {
+                Ok(retry_db) => Some(RetryHandler::new(std::sync::Arc::new(retry_db))),
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to create retry handler, key rotation disabled");
+                    None
+                }
+            };
+
+            // Create executor with message bus and optional retry handler
+            let mut executor = AgentExecutor::new(&db, &model_registry).with_bus(message_bus_sender);
+            if let Some(handler) = retry_handler {
+                executor = executor.with_retry_handler(handler);
+            }
 
             // Get the effective model for this agent (pinned or default)
             let effective_model = {

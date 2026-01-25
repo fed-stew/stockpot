@@ -2,7 +2,7 @@
 //!
 //! These tools allow agents to delegate tasks to other specialized agents.
 
-use crate::agents::{AgentExecutor, AgentManager};
+use crate::agents::{AgentExecutor, AgentManager, RetryHandler};
 use crate::db::Database;
 use crate::mcp::McpManager;
 use crate::models::ModelRegistry;
@@ -169,7 +169,20 @@ pub async fn invoke_agent_with_executor(
         .ok_or_else(|| AgentToolError::AgentNotFound(agent_name.to_string()))?;
 
     let model_registry = ModelRegistry::load_from_db(db).unwrap_or_default();
-    let executor = AgentExecutor::new(db, &model_registry);
+
+    // Create retry handler for automatic key rotation on 429s
+    let retry_handler = match Database::open_at(db.path().clone()) {
+        Ok(retry_db) => Some(RetryHandler::new(std::sync::Arc::new(retry_db))),
+        Err(e) => {
+            warn!(error = %e, "Failed to create retry handler, key rotation disabled");
+            None
+        }
+    };
+
+    let mut executor = AgentExecutor::new(db, &model_registry);
+    if let Some(handler) = retry_handler {
+        executor = executor.with_retry_handler(handler);
+    }
     let tool_registry = SpotToolRegistry::new();
     let mcp_manager = McpManager::new();
 
