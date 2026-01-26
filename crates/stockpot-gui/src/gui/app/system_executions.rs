@@ -16,8 +16,8 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use super::ChatApp;
-use stockpot_core::config::Settings;
 use crate::gui::components::{scrollbar, ScrollbarDragState, TerminalView};
+use stockpot_core::config::Settings;
 use stockpot_core::terminal::{
     headless_env, interactive_env, spawn_pty, validate_command, CommandValidation, ProcessKind,
     ProcessSnapshot, PtyConfig, PtyEvent, RiskLevel, SystemExecRequest, SystemExecResponse,

@@ -177,9 +177,7 @@ fn coerce_value(value: &mut JsonValue, schema: &JsonValue, field_name: &str) {
         }
         "array" => {
             // Handle array items if schema specifies items
-            if let (Some(items_schema), Some(arr)) =
-                (schema.get("items"), value.as_array_mut())
-            {
+            if let (Some(items_schema), Some(arr)) = (schema.get("items"), value.as_array_mut()) {
                 for item in arr.iter_mut() {
                     coerce_json_types(item, items_schema);
                 }
@@ -290,6 +288,7 @@ pub fn parse_tool_args_lenient<T: DeserializeOwned>(
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 
@@ -1035,6 +1034,7 @@ mod tests {
     #[test]
     fn test_parse_tool_args_lenient_error() {
         #[derive(Debug, serde::Deserialize)]
+        #[allow(dead_code)]
         struct MyArgs {
             required_field: String,
         }

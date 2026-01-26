@@ -39,7 +39,7 @@ impl Tool for DeleteFileTool {
         let args: DeleteFileArgs = crate::tools::common::parse_tool_args_lenient(
             "delete_file",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         let path = std::path::Path::new(&args.file_path);

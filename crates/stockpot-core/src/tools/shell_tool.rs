@@ -101,7 +101,7 @@ impl Tool for RunShellCommandTool {
         let args: RunShellCommandArgs = crate::tools::common::parse_tool_args_lenient(
             "run_shell_command",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         // Try to use terminal system if available

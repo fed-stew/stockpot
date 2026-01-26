@@ -11,12 +11,12 @@ use ratatui::{
     Frame,
 };
 
-use stockpot_core::agents::UserMode;
-use stockpot_core::config::{PdfMode, Settings};
-use stockpot_core::tokens::format_tokens_with_separator;
 use crate::tui::app::TuiApp;
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
+use stockpot_core::agents::UserMode;
+use stockpot_core::config::{PdfMode, Settings};
+use stockpot_core::tokens::format_tokens_with_separator;
 
 /// Render the General settings tab content
 pub fn render_general_tab(

@@ -12,12 +12,12 @@ use ratatui::{
     Frame,
 };
 
-use stockpot_core::config::Settings;
-use stockpot_core::models::utils::has_oauth_tokens;
-use stockpot_core::models::ModelType;
 use crate::tui::app::TuiApp;
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
+use stockpot_core::config::Settings;
+use stockpot_core::models::utils::has_oauth_tokens;
+use stockpot_core::models::ModelType;
 
 /// Render the Models settings tab content
 pub fn render_models_tab(

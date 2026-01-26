@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, Styled};
 use gpui_component::input::{Input, InputState};
 
-use stockpot_core::config::Settings;
 use crate::gui::app::ChatApp;
+use stockpot_core::config::Settings;
 use stockpot_core::models::settings::ModelSettings as SpotModelSettings;
 use stockpot_core::models::ModelType;
 

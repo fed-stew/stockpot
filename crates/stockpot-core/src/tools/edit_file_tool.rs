@@ -51,7 +51,7 @@ impl Tool for EditFileTool {
         let args: EditFileArgs = crate::tools::common::parse_tool_args_lenient(
             "edit_file",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         match file_ops::write_file(&args.file_path, &args.content, args.create_directories) {

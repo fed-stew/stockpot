@@ -68,7 +68,7 @@ impl Tool for InvokeAgentTool {
         let args: InvokeAgentArgs = crate::tools::common::parse_tool_args_lenient(
             "invoke_agent",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         // Note: This code path should not be reached in normal operation.

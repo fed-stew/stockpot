@@ -69,7 +69,7 @@ impl Tool for ListFilesTool {
         let args: ListFilesArgs = crate::tools::common::parse_tool_args_lenient(
             "list_files",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         let directory = args.directory.as_deref().unwrap_or(".");

@@ -60,7 +60,7 @@ impl Tool for ReadFileTool {
         let args: ReadFileArgs = crate::tools::common::parse_tool_args_lenient(
             "read_file",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         match file_ops::read_file(

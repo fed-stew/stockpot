@@ -46,7 +46,7 @@ impl Tool for KillProcessTool {
         let args: KillProcessArgs = crate::tools::common::parse_tool_args_lenient(
             "kill_process",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         let Some(tool_ctx) = get_global_context() else {

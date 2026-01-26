@@ -494,7 +494,9 @@ impl ChatApp {
                 let notification = format!(
                     "📦 Context compressed: {} → {} tokens ({} saved) using {}",
                     stockpot_core::tokens::format_tokens_with_separator(compressed.original_tokens),
-                    stockpot_core::tokens::format_tokens_with_separator(compressed.compressed_tokens),
+                    stockpot_core::tokens::format_tokens_with_separator(
+                        compressed.compressed_tokens
+                    ),
                     stockpot_core::tokens::format_tokens_with_separator(saved_tokens),
                     compressed.strategy
                 );

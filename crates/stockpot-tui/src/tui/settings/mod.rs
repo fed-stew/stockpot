@@ -14,12 +14,12 @@ use ratatui::{
     Frame,
 };
 
-use stockpot_core::config::Settings;
-use stockpot_core::db::Database;
 use crate::tui::app::TuiApp;
 use crate::tui::hit_test::ClickTarget;
 use crate::tui::theme::{dim_background, Theme};
 use anyhow::Result;
+use stockpot_core::config::Settings;
+use stockpot_core::db::Database;
 
 // Submodules for each settings tab
 pub mod api_keys;

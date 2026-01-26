@@ -81,7 +81,7 @@ impl Tool for ReadProcessOutputTool {
         let args: ReadProcessOutputArgs = crate::tools::common::parse_tool_args_lenient(
             "read_process_output",
             args.clone(),
-            &self.definition().parameters(),
+            self.definition().parameters(),
         )?;
 
         let Some(tool_ctx) = get_global_context() else {

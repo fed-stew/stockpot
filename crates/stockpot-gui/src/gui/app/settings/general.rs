@@ -4,9 +4,9 @@
 
 use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, Styled};
 
+use crate::gui::app::ChatApp;
 use stockpot_core::agents::UserMode;
 use stockpot_core::config::{PdfMode, Settings};
-use crate::gui::app::ChatApp;
 
 impl ChatApp {
     pub(crate) fn render_settings_general(&self, cx: &Context<Self>) -> impl IntoElement {

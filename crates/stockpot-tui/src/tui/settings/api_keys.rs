@@ -17,8 +17,8 @@ use ratatui::{
 };
 use std::sync::Arc;
 
-use stockpot_core::db::{Database, PoolKey};
 use crate::tui::theme::{dim_background, Theme};
+use stockpot_core::db::{Database, PoolKey};
 
 /// Find the last valid UTF-8 char boundary at or before max_bytes
 fn safe_truncate_index(s: &str, max_bytes: usize) -> usize {

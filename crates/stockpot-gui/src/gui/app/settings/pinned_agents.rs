@@ -6,8 +6,8 @@ use gpui::{
     anchored, deferred, div, prelude::*, px, rgb, Context, MouseButton, SharedString, Styled,
 };
 
-use stockpot_core::config::Settings;
 use crate::gui::app::ChatApp;
+use stockpot_core::config::Settings;
 
 impl ChatApp {
     pub(crate) fn render_settings_pinned_agents(&self, cx: &Context<Self>) -> impl IntoElement {

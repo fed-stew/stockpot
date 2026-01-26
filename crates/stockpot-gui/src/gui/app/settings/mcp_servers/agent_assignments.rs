@@ -6,10 +6,10 @@ use std::collections::HashMap;
 
 use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, Styled};
 
-use stockpot_core::agents::AgentInfo;
-use stockpot_core::config::Settings;
 use crate::gui::app::ChatApp;
 use crate::gui::theme::Theme;
+use stockpot_core::agents::AgentInfo;
+use stockpot_core::config::Settings;
 
 use super::server_list::ServerInfo;
 

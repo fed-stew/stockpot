@@ -11,10 +11,10 @@ use ratatui::{
 };
 
 use super::PinnedAgentsPanel;
-use stockpot_core::config::Settings;
 use crate::tui::app::TuiApp;
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
+use stockpot_core::config::Settings;
 
 /// Render the Pinned Agents settings tab content
 pub fn render_pinned_agents_tab(

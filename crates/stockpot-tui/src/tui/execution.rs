@@ -1,13 +1,13 @@
 //! Agent execution for TUI mode
 
+use serdes_ai_core::ModelRequest;
+use std::sync::Arc;
 use stockpot_core::agents::{AgentExecutor, AgentManager, RetryHandler};
 use stockpot_core::db::Database;
 use stockpot_core::mcp::McpManager;
 use stockpot_core::messaging::{HistoryUpdateMessage, Message, MessageSender};
 use stockpot_core::models::ModelRegistry;
 use stockpot_core::tools::SpotToolRegistry;
-use serdes_ai_core::ModelRequest;
-use std::sync::Arc;
 
 /// Execute an agent with the given parameters
 #[allow(clippy::too_many_arguments)]

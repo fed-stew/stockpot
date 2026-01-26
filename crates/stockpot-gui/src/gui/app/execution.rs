@@ -9,13 +9,13 @@ use std::sync::Arc;
 
 use gpui::{AsyncApp, Context, WeakEntity, Window};
 
+use serdes_ai_core::messages::ImageMediaType;
 use stockpot_core::agents::{AgentExecutor, AgentManager, ExecuteContext, RetryHandler};
 use stockpot_core::config::{PdfMode, Settings};
 use stockpot_core::db::Database;
 use stockpot_core::mcp::McpManager;
 use stockpot_core::models::ModelRegistry;
 use stockpot_core::tools::SpotToolRegistry;
-use serdes_ai_core::messages::ImageMediaType;
 
 use super::{ChatApp, PendingAttachment, MAX_IMAGE_DIMENSION};
 

@@ -15,8 +15,8 @@ mod server_list;
 
 use gpui::{div, prelude::*, px, Context, Styled};
 
-use stockpot_core::config::Settings;
 use crate::gui::app::ChatApp;
+use stockpot_core::config::Settings;
 
 impl ChatApp {
     /// Renders the MCP servers settings tab.

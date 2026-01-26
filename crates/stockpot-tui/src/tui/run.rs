@@ -3,9 +3,9 @@
 //! Provides the entry point for launching the TUI application.
 
 use anyhow::Result;
+use std::fs::File;
 use stockpot_core::runner::AppConfig;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use std::fs::File;
 
 use super::TuiApp;
 
