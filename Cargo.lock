@@ -7519,12 +7519,29 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stockpot"
-version = "0.21.9"
+version = "0.22.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "predicates",
+ "serial_test",
+ "stockpot-core",
+ "stockpot-gui",
+ "stockpot-tui",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "stockpot-core"
+version = "0.22.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
- "arboard",
- "assert_cmd",
  "async-trait",
  "base64",
  "chrono",
@@ -7533,24 +7550,17 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "glob",
- "gpui",
- "gpui-component",
- "gpui-component-assets",
  "grep-regex",
  "grep-searcher",
  "ignore",
  "image",
  "mupdf",
  "nu-ansi-term",
- "open",
  "parking_lot",
  "portable-pty",
- "predicates",
  "pulldown-cmark",
- "ratatui",
  "regex",
  "reqwest",
- "rfd",
  "rusqlite",
  "semver",
  "serde",
@@ -7562,7 +7572,6 @@ dependencies = [
  "serdes-ai-models",
  "serdes-ai-providers",
  "serdes-ai-tools",
- "serial_test",
  "shellexpand",
  "streamdown-config",
  "streamdown-parser",
@@ -7576,12 +7585,71 @@ dependencies = [
  "tokio-test",
  "tracing",
  "tracing-subscriber",
- "tui-textarea",
- "unicode-segmentation",
  "unicode-width 0.2.0",
  "uuid",
  "webbrowser",
  "which",
+]
+
+[[package]]
+name = "stockpot-gui"
+version = "0.22.0"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "chrono",
+ "clap",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "image",
+ "mupdf",
+ "open",
+ "parking_lot",
+ "portable-pty",
+ "pulldown-cmark",
+ "rfd",
+ "serde",
+ "serde_json",
+ "serdes-ai-core",
+ "stockpot-core",
+ "streamdown-config",
+ "streamdown-parser",
+ "streamdown-render",
+ "strip-ansi-escapes",
+ "syntect",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-segmentation",
+ "uuid",
+]
+
+[[package]]
+name = "stockpot-tui"
+version = "0.22.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dirs 5.0.1",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "serdes-ai-core",
+ "stockpot-core",
+ "streamdown-config",
+ "streamdown-parser",
+ "streamdown-render",
+ "textwrap",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tui-textarea",
+ "unicode-width 0.2.0",
+ "uuid",
 ]
 
 [[package]]
