@@ -1,10 +1,13 @@
 //! Agent MCP assignments panel component.
 //!
 //! Renders the right panel for assigning MCP servers to agents.
+//! Uses subtle selection styling: thin border + 8% accent tint.
 
 use std::collections::HashMap;
 
-use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, Styled};
+use gpui::{
+    div, prelude::*, px, rgb, rgba, Context, Hsla, MouseButton, Rgba, SharedString, Styled,
+};
 
 use crate::gui::app::ChatApp;
 use crate::gui::theme::Theme;
@@ -12,6 +15,15 @@ use stockpot_core::agents::AgentInfo;
 use stockpot_core::config::Settings;
 
 use super::server_list::ServerInfo;
+
+/// Selected/attached background opacity (8% tint).
+const SELECTED_BG_OPACITY: f32 = 0.08;
+
+/// Convert Rgba to Hsla with a specific opacity.
+fn with_opacity(color: Rgba, opacity: f32) -> Hsla {
+    let hsla: Hsla = color.into();
+    hsla.opacity(opacity)
+}
 
 /// Renders the right panel for agent-to-MCP assignments.
 pub fn render_agent_assignments(
@@ -110,6 +122,7 @@ fn render_agent_list(
 }
 
 /// Renders a single agent item in the list.
+/// Uses subtle selection styling: thin border + 8% accent tint.
 fn render_agent_item(
     theme: &Theme,
     cx: &Context<ChatApp>,
@@ -124,21 +137,30 @@ fn render_agent_item(
     let display_name = info.display_name.clone();
     let theme = theme.clone();
 
+    // Subtle selection styling: thin border + 8% accent tint
+    let (bg_color, border_color, text_color) = if is_selected {
+        (
+            with_opacity(theme.accent, SELECTED_BG_OPACITY),
+            theme.accent,
+            theme.accent,
+        )
+    } else {
+        (
+            with_opacity(theme.tool_card, 1.0),
+            theme.tool_card, // Invisible border (same as bg)
+            theme.text,
+        )
+    };
+
     div()
         .id(SharedString::from(format!("mcp-agent-{}", agent_name)))
         .px(px(10.))
         .py(px(8.))
         .rounded(px(6.))
-        .bg(if is_selected {
-            theme.accent
-        } else {
-            theme.tool_card
-        })
-        .text_color(if is_selected {
-            rgb(0xffffff)
-        } else {
-            theme.text
-        })
+        .border_1()
+        .border_color(border_color)
+        .bg(bg_color)
+        .text_color(text_color)
         .cursor_pointer()
         .hover(|s| s.opacity(0.9))
         .on_mouse_up(
@@ -161,13 +183,13 @@ fn render_agent_item(
                             .py(px(2.))
                             .rounded(px(10.))
                             .bg(if is_selected {
-                                rgba(0xffffff33)
+                                rgba(0x0078d433) // Slightly more visible on selected
                             } else {
                                 theme.background
                             })
                             .text_size(px(11.))
                             .text_color(if is_selected {
-                                rgb(0xffffff)
+                                theme.accent
                             } else {
                                 theme.text_muted
                             })
@@ -229,6 +251,7 @@ fn render_mcp_checkboxes(
 }
 
 /// Renders a single MCP checkbox item.
+/// Uses subtle selection styling: thin border + 8% accent tint when attached.
 fn render_mcp_checkbox(
     theme: &Theme,
     cx: &Context<ChatApp>,
@@ -242,6 +265,21 @@ fn render_mcp_checkbox(
     let selected_agent_owned = selected_agent.to_string();
     let theme = theme.clone();
 
+    // Subtle selection styling for attached state
+    let (bg_color, border_color, text_color) = if is_attached {
+        (
+            with_opacity(theme.accent, SELECTED_BG_OPACITY),
+            theme.accent,
+            theme.accent,
+        )
+    } else {
+        (
+            with_opacity(theme.tool_card, 1.0),
+            theme.tool_card, // Invisible border
+            theme.text,
+        )
+    };
+
     div()
         .id(SharedString::from(format!("attach-mcp-{}", mcp_name_owned)))
         .flex()
@@ -250,11 +288,9 @@ fn render_mcp_checkbox(
         .px(px(10.))
         .py(px(8.))
         .rounded(px(6.))
-        .bg(if is_attached {
-            theme.accent
-        } else {
-            theme.tool_card
-        })
+        .border_1()
+        .border_color(border_color)
+        .bg(bg_color)
         .cursor_pointer()
         .hover(|s| s.opacity(0.9))
         .on_mouse_up(
@@ -269,6 +305,7 @@ fn render_mcp_checkbox(
                 cx.notify();
             }),
         )
+        // Checkbox indicator
         .child(
             div()
                 .w(px(18.))
@@ -276,12 +313,12 @@ fn render_mcp_checkbox(
                 .rounded(px(4.))
                 .border_2()
                 .border_color(if is_attached {
-                    rgb(0xffffff)
+                    theme.accent
                 } else {
                     theme.border
                 })
                 .bg(if is_attached {
-                    rgb(0xffffff)
+                    theme.accent
                 } else {
                     theme.background
                 })
@@ -290,17 +327,14 @@ fn render_mcp_checkbox(
                 .justify_center()
                 .text_size(px(12.))
                 .font_weight(gpui::FontWeight::BOLD)
-                .text_color(theme.accent)
+                .text_color(rgb(0xffffff))
                 .when(is_attached, |d| d.child("✓")),
         )
+        // MCP name label
         .child(
             div()
                 .text_size(px(13.))
-                .text_color(if is_attached {
-                    rgb(0xffffff)
-                } else {
-                    theme.text
-                })
+                .text_color(text_color)
                 .child(mcp_name_display),
         )
 }

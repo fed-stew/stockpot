@@ -31,8 +31,10 @@ pub struct Theme {
     pub success: Rgba,
     /// Error color (red)
     pub error: Rgba,
-    /// Warning color (yellow)
+    /// Warning color (yellow) for warning text/backgrounds
     pub warning: Rgba,
+    /// Warning icon color (orange) for subtle warning indicators
+    pub warning_icon: Rgba,
 }
 
 impl Default for Theme {
@@ -59,6 +61,7 @@ impl Theme {
             success: rgb(0x4ec9b0),
             error: rgb(0xf14c4c),
             warning: rgb(0xdcdcaa),
+            warning_icon: rgb(0xffa500), // Orange for warning indicators
         }
     }
 
@@ -79,6 +82,7 @@ impl Theme {
             success: rgb(0x16825d),
             error: rgb(0xd32f2f),
             warning: rgb(0xf9a825),
+            warning_icon: rgb(0xd97706), // Darker orange for light mode
         }
     }
 }

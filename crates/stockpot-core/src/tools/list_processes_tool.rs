@@ -19,9 +19,10 @@ impl Tool for ListProcessesTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "list_processes",
-            "List all active terminal processes. Returns process IDs, status, and basic info \
-             for each running or recently completed command. Use this to check on background \
-             processes or see what commands are still running.",
+            "List all active terminal processes. Returns process IDs, names (if set), status, and basic info \
+             for each running or recently completed command. Named terminals (created manually by the user) \
+             are shown with their friendly names. Use this to check on background processes or see what \
+             commands are still running.",
         )
         .with_parameters(SchemaBuilder::new().build().expect("schema build failed"))
     }
@@ -60,19 +61,41 @@ impl Tool for ListProcessesTool {
                 crate::terminal::ProcessKind::User => "User",
             };
 
-            output.push_str(&format!("• {} [{}] - {}\n", snap.process_id, kind, status));
+            // Show name prominently if available
+            if let Some(name) = &snap.name {
+                output.push_str(&format!(
+                    "• \"{}\" ({}) [{}] - {}\n",
+                    name, snap.process_id, kind, status
+                ));
+            } else {
+                output.push_str(&format!("• {} [{}] - {}\n", snap.process_id, kind, status));
+            }
 
-            // Show output preview (first 100 chars)
-            let preview: String = snap.output.chars().take(100).collect();
-            if !preview.is_empty() {
-                let preview = preview.replace('\n', " ");
-                output.push_str(&format!("  Preview: {}...\n", preview));
+            // Show output preview (first 100 chars, sanitized)
+            if !snap.output.is_empty() {
+                let sanitized = sanitize_terminal_output(&snap.output);
+                let preview: String = sanitized.chars().take(100).collect();
+                if !preview.is_empty() {
+                    let preview = preview.replace('\n', " ");
+                    output.push_str(&format!("  Preview: {}...\n", preview));
+                }
             }
             output.push('\n');
         }
 
         Ok(ToolReturn::text(output))
     }
+}
+
+/// Strip ANSI escape sequences and control characters from terminal output
+fn sanitize_terminal_output(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let stripped = strip_ansi_escapes::strip(bytes);
+    let clean = String::from_utf8_lossy(&stripped);
+    clean
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
 }
 
 #[cfg(test)]

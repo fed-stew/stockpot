@@ -3,6 +3,8 @@
 //! Modal dialog for adding API key based models.
 
 use gpui::{div, prelude::*, px, rgba, Context, MouseButton, Styled};
+use gpui_component::input::Input;
+use gpui_component::Sizable;
 
 use crate::gui::app::ChatApp;
 
@@ -128,16 +130,37 @@ impl ChatApp {
             .overflow_hidden()
             .child(
                 div()
-                    .px(px(16.))
-                    .py(px(12.))
+                    .px(px(12.))
+                    .py(px(8.))
                     .border_b_1()
                     .border_color(theme.border)
-                    .text_size(px(12.))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.text_muted)
-                    .child("Providers"),
+                    .child(self.render_provider_filter_input(cx)),
             )
             .child(self.render_provider_list(cx))
+    }
+
+    /// Render the filter input for provider list.
+    fn render_provider_filter_input(&self, _cx: &Context<Self>) -> impl IntoElement {
+        let theme = self.theme.clone();
+
+        div()
+            .id("provider-filter-container")
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(theme.text_muted)
+                    .child("🔍"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .when_some(self.add_model_provider_filter_input.as_ref(), |d, input| {
+                        d.child(Input::new(input).small())
+                    }),
+            )
     }
 
     /// Render the config panel container on the right.

@@ -221,6 +221,37 @@ impl<'a> Settings<'a> {
         Ok(pins)
     }
 
+    /// Clear all agent pins that reference a specific model.
+    /// Called when a model is removed to prevent orphaned pins.
+    /// Returns the number of pins that were cleared.
+    pub fn clear_pins_for_model(&self, model_name: &str) -> Result<usize, SettingsError> {
+        // Get all agent pins
+        let pins = self.get_all_agent_pinned_models()?;
+
+        let mut cleared_count = 0;
+        for (agent_name, pinned_model) in pins {
+            if pinned_model == model_name {
+                self.clear_agent_pinned_model(&agent_name)?;
+                cleared_count += 1;
+                tracing::debug!(
+                    agent = %agent_name,
+                    model = %model_name,
+                    "Cleared orphaned agent pin for deleted model"
+                );
+            }
+        }
+
+        if cleared_count > 0 {
+            tracing::info!(
+                model = %model_name,
+                count = cleared_count,
+                "Cleared agent pins for deleted model"
+            );
+        }
+
+        Ok(cleared_count)
+    }
+
     // Agent MCP attachment management
 
     /// Build the settings key for an agent's MCP attachments.
@@ -835,6 +866,124 @@ mod tests {
         assert_eq!(pins.get("stockpot"), Some(&"gpt-4o".to_string()));
         assert_eq!(pins.get("explore"), Some(&"claude-3-haiku".to_string()));
         assert_eq!(pins.get("planning"), Some(&"gpt-4-turbo".to_string()));
+    }
+
+    #[test]
+    fn test_clear_pins_for_model_single_agent() {
+        let (_temp, db) = setup_test_db();
+        let settings = Settings::new(&db);
+
+        // Pin one agent to a model
+        settings
+            .set_agent_pinned_model("stockpot", "gpt-4o")
+            .unwrap();
+
+        // Clear pins for that model
+        let cleared = settings.clear_pins_for_model("gpt-4o").unwrap();
+
+        assert_eq!(cleared, 1);
+        assert!(settings.get_agent_pinned_model("stockpot").is_none());
+    }
+
+    #[test]
+    fn test_clear_pins_for_model_multiple_agents() {
+        let (_temp, db) = setup_test_db();
+        let settings = Settings::new(&db);
+
+        // Pin multiple agents to the same model
+        settings
+            .set_agent_pinned_model("stockpot", "gpt-4o")
+            .unwrap();
+        settings
+            .set_agent_pinned_model("explore", "gpt-4o")
+            .unwrap();
+        settings
+            .set_agent_pinned_model("planning", "gpt-4o")
+            .unwrap();
+
+        // Clear pins for that model
+        let cleared = settings.clear_pins_for_model("gpt-4o").unwrap();
+
+        assert_eq!(cleared, 3);
+        assert!(settings.get_agent_pinned_model("stockpot").is_none());
+        assert!(settings.get_agent_pinned_model("explore").is_none());
+        assert!(settings.get_agent_pinned_model("planning").is_none());
+    }
+
+    #[test]
+    fn test_clear_pins_for_model_no_match() {
+        let (_temp, db) = setup_test_db();
+        let settings = Settings::new(&db);
+
+        // Pin agents to different models
+        settings
+            .set_agent_pinned_model("stockpot", "claude-3-opus")
+            .unwrap();
+        settings
+            .set_agent_pinned_model("explore", "gemini-pro")
+            .unwrap();
+
+        // Clear pins for a model that no one is using
+        let cleared = settings.clear_pins_for_model("gpt-4o").unwrap();
+
+        assert_eq!(cleared, 0);
+        // Other pins should remain
+        assert_eq!(
+            settings.get_agent_pinned_model("stockpot"),
+            Some("claude-3-opus".to_string())
+        );
+        assert_eq!(
+            settings.get_agent_pinned_model("explore"),
+            Some("gemini-pro".to_string())
+        );
+    }
+
+    #[test]
+    fn test_clear_pins_for_model_mixed() {
+        let (_temp, db) = setup_test_db();
+        let settings = Settings::new(&db);
+
+        // Pin some agents to the target model, others to different models
+        settings
+            .set_agent_pinned_model("stockpot", "gpt-4o")
+            .unwrap();
+        settings
+            .set_agent_pinned_model("explore", "claude-3-opus")
+            .unwrap();
+        settings
+            .set_agent_pinned_model("planning", "gpt-4o")
+            .unwrap();
+        settings
+            .set_agent_pinned_model("reviewer", "gemini-pro")
+            .unwrap();
+
+        // Clear pins for gpt-4o only
+        let cleared = settings.clear_pins_for_model("gpt-4o").unwrap();
+
+        assert_eq!(cleared, 2);
+        // These should be cleared
+        assert!(settings.get_agent_pinned_model("stockpot").is_none());
+        assert!(settings.get_agent_pinned_model("planning").is_none());
+        // These should remain
+        assert_eq!(
+            settings.get_agent_pinned_model("explore"),
+            Some("claude-3-opus".to_string())
+        );
+        assert_eq!(
+            settings.get_agent_pinned_model("reviewer"),
+            Some("gemini-pro".to_string())
+        );
+    }
+
+    #[test]
+    fn test_clear_pins_for_model_empty() {
+        let (_temp, db) = setup_test_db();
+        let settings = Settings::new(&db);
+
+        // No pins exist
+        let cleared = settings.clear_pins_for_model("gpt-4o").unwrap();
+
+        assert_eq!(cleared, 0);
     }
 
     // =========================================================================

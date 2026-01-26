@@ -287,18 +287,19 @@ impl TerminalView {
     }
 
     /// Build a single row element from the terminal grid
+    ///
+    /// Each character is rendered in its own fixed-width container to ensure
+    /// perfect grid alignment. Character at column N is positioned at exactly
+    /// N × cell_width pixels from the left edge.
     fn render_row(&self, term: &Term<TerminalEventBridge>, row_idx: usize) -> Div {
         let line = Line(row_idx as i32);
         let cols = term.columns();
         let cursor = term.grid().cursor.point;
-        // Cursor is visible by default (HIDE_CURSOR mode check removed for simplicity)
         let cursor_visible = true;
 
-        // Build spans with different colors
-        let mut spans: Vec<AnyElement> = Vec::new();
-        let mut current_text = String::new();
-        let mut current_fg = self.colors.foreground;
-        let mut current_flags = Flags::empty();
+        // Render each character in its own fixed-width cell for perfect grid alignment
+        let mut cells: Vec<AnyElement> = Vec::with_capacity(cols);
+        let cell_width = self.cell_width;
 
         for col_idx in 0..cols {
             let point = Point::new(line, Column(col_idx));
@@ -309,89 +310,46 @@ impl TerminalView {
             let is_bold = cell.flags.contains(Flags::BOLD);
             let fg = self.colors.convert_color(cell.fg, is_bold);
 
-            // Check if we need to start a new span (color changed)
-            if fg != current_fg || cell.flags != current_flags {
-                // Flush current span
-                if !current_text.is_empty() {
-                    let text = std::mem::take(&mut current_text);
-                    let color = current_fg;
-                    let bold = current_flags.contains(Flags::BOLD);
-                    spans.push(if bold {
-                        div()
-                            .text_color(color)
-                            .font_weight(FontWeight::BOLD)
-                            .child(text)
-                            .into_any_element()
-                    } else {
-                        div().text_color(color).child(text).into_any_element()
-                    });
-                }
-                current_fg = fg;
-                current_flags = cell.flags;
-            }
+            // Determine the character to display
+            let display_char = if c == '\0' { ' ' } else { c };
 
             // Check if this is the cursor position
-            if cursor_visible && cursor.line == line && cursor.column == Column(col_idx) {
-                // Flush current span before cursor
-                if !current_text.is_empty() {
-                    let text = std::mem::take(&mut current_text);
-                    let color = current_fg;
-                    let bold = current_flags.contains(Flags::BOLD);
-                    spans.push(if bold {
-                        div()
-                            .text_color(color)
-                            .font_weight(FontWeight::BOLD)
-                            .child(text)
-                            .into_any_element()
-                    } else {
-                        div().text_color(color).child(text).into_any_element()
-                    });
-                }
+            let is_cursor =
+                cursor_visible && cursor.line == line && cursor.column == Column(col_idx);
 
-                // Render cursor (inverted colors)
-                let cursor_char = if c == ' ' || c == '\0' { ' ' } else { c };
-                spans.push(
-                    div()
-                        .bg(self.colors.foreground)
-                        .text_color(self.colors.background)
-                        .child(cursor_char.to_string())
-                        .into_any_element(),
-                );
-            } else {
-                // Regular character
-                current_text.push(if c == '\0' { ' ' } else { c });
-            }
-        }
-
-        // Flush remaining text
-        if !current_text.is_empty() {
-            let text = current_text;
-            let color = current_fg;
-            let bold = current_flags.contains(Flags::BOLD);
-            spans.push(if bold {
+            // Build the cell div with fixed width
+            let cell_div = if is_cursor {
+                // Cursor: inverted colors
                 div()
-                    .text_color(color)
+                    .w(px(cell_width))
+                    .bg(self.colors.foreground)
+                    .text_color(self.colors.background)
+                    .child(display_char.to_string())
+            } else if is_bold {
+                // Bold text
+                div()
+                    .w(px(cell_width))
+                    .text_color(fg)
                     .font_weight(FontWeight::BOLD)
-                    .child(text)
-                    .into_any_element()
+                    .child(display_char.to_string())
             } else {
-                div().text_color(color).child(text).into_any_element()
-            });
-        }
+                // Regular text
+                div()
+                    .w(px(cell_width))
+                    .text_color(fg)
+                    .child(display_char.to_string())
+            };
 
-        // If row is empty, add a space to maintain height
-        if spans.is_empty() {
-            spans.push(div().child(" ").into_any_element());
+            cells.push(cell_div.into_any_element());
         }
 
         div()
             .h(px(self.cell_height))
             .flex()
             .flex_row()
-            .whitespace_nowrap()
             .font_family("Berkeley Mono, Menlo, Monaco, Consolas, monospace")
             .text_size(px(13.))
-            .children(spans)
+            .children(cells)
     }
 }
 

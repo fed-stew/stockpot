@@ -7073,9 +7073,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-providers"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dab3153f7bb7e887c69e27d917b5026cd808de051d919044c8082351580d3a38"
+checksum = "968fc1e7d890a55836c0305d514a32a0ff0872597ec0ffaccace60bb5e95afd6"
 dependencies = [
  "async-trait",
  "base64",
@@ -7519,7 +7519,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stockpot"
-version = "0.22.1"
+version = "0.22.3"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -7538,7 +7538,7 @@ dependencies = [
 
 [[package]]
 name = "stockpot-core"
-version = "0.22.1"
+version = "0.22.3"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7593,7 +7593,7 @@ dependencies = [
 
 [[package]]
 name = "stockpot-gui"
-version = "0.22.1"
+version = "0.22.3"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7627,7 +7627,7 @@ dependencies = [
 
 [[package]]
 name = "stockpot-tui"
-version = "0.22.1"
+version = "0.22.3"
 dependencies = [
  "anyhow",
  "arboard",

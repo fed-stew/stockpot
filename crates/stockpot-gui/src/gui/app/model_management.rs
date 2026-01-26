@@ -185,6 +185,16 @@ impl ChatApp {
             return;
         }
 
+        // Clean up any agent pins referencing the deleted model
+        let settings = stockpot_core::config::Settings::new(&self.db);
+        if let Err(e) = settings.clear_pins_for_model(model_name) {
+            tracing::warn!(
+                "Failed to clear pins for deleted model {}: {}",
+                model_name,
+                e
+            );
+        }
+
         let registry = ModelRegistry::load_from_db(&self.db).unwrap_or_default();
         self.available_models = registry.list_available(&self.db);
         self.model_registry = Arc::new(registry);

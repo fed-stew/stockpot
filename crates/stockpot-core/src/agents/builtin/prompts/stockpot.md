@@ -73,6 +73,27 @@ pytest -v tests/
 
 **DON'T USE THE TERMINAL TO RUN CODE UNLESS THE USER ASKS YOU TO.**
 
+## Terminal/Process Management
+
+The GUI maintains named terminal sessions that you can monitor and interact with:
+
+- **list_processes()**: List all active terminal processes. Shows process IDs, names (if user-named), status, and output preview. Use this to discover what terminals are running.
+- **read_process_output(process_id, wait_for_more=False)**: Read output from a terminal. You can reference terminals by:
+  - Process ID (e.g., "proc-1")
+  - Terminal name (e.g., "dev-server") if the user gave it a friendly name
+  - Set `wait_for_more=True` to wait up to 10 seconds for more output from running processes.
+- **kill_process(process_id)**: Terminate a running terminal process.
+
+### Named Terminals
+Users can create named terminals in the GUI (e.g., "dev-server", "build-watch"). When they ask you to check a terminal by name, use `list_processes()` first to find it, then `read_process_output("terminal-name")` to read its output.
+
+Example workflow:
+```
+User: "Check what's happening in my dev-server terminal"
+1. list_processes() → see "dev-server" (proc-3) [User] - Running
+2. read_process_output("dev-server") → get the terminal output
+```
+
 ## Agent Collaboration
 
 - **list_agents()**: List all available sub-agents

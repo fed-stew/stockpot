@@ -969,18 +969,76 @@ impl TuiApp {
     fn handle_settings_delete_key(&mut self) {
         use super::settings::{McpPanel, SettingsTab};
 
-        if self.settings_state.active_tab == SettingsTab::McpServers
-            && self.settings_state.mcp_panel == McpPanel::Servers
-        {
-            // Remove the selected MCP server
-            let server_count = super::settings::mcp_servers::server_count();
-            if server_count > 0 {
-                super::settings::mcp_servers::remove_server(self.settings_state.mcp_server_index);
-                // Adjust selection if needed
-                if self.settings_state.mcp_server_index >= server_count.saturating_sub(1) {
-                    self.settings_state.mcp_server_index = server_count.saturating_sub(2);
+        match self.settings_state.active_tab {
+            SettingsTab::McpServers if self.settings_state.mcp_panel == McpPanel::Servers => {
+                // Remove the selected MCP server
+                let server_count = super::settings::mcp_servers::server_count();
+                if server_count > 0 {
+                    super::settings::mcp_servers::remove_server(
+                        self.settings_state.mcp_server_index,
+                    );
+                    // Adjust selection if needed
+                    if self.settings_state.mcp_server_index >= server_count.saturating_sub(1) {
+                        self.settings_state.mcp_server_index = server_count.saturating_sub(2);
+                    }
                 }
             }
+            SettingsTab::Models if !self.settings_state.models_in_oauth_section => {
+                // Delete the selected model (if it's a model, not a group header)
+                let available_models = self.model_registry.list_available(&self.db);
+                let selected_index = self.settings_state.models_selected_index;
+
+                if let Some(model_name) = super::settings::models::get_model_at_index(
+                    self,
+                    &available_models,
+                    selected_index,
+                ) {
+                    // Check if it's an OAuth model (can't delete those)
+                    let is_oauth = self
+                        .model_registry
+                        .get(&model_name)
+                        .map(|c| c.is_oauth())
+                        .unwrap_or(false);
+
+                    if !is_oauth {
+                        // Delete the model
+                        if let Err(e) = stockpot_core::models::ModelRegistry::remove_model_from_db(
+                            &self.db,
+                            &model_name,
+                        ) {
+                            tracing::warn!("Failed to delete model {}: {}", model_name, e);
+                            return;
+                        }
+
+                        // Clean up any agent pins referencing this model
+                        let settings = stockpot_core::config::Settings::new(&self.db);
+                        if let Err(e) = settings.clear_pins_for_model(&model_name) {
+                            tracing::warn!(
+                                "Failed to clear pins for deleted model {}: {}",
+                                model_name,
+                                e
+                            );
+                        }
+
+                        // Reload model registry
+                        if let Ok(registry) =
+                            stockpot_core::models::ModelRegistry::load_from_db(&self.db)
+                        {
+                            self.model_registry = std::sync::Arc::new(registry);
+                        }
+
+                        // Adjust selection if needed
+                        let new_count = super::settings::models::count_models_items(
+                            self,
+                            &self.model_registry.list_available(&self.db),
+                        );
+                        if self.settings_state.models_selected_index >= new_count && new_count > 0 {
+                            self.settings_state.models_selected_index = new_count - 1;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

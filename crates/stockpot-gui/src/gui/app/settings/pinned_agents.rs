@@ -1,13 +1,24 @@
 //! Pinned agents settings tab
 //!
 //! Allows users to pin specific models to individual agents.
+//! Refactored to use subtle selection styling (thin border + tint).
 
 use gpui::{
-    anchored, deferred, div, prelude::*, px, rgb, Context, MouseButton, SharedString, Styled,
+    anchored, deferred, div, prelude::*, px, Context, Hsla, MouseButton, Rgba, SharedString, Styled,
 };
 
 use crate::gui::app::ChatApp;
+use crate::gui::components::selectable_list_item_with_subtitle;
 use stockpot_core::config::Settings;
+
+/// Selected background opacity for dropdown items (8% tint).
+const DROPDOWN_SELECTED_BG_OPACITY: f32 = 0.08;
+
+/// Convert Rgba to Hsla with a specific opacity.
+fn with_opacity(color: Rgba, opacity: f32) -> Hsla {
+    let hsla: Hsla = color.into();
+    hsla.opacity(opacity)
+}
 
 impl ChatApp {
     pub(crate) fn render_settings_pinned_agents(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -16,12 +27,13 @@ impl ChatApp {
         let available_models = self.available_models.clone();
         let default_model = self.current_model.clone();
         let selected_agent = self.settings_selected_agent.clone();
-
-        let view = cx.entity().clone();
+        let entity = cx.entity().clone();
 
         let settings = Settings::new(&self.db);
         let pins = settings.get_all_agent_pinned_models().unwrap_or_default();
 
+        // Canvas to track dropdown bounds for positioning
+        let view = cx.entity().clone();
         let bounds_tracker = gpui::canvas(
             move |bounds, _window, cx| {
                 let should_update = view.read(cx).default_model_dropdown_bounds != Some(bounds);
@@ -37,6 +49,12 @@ impl ChatApp {
         .top_0()
         .left_0()
         .size_full();
+
+        // =========================================================================
+        // Default Model Section
+        // =========================================================================
+        let default_model_for_dropdown = default_model.clone();
+        let entity_for_dropdown = entity.clone();
 
         let default_model_section = div()
             .flex()
@@ -107,6 +125,7 @@ impl ChatApp {
                                     ),
                             ),
                     )
+                    // Dropdown list
                     .when(
                         self.show_default_model_dropdown
                             && self.default_model_dropdown_bounds.is_some(),
@@ -134,41 +153,56 @@ impl ChatApp {
                                             cx.stop_propagation();
                                         })
                                         .children(available_models.iter().map(|model| {
-                                            let is_selected = model == &default_model;
+                                            let is_selected = model == &default_model_for_dropdown;
                                             let model_name = model.clone();
+                                            let entity = entity_for_dropdown.clone();
+
+                                            // Subtle selection styling for dropdown items
+                                            let (bg_color, text_color) = if is_selected {
+                                                (
+                                                    with_opacity(
+                                                        theme.accent,
+                                                        DROPDOWN_SELECTED_BG_OPACITY,
+                                                    ),
+                                                    theme.accent,
+                                                )
+                                            } else {
+                                                (Hsla::transparent_black(), theme.text)
+                                            };
+                                            let border_color = if is_selected {
+                                                theme.accent
+                                            } else {
+                                                theme.panel_background // Invisible border
+                                            };
 
                                             div()
                                                 .id(SharedString::from(format!(
                                                     "default-dropdown-{}",
                                                     model
                                                 )))
-                                                .px(px(12.))
+                                                .mx(px(4.))
+                                                .my(px(2.))
+                                                .px(px(10.))
                                                 .py(px(8.))
-                                                .bg(if is_selected {
-                                                    theme.accent
-                                                } else {
-                                                    theme.panel_background
-                                                })
-                                                .text_color(if is_selected {
-                                                    rgb(0xffffff)
-                                                } else {
-                                                    theme.text
-                                                })
+                                                .rounded(px(6.))
+                                                .border_1()
+                                                .border_color(border_color)
+                                                .bg(bg_color)
+                                                .text_color(text_color)
                                                 .text_size(px(13.))
                                                 .overflow_hidden()
                                                 .cursor_pointer()
-                                                .hover(|s| s.bg(theme.tool_card))
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(move |this, _, _, cx| {
+                                                .hover(|s| s.opacity(0.85))
+                                                .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+                                                    entity.update(cx, |this, cx| {
                                                         this.current_model = model_name.clone();
                                                         let settings = Settings::new(&this.db);
                                                         let _ = settings.set("model", &model_name);
                                                         this.update_context_usage();
                                                         this.show_default_model_dropdown = false;
                                                         cx.notify();
-                                                    }),
-                                                )
+                                                    });
+                                                })
                                                 .child(model.clone())
                                         })),
                                 ),
@@ -177,6 +211,10 @@ impl ChatApp {
                     ),
             );
 
+        // =========================================================================
+        // Left Panel - Agent List
+        // =========================================================================
+        let entity_for_agents = entity.clone();
         let left_panel = div()
             .flex()
             .flex_col()
@@ -218,51 +256,30 @@ impl ChatApp {
                         };
 
                         let agent_name = info.name.clone();
-                        div()
-                            .id(SharedString::from(format!("pin-agent-{}", agent_name)))
-                            .px(px(12.))
-                            .py(px(10.))
-                            .rounded(px(8.))
-                            .bg(if is_selected {
-                                theme.accent
-                            } else {
-                                theme.tool_card
-                            })
-                            .text_color(if is_selected {
-                                rgb(0xffffff)
-                            } else {
-                                theme.text
-                            })
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.9))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
+                        let entity = entity_for_agents.clone();
+
+                        selectable_list_item_with_subtitle(
+                            SharedString::from(format!("pin-agent-{}", agent_name)),
+                            info.display_name,
+                            Some(subtitle),
+                            is_selected,
+                            &theme,
+                            move |_window, cx| {
+                                entity.update(cx, |this, cx| {
                                     this.settings_selected_agent = agent_name.clone();
                                     cx.notify();
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(2.))
-                                    .child(info.display_name)
-                                    .child(
-                                        div()
-                                            .text_size(px(11.))
-                                            .text_color(if is_selected {
-                                                rgb(0xffffff)
-                                            } else {
-                                                theme.text_muted
-                                            })
-                                            .child(subtitle),
-                                    ),
-                            )
+                                });
+                            },
+                        )
                     })),
             );
 
+        // =========================================================================
+        // Right Panel - Model List
+        // =========================================================================
         let pinned_for_selected = Settings::new(&self.db).get_agent_pinned_model(&selected_agent);
+        let entity_for_default = entity.clone();
+        let entity_for_models = entity.clone();
 
         let right_panel = div()
             .flex()
@@ -294,6 +311,7 @@ impl ChatApp {
                     .flex()
                     .flex_col()
                     .gap(px(4.))
+                    // "Use Default" option
                     .child({
                         let is_selected = pinned_for_selected.is_none();
                         let agent_name = selected_agent.clone();
@@ -302,28 +320,14 @@ impl ChatApp {
                             Self::truncate_model_name(&default_model)
                         );
 
-                        div()
-                            .id("pin-model-default")
-                            .px(px(12.))
-                            .py(px(10.))
-                            .rounded(px(8.))
-                            .bg(if is_selected {
-                                theme.accent
-                            } else {
-                                theme.tool_card
-                            })
-                            .text_color(if is_selected {
-                                rgb(0xffffff)
-                            } else {
-                                theme.text
-                            })
-                            .text_size(px(13.))
-                            .overflow_hidden()
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.9))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
+                        selectable_list_item_with_subtitle(
+                            "pin-model-default",
+                            default_label,
+                            None::<&str>,
+                            is_selected,
+                            &theme,
+                            move |_window, cx| {
+                                entity_for_default.update(cx, |this, cx| {
                                     let settings = Settings::new(&this.db);
                                     if let Err(e) = settings.clear_agent_pinned_model(&agent_name) {
                                         tracing::warn!(
@@ -333,33 +337,25 @@ impl ChatApp {
                                         );
                                     }
                                     cx.notify();
-                                }),
-                            )
-                            .child(default_label)
+                                });
+                            },
+                        )
                     })
+                    // Model list
                     .children(available_models.iter().map(|model| {
                         let pinned = pinned_for_selected.as_deref() == Some(model.as_str());
                         let agent_name = selected_agent.clone();
                         let model_name = model.clone();
+                        let entity = entity_for_models.clone();
 
-                        div()
-                            .id(SharedString::from(format!("pin-model-{}", model)))
-                            .px(px(12.))
-                            .py(px(10.))
-                            .rounded(px(8.))
-                            .bg(if pinned {
-                                theme.accent
-                            } else {
-                                theme.tool_card
-                            })
-                            .text_color(if pinned { rgb(0xffffff) } else { theme.text })
-                            .text_size(px(13.))
-                            .overflow_hidden()
-                            .cursor_pointer()
-                            .hover(|s| s.opacity(0.9))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
+                        selectable_list_item_with_subtitle(
+                            SharedString::from(format!("pin-model-{}", model)),
+                            Self::truncate_model_name(model),
+                            None::<&str>,
+                            pinned,
+                            &theme,
+                            move |_window, cx| {
+                                entity.update(cx, |this, cx| {
                                     let settings = Settings::new(&this.db);
                                     if let Err(e) =
                                         settings.set_agent_pinned_model(&agent_name, &model_name)
@@ -371,12 +367,15 @@ impl ChatApp {
                                         );
                                     }
                                     cx.notify();
-                                }),
-                            )
-                            .child(Self::truncate_model_name(model))
+                                });
+                            },
+                        )
                     })),
             );
 
+        // =========================================================================
+        // Main Layout
+        // =========================================================================
         div()
             .flex()
             .flex_col()

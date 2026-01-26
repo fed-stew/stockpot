@@ -48,20 +48,36 @@ fn truncate_output(output: &str, max_chars: usize) -> String {
     truncated
 }
 
+/// Strip ANSI escape sequences and control characters from terminal output
+fn sanitize_terminal_output(text: &str) -> String {
+    // Strip ANSI escape sequences
+    let bytes = text.as_bytes();
+    let stripped = strip_ansi_escapes::strip(bytes);
+    let clean = String::from_utf8_lossy(&stripped);
+
+    // Also remove other control characters that could break JSON
+    clean
+        .chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
+}
+
 #[async_trait]
 impl Tool for ReadProcessOutputTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "read_process_output",
-            "Read output from a terminal process. Returns the current output buffer \
-             for the specified process ID. Optionally wait for more output if the \
-             process is still running.",
+            "Read output from a terminal process. You can specify either the process ID (like 'proc-1') \
+             or the terminal's friendly name (like 'dev-server') if one was set. Returns the current \
+             output buffer for the specified process. Optionally wait for more output if the process \
+             is still running.",
         )
         .with_parameters(
             SchemaBuilder::new()
                 .string(
                     "process_id",
-                    "The process ID to read output from (e.g., 'proc-1').",
+                    "The process ID (e.g., 'proc-1') or terminal name (e.g., 'dev-server') to read output from. \
+                     Named terminals can be referenced by their friendly name.",
                     true,
                 )
                 .boolean(
@@ -88,10 +104,15 @@ impl Tool for ReadProcessOutputTool {
             return Ok(ToolReturn::error("Terminal system not initialized"));
         };
 
-        // Get initial snapshot
-        let Some(snapshot) = tool_ctx.store.snapshot(&args.process_id) else {
+        // Get initial snapshot - try by process_id first, then by name
+        let snapshot = tool_ctx
+            .store
+            .snapshot(&args.process_id)
+            .or_else(|| tool_ctx.store.find_by_name(&args.process_id));
+
+        let Some(snapshot) = snapshot else {
             return Ok(ToolReturn::error(format!(
-                "Process not found: {}",
+                "Process not found: {} (tried as both ID and name)",
                 args.process_id
             )));
         };
@@ -139,8 +160,9 @@ fn format_output(process_id: &str, output: &str, exit_code: Option<i32>) -> Tool
     if output.is_empty() {
         result.push_str("(no output yet)");
     } else {
-        // Apply truncation protection
-        let truncated_output = truncate_output(output, PROCESS_OUTPUT_MAX_CHARS);
+        // Sanitize ANSI codes and control characters, then truncate
+        let sanitized = sanitize_terminal_output(output);
+        let truncated_output = truncate_output(&sanitized, PROCESS_OUTPUT_MAX_CHARS);
         result.push_str(&truncated_output);
     }
 

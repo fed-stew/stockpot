@@ -2,12 +2,45 @@
 //!
 //! Displays available model providers for selection.
 
-use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, Styled};
+use gpui::{div, prelude::*, px, rgb, Context, Hsla, MouseButton, Rgba, SharedString, Styled};
 
 use crate::gui::app::ChatApp;
 use crate::gui::components::scrollbar;
 
+/// Selected background opacity (8% tint) for provider items.
+const SELECTED_BG_OPACITY: f32 = 0.08;
+
+/// Convert Rgba to Hsla with a specific opacity.
+fn with_opacity(color: Rgba, opacity: f32) -> Hsla {
+    let hsla: Hsla = color.into();
+    hsla.opacity(opacity)
+}
+
 impl ChatApp {
+    /// Get providers filtered by the current filter text.
+    fn get_filtered_providers(
+        &self,
+        cx: &Context<Self>,
+    ) -> Vec<stockpot_core::models::catalog::ProviderInfo> {
+        let filter_text = self
+            .add_model_provider_filter_input
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string().to_lowercase())
+            .unwrap_or_default();
+
+        self.add_model_providers
+            .iter()
+            .filter(|p| {
+                if filter_text.is_empty() {
+                    return true;
+                }
+                p.name.to_lowercase().contains(&filter_text)
+                    || p.id.to_lowercase().contains(&filter_text)
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Render the provider list in the add model dialog.
     pub(super) fn render_provider_list(&self, cx: &Context<Self>) -> gpui::AnyElement {
         // Show loading state
@@ -96,6 +129,7 @@ impl ChatApp {
 
         div()
             .flex()
+            .flex_row()
             .flex_1()
             .min_h(px(0.))
             .overflow_hidden()
@@ -107,9 +141,9 @@ impl ChatApp {
                     .overflow_y_scroll()
                     .track_scroll(&self.add_model_providers_scroll_handle)
                     .children(
-                        self.add_model_providers
-                            .iter()
-                            .map(|provider| self.render_provider_item(provider, cx)),
+                        self.get_filtered_providers(cx)
+                            .into_iter()
+                            .map(|provider| self.render_provider_item(&provider, cx)),
                     ),
             )
             .child(scrollbar(
@@ -121,6 +155,7 @@ impl ChatApp {
     }
 
     /// Render a single provider item.
+    /// Uses subtle selection styling: thin border + 8% accent tint.
     fn render_provider_item(
         &self,
         provider: &stockpot_core::models::catalog::ProviderInfo,
@@ -136,30 +171,38 @@ impl ChatApp {
         };
         let model_count = provider.models.len();
 
+        // Subtle selection styling: thin border + 8% accent tint
+        let (bg_color, left_border_color, text_color) = if is_selected {
+            (
+                with_opacity(theme.accent, SELECTED_BG_OPACITY),
+                theme.accent,
+                theme.accent,
+            )
+        } else {
+            (
+                Hsla::transparent_black(),
+                theme.panel_background, // Invisible left border
+                theme.text,
+            )
+        };
+
         div()
             .id(SharedString::from(format!("provider-{}", provider_id)))
             .px(px(16.))
             .py(px(10.))
             .cursor_pointer()
-            .bg(if is_selected {
-                theme.accent
-            } else {
-                theme.panel_background
-            })
-            .text_color(if is_selected {
-                rgb(0xffffff)
-            } else {
-                theme.text
-            })
+            .bg(bg_color)
+            .text_color(text_color)
+            .border_l_2() // Left accent border for selected state
+            .border_color(left_border_color)
             .hover(move |s| {
                 if is_selected {
                     s
                 } else {
-                    s.bg(theme.tool_card)
+                    s.bg(with_opacity(theme.tool_card, 0.5))
                 }
             })
             .border_b_1()
-            .border_color(theme.border)
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx| {
@@ -183,11 +226,12 @@ impl ChatApp {
     }
 
     /// Render the content for a provider item.
+    /// Model count always uses muted text (subtle selection doesn't need white text).
     fn render_provider_item_content(
         &self,
         name: &str,
         model_count: usize,
-        is_selected: bool,
+        _is_selected: bool,
     ) -> impl IntoElement {
         let theme = self.theme.clone();
 
@@ -199,11 +243,7 @@ impl ChatApp {
             .child(
                 div()
                     .text_size(px(11.))
-                    .text_color(if is_selected {
-                        rgba(0xffffffaa)
-                    } else {
-                        theme.text_muted
-                    })
+                    .text_color(theme.text_muted)
                     .child(format!("{} models", model_count)),
             )
     }

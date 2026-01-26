@@ -32,6 +32,10 @@ impl SpotAgent for StockpotAgent {
             "run_shell_command",
             "invoke_agent",
             "list_agents",
+            // Process management tools
+            "list_processes",
+            "read_process_output",
+            "kill_process",
         ]
     }
 
@@ -151,8 +155,8 @@ mod tests {
         let tools = agent.available_tools();
         assert_eq!(
             tools.len(),
-            8,
-            "Stockpot should have exactly 8 tools: {:?}",
+            11,
+            "Stockpot should have exactly 11 tools: {:?}",
             tools
         );
     }

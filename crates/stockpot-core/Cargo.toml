@@ -1,6 +1,6 @@
 [package]
 name = "stockpot-core"
-version = "0.22.2"
+version = "0.22.3"
 edition = "2021"
 description = "Core library for Stockpot AI coding assistant"
 license = "MIT"
@@ -16,7 +16,7 @@ serdes-ai = { version = "0.1.3", features = ["full"] }
 serdes-ai-core = "0.1.3"
 serdes-ai-agent = { version = "0.1.3", features = ["tracing-integration"] }
 serdes-ai-models = { version = "0.1.3", features = ["full", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
-serdes-ai-providers = { version = "0.1.3", features = ["full"] }
+serdes-ai-providers = { version = "0.1.4", features = ["full"] }
 serdes-ai-tools = "0.1.3"
 serdes-ai-mcp = "0.1.3"
 

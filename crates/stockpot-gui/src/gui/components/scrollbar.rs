@@ -67,6 +67,9 @@ fn set_scroll_ratio(handle: &ScrollHandle, ratio: f32) {
     handle.set_offset(Point::new(px(0.), -(max * clamp01(ratio))));
 }
 
+// Note: During drag, we use a full-screen fixed overlay to capture mouse events
+// anywhere on screen, providing native scrollbar-like drag behavior.
+
 /// Create a visual scrollbar that tracks a `ScrollHandle`.
 ///
 /// `drag_state` must be stable across frames (store it in your view state and clone the `Rc`).
@@ -83,12 +86,88 @@ pub fn scrollbar(
     let handle_for_canvas_paint = handle.clone();
     let handle_for_down = handle.clone();
     let handle_for_move = handle.clone();
+    let handle_for_overlay_move = handle.clone();
 
+    let is_dragging = drag_state.is_dragging.get();
+
+    // The outer container is ALWAYS 8px wide - never changes!
+    // This prevents layout shift when dragging.
+    // During drag, we add a full-screen fixed overlay to capture mouse events.
     div()
-        .w(SCROLLBAR_WIDTH)
+        .w(SCROLLBAR_WIDTH) // Always 8px - never changes!
         .h_full()
         .flex_shrink_0()
         .cursor_pointer()
+        // During drag, add a full-screen invisible overlay to capture mouse events
+        // anywhere on screen - this provides native scrollbar-like drag behavior
+        .when(is_dragging, |d| {
+            let drag_state_overlay = drag_state.clone();
+            let drag_state_overlay_up = drag_state.clone();
+            let drag_state_overlay_up_out = drag_state.clone();
+            d.child(
+                div()
+                    .absolute()
+                    // Position way off to top-left and make huge to cover any screen
+                    // This ensures coverage regardless of scrollbar position in DOM
+                    .top(px(-5000.))
+                    .left(px(-5000.))
+                    .w(px(10000.))
+                    .h(px(10000.))
+                    .on_mouse_move({
+                        move |event: &MouseMoveEvent, window: &mut Window, _cx: &mut App| {
+                            if !drag_state_overlay.is_dragging.get() {
+                                return;
+                            }
+
+                            let bounds = drag_state_overlay.bounds.get();
+                            let max_offset = handle_for_overlay_move.max_offset();
+
+                            if max_offset.height <= Pixels::ZERO
+                                || bounds.size.height <= Pixels::ZERO
+                            {
+                                return;
+                            }
+
+                            let track_height = bounds.size.height;
+                            let Some(th) = thumb_height(&handle_for_overlay_move, track_height)
+                            else {
+                                return;
+                            };
+
+                            let thumb_range = (track_height - th).max(Pixels::ZERO);
+                            if thumb_range <= Pixels::ZERO {
+                                return;
+                            }
+
+                            let mouse_delta_y =
+                                event.position.y - drag_state_overlay.drag_start_y.get();
+                            let scroll_delta = (mouse_delta_y / thumb_range) * max_offset.height;
+
+                            let start_offset_y = drag_state_overlay.drag_start_offset_y.get();
+                            let new_offset_y = (start_offset_y - scroll_delta)
+                                .clamp(-max_offset.height, Pixels::ZERO);
+
+                            let current_offset = handle_for_overlay_move.offset();
+                            handle_for_overlay_move
+                                .set_offset(point(current_offset.x, new_offset_y));
+
+                            window.refresh();
+                        }
+                    })
+                    .on_mouse_up(MouseButton::Left, {
+                        move |_event: &MouseUpEvent, window: &mut Window, _cx: &mut App| {
+                            drag_state_overlay_up.is_dragging.set(false);
+                            window.refresh();
+                        }
+                    })
+                    .on_mouse_up_out(MouseButton::Left, {
+                        move |_event: &MouseUpEvent, window: &mut Window, _cx: &mut App| {
+                            drag_state_overlay_up_out.is_dragging.set(false);
+                            window.refresh();
+                        }
+                    }),
+            )
+        })
         .on_mouse_down(MouseButton::Left, {
             let drag_state = drag_state.clone();
             move |event: &MouseDownEvent, window: &mut Window, _cx: &mut App| {
@@ -318,12 +397,98 @@ pub fn list_scrollbar(
     let list_state_for_move = list_state.clone();
     let list_state_for_up = list_state.clone();
     let list_state_for_up_out = list_state.clone();
+    let list_state_for_overlay_move = list_state.clone();
+    let list_state_for_overlay_up = list_state.clone();
+    let list_state_for_overlay_up_out = list_state.clone();
 
+    let is_dragging = drag_state.is_dragging.get();
+
+    // The outer container is ALWAYS 8px wide - never changes!
+    // This prevents layout shift when dragging.
+    // During drag, we add a full-screen fixed overlay to capture mouse events.
     div()
-        .w(SCROLLBAR_WIDTH)
+        .w(SCROLLBAR_WIDTH) // Always 8px - never changes!
         .h_full()
         .flex_shrink_0()
         .cursor_pointer()
+        // During drag, add a full-screen invisible overlay to capture mouse events
+        // anywhere on screen - this provides native scrollbar-like drag behavior
+        .when(is_dragging, |d| {
+            let drag_state_overlay = drag_state.clone();
+            let drag_state_overlay_up = drag_state.clone();
+            let drag_state_overlay_up_out = drag_state.clone();
+            d.child(
+                div()
+                    .absolute()
+                    // Position way off to top-left and make huge to cover any screen
+                    // This ensures coverage regardless of scrollbar position in DOM
+                    .top(px(-5000.))
+                    .left(px(-5000.))
+                    .w(px(10000.))
+                    .h(px(10000.))
+                    .on_mouse_move({
+                        move |event: &MouseMoveEvent, window: &mut Window, _cx: &mut App| {
+                            if !drag_state_overlay.is_dragging.get() {
+                                return;
+                            }
+
+                            let bounds = drag_state_overlay.bounds.get();
+                            let track_height = bounds.size.height;
+                            if track_height <= Pixels::ZERO {
+                                return;
+                            }
+
+                            let viewport_height =
+                                list_state_for_overlay_move.viewport_bounds().size.height;
+                            let max_offset = list_state_for_overlay_move.max_offset_for_scrollbar();
+
+                            if viewport_height <= Pixels::ZERO || max_offset.height <= Pixels::ZERO
+                            {
+                                return;
+                            }
+
+                            let Some(th) =
+                                list_thumb_height(viewport_height, max_offset.height, track_height)
+                            else {
+                                return;
+                            };
+
+                            let thumb_range = (track_height - th).max(Pixels::ZERO);
+                            if thumb_range <= Pixels::ZERO {
+                                return;
+                            }
+
+                            let mouse_delta_y =
+                                event.position.y - drag_state_overlay.drag_start_y.get();
+                            let start_ratio = drag_state_overlay.drag_start_ratio.get();
+                            let new_ratio = clamp01(start_ratio + (mouse_delta_y / thumb_range));
+
+                            set_scroll_ratio(
+                                &list_state_for_overlay_move,
+                                max_offset.height,
+                                new_ratio,
+                            );
+                            window.refresh();
+                        }
+                    })
+                    .on_mouse_up(MouseButton::Left, {
+                        move |_event: &MouseUpEvent, window: &mut Window, _cx: &mut App| {
+                            if drag_state_overlay_up.is_dragging.replace(false) {
+                                list_state_for_overlay_up.scrollbar_drag_ended();
+                            }
+                            window.refresh();
+                        }
+                    })
+                    .on_mouse_up_out(MouseButton::Left, {
+                        move |_event: &MouseUpEvent, window: &mut Window, _cx: &mut App| {
+                            if drag_state_overlay_up_out.is_dragging.replace(false) {
+                                list_state_for_overlay_up_out.scrollbar_drag_ended();
+                            }
+                            window.refresh();
+                        }
+                    }),
+            )
+        })
         .on_mouse_down(MouseButton::Left, {
             let drag_state = drag_state.clone();
             move |event: &MouseDownEvent, window: &mut Window, _cx: &mut App| {

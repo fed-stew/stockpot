@@ -149,15 +149,6 @@ impl ChatApp {
                                     .px(px(10.))
                                     .py(px(5.))
                                     .rounded(px(6.))
-                                    .tooltip(move |_window, cx| {
-                                        cx.new(|_| {
-                                            super::super::components::SimpleTooltip::new(format!(
-                                                "~{} / {} tokens",
-                                                context_tokens_used, context_window_size
-                                            ))
-                                        })
-                                        .into()
-                                    })
                                     // Label
                                     .child(
                                         div()
@@ -320,7 +311,7 @@ impl ChatApp {
                                     .rounded(px(6.))
                                     .bg(self.theme.tool_card)
                                     .text_color(self.theme.text)
-                                    .text_size(px(12.))
+                                    .text_size(px(16.))
                                     .cursor_pointer()
                                     .hover(|s| s.opacity(0.8))
                                     .on_mouse_up(
@@ -332,7 +323,7 @@ impl ChatApp {
                                             this.system_executions.visible = false;
                                             if this.show_settings {
                                                 this.settings_tab =
-                                                    super::settings::SettingsTab::PinnedAgents;
+                                                    super::settings::SettingsTab::General;
                                                 this.settings_selected_agent =
                                                     this.current_agent.clone();
                                                 // Refresh models to pick up any OAuth or API key changes

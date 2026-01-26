@@ -150,6 +150,16 @@ impl SystemExecStore {
         inner.processes.get(process_id).map(|p| p.snapshot.clone())
     }
 
+    /// Find a process by its friendly name (returns first match if multiple have same name)
+    pub fn find_by_name(&self, name: &str) -> Option<ProcessSnapshot> {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner
+            .processes
+            .values()
+            .find(|p| p.snapshot.name.as_deref() == Some(name))
+            .map(|p| p.snapshot.clone())
+    }
+
     /// Get output of a process
     pub fn output(&self, process_id: &str) -> Option<String> {
         self.snapshot(process_id).map(|s| s.output)
@@ -205,6 +215,7 @@ mod tests {
 
         let snapshot = ProcessSnapshot {
             process_id: "test-1".to_string(),
+            name: None,
             kind: ProcessKind::Llm,
             visible: true,
             output: String::new(),
@@ -231,6 +242,7 @@ mod tests {
 
         let snapshot = ProcessSnapshot {
             process_id: "test-2".to_string(),
+            name: None,
             kind: ProcessKind::User,
             visible: true,
             output: String::new(),

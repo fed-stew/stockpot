@@ -13,15 +13,17 @@ use gpui::{div, prelude::*, px, rgb, rgba, Context, MouseButton, SharedString, S
 use gpui_component::input::{Input, InputState};
 
 use crate::gui::app::ChatApp;
-use stockpot_core::config::Settings;
 use stockpot_core::models::settings::ModelSettings as SpotModelSettings;
 use stockpot_core::models::ModelType;
 
 impl ChatApp {
     /// Render the models settings tab content.
+    ///
+    /// Note: This tab is for MANAGING models (add, delete, configure API keys,
+    /// temperature, etc.) - NOT for selecting a default model. The default
+    /// model is set in the Pinned Agents tab.
     pub(crate) fn render_settings_models(&self, cx: &Context<Self>) -> impl IntoElement {
         let available_models = self.available_models.clone();
-        let current_default_model = self.current_model.clone();
 
         // Group models by provider type for display
         let by_type = self.group_models_by_type(&available_models);
@@ -33,7 +35,7 @@ impl ChatApp {
             .child(self.render_add_model_button(cx))
             .child(self.render_oauth_accounts(cx))
             .child(self.render_available_models_header(cx))
-            .child(self.render_models_list(by_type, &current_default_model, cx))
+            .child(self.render_models_list(by_type, cx))
             .into_any_element()
     }
 
@@ -118,6 +120,15 @@ impl ChatApp {
                         this.add_model_selected_model = None;
                         this.add_model_models.clear();
                         this.add_model_error = None;
+                        // Initialize or clear the filter input
+                        if this.add_model_provider_filter_input.is_none() {
+                            this.add_model_provider_filter_input = Some(cx.new(|cx| {
+                                gpui_component::input::InputState::new(window, cx)
+                                    .placeholder("Filter providers...")
+                            }));
+                        } else if let Some(input) = &this.add_model_provider_filter_input {
+                            input.update(cx, |state, cx| state.set_value("", window, cx));
+                        }
 
                         if this.add_model_api_key_input_entity.is_none() {
                             this.add_model_api_key_input_entity = Some(cx.new(|cx| {
@@ -198,7 +209,6 @@ impl ChatApp {
     fn render_models_list(
         &self,
         by_type: BTreeMap<String, Vec<(String, Option<String>)>>,
-        current_default_model: &str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         div()
@@ -206,9 +216,11 @@ impl ChatApp {
             .flex()
             .flex_col()
             .gap(px(14.))
-            .children(by_type.into_iter().map(|(type_label, models)| {
-                self.render_model_type_group(type_label, models, current_default_model, cx)
-            }))
+            .children(
+                by_type.into_iter().map(|(type_label, models)| {
+                    self.render_model_type_group(type_label, models, cx)
+                }),
+            )
     }
 
     /// Render a group of models for a specific type.
@@ -216,7 +228,6 @@ impl ChatApp {
         &self,
         type_label: String,
         models: Vec<(String, Option<String>)>,
-        current_default_model: &str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme.clone();
@@ -232,22 +243,24 @@ impl ChatApp {
                     .text_color(theme.text)
                     .child(type_label),
             )
-            .children(models.into_iter().map(|(model, desc)| {
-                self.render_model_item(model, desc, current_default_model, cx)
-            }))
+            .children(
+                models
+                    .into_iter()
+                    .map(|(model, desc)| self.render_model_item(model, desc, cx)),
+            )
     }
 
     /// Render a single model item (with expandable settings for non-OAuth models).
+    ///
+    /// Note: No selection styling here - this tab is for managing models,
+    /// not selecting a default. The expanded model gets a subtle left accent border.
     fn render_model_item(
         &self,
         model: String,
         desc: Option<String>,
-        current_default_model: &str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme.clone();
-        let is_selected = model == current_default_model;
-        let model_name = model.clone();
         let model_name_for_delete = model.clone();
         let model_name_for_expand = model.clone();
 
@@ -287,31 +300,30 @@ impl ChatApp {
             .flex_col()
             .child(
                 div()
-                    .id(SharedString::from(format!("default-model-{}", model)))
+                    .id(SharedString::from(format!("model-item-{}", model)))
                     .px(px(12.))
                     .py(px(10.))
                     .rounded_t(px(8.))
                     .when(!is_expanded, |d| d.rounded_b(px(8.)))
-                    .bg(if is_selected {
+                    .bg(theme.tool_card)
+                    .text_color(theme.text)
+                    // Subtle left accent border when expanded
+                    .border_l_2()
+                    .border_color(if is_expanded {
                         theme.accent
                     } else {
                         theme.tool_card
                     })
-                    .text_color(if is_selected {
-                        rgb(0xffffff)
-                    } else {
-                        theme.text
-                    })
                     .overflow_hidden()
-                    .cursor_pointer()
+                    .when(is_expandable, |d| d.cursor_pointer())
                     .hover(|s| s.opacity(0.9))
                     .flex()
                     .items_center()
                     .justify_between()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, window, cx| {
-                            if is_expandable {
+                    .when(is_expandable, |d| {
+                        d.on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, window, cx| {
                                 // Toggle expansion
                                 if this.expanded_settings_model.as_ref()
                                     == Some(&model_name_for_expand)
@@ -333,16 +345,10 @@ impl ChatApp {
                                         cx,
                                     );
                                 }
-                            } else {
-                                // Non-expandable: just set as default
-                                this.current_model = model_name.clone();
-                                let settings = Settings::new(&this.db);
-                                let _ = settings.set("model", &model_name);
-                                this.update_context_usage();
-                            }
-                            cx.notify();
-                        }),
-                    )
+                                cx.notify();
+                            }),
+                        )
+                    })
                     .child(
                         div()
                             .flex()
@@ -352,21 +358,17 @@ impl ChatApp {
                                 d.child(
                                     div()
                                         .text_size(px(10.))
-                                        .text_color(if is_selected {
-                                            rgba(0xffffffaa)
+                                        .text_color(if is_expanded {
+                                            theme.accent
                                         } else {
                                             theme.text_muted
                                         })
                                         .child(chevron),
                                 )
                             })
-                            .child(self.render_model_item_content(&model, &desc, is_selected)),
+                            .child(self.render_model_item_content(&model, &desc)),
                     )
-                    .child(self.render_model_delete_button(
-                        &model_name_for_delete,
-                        is_selected,
-                        cx,
-                    )),
+                    .child(self.render_model_delete_button(&model_name_for_delete, cx)),
             )
             // Expanded settings panel
             .when(is_expanded, |d| {
@@ -375,12 +377,7 @@ impl ChatApp {
     }
 
     /// Render the content (name + description) for a model item.
-    fn render_model_item_content(
-        &self,
-        model: &str,
-        desc: &str,
-        is_selected: bool,
-    ) -> impl IntoElement {
+    fn render_model_item_content(&self, model: &str, desc: &str) -> impl IntoElement {
         let theme = self.theme.clone();
         let mut inner = div()
             .flex()
@@ -399,11 +396,7 @@ impl ChatApp {
             inner = inner.child(
                 div()
                     .text_size(px(11.))
-                    .text_color(if is_selected {
-                        rgb(0xffffff)
-                    } else {
-                        theme.text_muted
-                    })
+                    .text_color(theme.text_muted)
                     .child(desc.to_string()),
             );
         }
@@ -412,12 +405,7 @@ impl ChatApp {
     }
 
     /// Render the delete button for a model item.
-    fn render_model_delete_button(
-        &self,
-        model_name: &str,
-        is_selected: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    fn render_model_delete_button(&self, model_name: &str, cx: &Context<Self>) -> impl IntoElement {
         let theme = self.theme.clone();
         let model_name = model_name.to_string();
 
@@ -427,11 +415,7 @@ impl ChatApp {
             .py(px(4.))
             .rounded(px(4.))
             .text_size(px(12.))
-            .text_color(if is_selected {
-                rgba(0xffffffaa)
-            } else {
-                theme.text_muted
-            })
+            .text_color(theme.text_muted)
             .cursor_pointer()
             .hover(|s| s.text_color(rgb(0xff6b6b)).bg(rgba(0xff6b6b22)))
             .on_mouse_down(MouseButton::Left, |_, _, cx| {

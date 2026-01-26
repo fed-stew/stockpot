@@ -11,7 +11,7 @@ use gpui::{
     div, prelude::*, px, rgb, rgba, Context, Entity, MouseButton, ScrollHandle, SharedString,
     Styled, Window,
 };
-use gpui_component::input::{InputEvent, InputState};
+use gpui_component::input::{Input, InputEvent, InputState};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
@@ -90,6 +90,10 @@ pub struct SystemExecutionsState {
     pub resize_start_y: Option<f32>,
     /// Starting height for terminal height resize
     pub resize_start_height: Option<f32>,
+    /// Whether to show the terminal name dialog
+    pub show_name_dialog: bool,
+    /// Input state for terminal name dialog
+    pub name_input: Option<Entity<InputState>>,
 }
 
 impl Default for SystemExecutionsState {
@@ -144,6 +148,8 @@ impl SystemExecutionsState {
             resizing_terminal: None,
             resize_start_y: None,
             resize_start_height: None,
+            show_name_dialog: false,
+            name_input: None,
         }
     }
 
@@ -164,8 +170,9 @@ impl SystemExecutionsState {
         id
     }
 
-    /// Get visible terminal snapshots sorted by start time (oldest first)
-    /// This ensures new terminals appear at the bottom of the list
+    /// Get visible terminal snapshots sorted:
+    /// 1. Named terminals first (alphabetically by name)
+    /// 2. Then unnamed terminals by start time (oldest first)
     /// Hidden terminals (like finished LLM commands) are filtered out
     pub fn get_sorted_snapshots(&self) -> Vec<ProcessSnapshot> {
         let mut snapshots: Vec<_> = self
@@ -174,7 +181,19 @@ impl SystemExecutionsState {
             .into_iter()
             .filter(|s| s.visible) // Only show visible terminals
             .collect();
-        snapshots.sort_by(|a, b| a.started_at_ms.cmp(&b.started_at_ms)); // Oldest first
+
+        snapshots.sort_by(|a, b| {
+            match (&a.name, &b.name) {
+                // Both have names - sort alphabetically
+                (Some(name_a), Some(name_b)) => name_a.cmp(name_b),
+                // Named terminals come before unnamed
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                // Both unnamed - sort by start time (oldest first)
+                (None, None) => a.started_at_ms.cmp(&b.started_at_ms),
+            }
+        });
+
         snapshots
     }
 
@@ -304,12 +323,120 @@ impl ChatApp {
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(|this, _, window, cx| {
-                                            this.spawn_user_terminal(window, cx);
+                                            // Create input state if needed
+                                            if this.system_executions.name_input.is_none() {
+                                                let input = cx.new(|cx| {
+                                                    InputState::new(window, cx)
+                                                        .placeholder("e.g., dev-server, build-watch...")
+                                                });
+                                                // Subscribe to Enter key to create terminal
+                                                cx.subscribe(&input, |this, input, event: &InputEvent, cx| {
+                                                    if let InputEvent::PressEnter { secondary: false } = event {
+                                                        let name = input.read(cx).value().to_string();
+                                                        let name = if name.trim().is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(name.trim().to_string())
+                                                        };
+                                                        this.system_executions.show_name_dialog = false;
+                                                        this.system_executions.name_input = None;
+                                                        // Get window from windows list and spawn terminal
+                                                        if let Some(window_handle) = cx.windows().first().cloned() {
+                                                            cx.spawn(async move |this: gpui::WeakEntity<ChatApp>, cx: &mut gpui::AsyncApp| {
+                                                                let _ = cx.update_window(window_handle, |_, window, cx| {
+                                                                    let _ = this.update(cx, |this, cx| {
+                                                                        this.spawn_user_terminal_with_name(name, window, cx);
+                                                                    });
+                                                                });
+                                                            }).detach();
+                                                        }
+                                                        cx.notify();
+                                                    }
+                                                }).detach();
+                                                this.system_executions.name_input = Some(input);
+                                            }
+                                            this.system_executions.show_name_dialog = true;
+                                            cx.notify();
                                         }),
                                     )
                                     .child("+ New Shell"),
                             ),
                     )
+                    // Name terminal dialog
+                    .when(state.show_name_dialog, |d| {
+                        d.child(
+                            div()
+                                .w_full()
+                                .px(px(16.))
+                                .py(px(12.))
+                                .bg(theme.tool_card)
+                                .border_b_1()
+                                .border_color(theme.border)
+                                .flex()
+                                .flex_col()
+                                .gap(px(8.))
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(theme.text)
+                                        .child("Name your terminal (optional):")
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .gap(px(8.))
+                                        .when_some(state.name_input.clone(), |d, input_entity| {
+                                            d.child(
+                                                div()
+                                                    .flex_1()
+                                                    .child(Input::new(&input_entity))
+                                            )
+                                        })
+                                        .child(
+                                            div()
+                                                .id("create-terminal-btn")
+                                                .px(px(12.))
+                                                .py(px(6.))
+                                                .rounded(px(4.))
+                                                .bg(theme.accent)
+                                                .text_color(rgb(0xffffff))
+                                                .text_size(px(11.))
+                                                .cursor_pointer()
+                                                .hover(|s| s.opacity(0.9))
+                                                .on_mouse_up(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                                                    let name = this.system_executions.name_input
+                                                        .as_ref()
+                                                        .map(|input| input.read(cx).value().to_string())
+                                                        .filter(|s| !s.trim().is_empty())
+                                                        .map(|s| s.trim().to_string());
+                                                    this.system_executions.show_name_dialog = false;
+                                                    this.system_executions.name_input = None;
+                                                    this.spawn_user_terminal_with_name(name, window, cx);
+                                                    cx.notify();
+                                                }))
+                                                .child("Create")
+                                        )
+                                        .child(
+                                            div()
+                                                .id("cancel-terminal-btn")
+                                                .px(px(12.))
+                                                .py(px(6.))
+                                                .rounded(px(4.))
+                                                .bg(theme.border)
+                                                .text_color(theme.text_muted)
+                                                .text_size(px(11.))
+                                                .cursor_pointer()
+                                                .hover(|s| s.opacity(0.9))
+                                                .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                                                    this.system_executions.show_name_dialog = false;
+                                                    this.system_executions.name_input = None;
+                                                    cx.notify();
+                                                }))
+                                                .child("Cancel")
+                                        )
+                                )
+                        )
+                    })
                     // Terminal list
                     .child(
                         div()
@@ -457,13 +584,32 @@ impl ChatApp {
                             .gap(px(6.))
                             // Status dot
                             .child(div().w(px(8.)).h(px(8.)).rounded_full().bg(status_color))
-                            // Process ID
+                            // Terminal name or process ID
                             .child(
                                 div()
-                                    .text_size(px(12.))
-                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                    .text_color(theme.text)
-                                    .child(process_id.clone()),
+                                    .flex()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(theme.text)
+                                            .child(
+                                                snapshot
+                                                    .name
+                                                    .clone()
+                                                    .unwrap_or_else(|| process_id.clone()),
+                                            ),
+                                    )
+                                    // Show process_id underneath if terminal has a name
+                                    .when_some(snapshot.name.as_ref(), |d, _| {
+                                        d.child(
+                                            div()
+                                                .text_size(px(10.))
+                                                .text_color(theme.text_muted)
+                                                .child(format!("({})", process_id)),
+                                        )
+                                    }),
                             )
                             // Kind badge
                             .child(
@@ -734,8 +880,19 @@ impl ChatApp {
             )
     }
 
-    /// Spawn a new user terminal
+    /// Spawn a new user terminal (without a name)
+    #[allow(dead_code)]
     fn spawn_user_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.spawn_user_terminal_with_name(None, window, cx);
+    }
+
+    /// Spawn a new user terminal with an optional name
+    fn spawn_user_terminal_with_name(
+        &mut self,
+        name: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let process_id = self.system_executions.generate_process_id();
         let cwd = std::env::current_dir().ok();
 
@@ -745,20 +902,29 @@ impl ChatApp {
             "$SHELL".to_string(),
             cwd,
             ProcessKind::User,
+            name,
             window,
             cx,
         );
     }
 
-    /// Kill a running terminal
+    /// Kill a running terminal and remove it from the UI
     fn kill_terminal(&mut self, process_id: &str, cx: &mut Context<Self>) {
-        // Mark as exited in the store
+        // 1. Mark as exited in the store (SIGKILL = 137)
         self.system_executions
             .store
-            .mark_finished(process_id, Some(137)); // SIGKILL
+            .mark_finished(process_id, Some(137));
+
+        // 2. Also remove from UI immediately - user wants kill to close too
+        self.system_executions.remove_terminal(process_id);
+
+        // 3. Clean up associated view entities
+        self.system_executions.terminal_views.remove(process_id);
+        self.system_executions.terminal_inputs.remove(process_id);
+        self.system_executions.terminal_heights.remove(process_id);
 
         // TODO: Actually send signal to PTY process
-        // For now we just mark it as finished
+        // For now we just mark it as finished and remove from UI
         cx.notify();
     }
 
@@ -769,6 +935,7 @@ impl ChatApp {
         command: String,
         cwd: Option<PathBuf>,
         kind: ProcessKind,
+        name: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -796,7 +963,7 @@ impl ChatApp {
             .insert(process_id.clone(), input_entity);
 
         // Call the common spawn logic
-        self.spawn_terminal_common(process_id, command, cwd, kind, cx);
+        self.spawn_terminal_common(process_id, command, cwd, kind, name, cx);
     }
 
     /// Spawn a terminal process without interactive input (for LLM terminals)
@@ -808,8 +975,8 @@ impl ChatApp {
         kind: ProcessKind,
         cx: &mut Context<Self>,
     ) {
-        // No input state for LLM terminals
-        self.spawn_terminal_common(process_id, command, cwd, kind, cx);
+        // No input state for LLM terminals - no name for LLM terminals
+        self.spawn_terminal_common(process_id, command, cwd, kind, None, cx);
     }
 
     /// Common spawn logic shared between interactive and non-interactive terminals
@@ -819,6 +986,7 @@ impl ChatApp {
         command: String,
         cwd: Option<PathBuf>,
         kind: ProcessKind,
+        name: Option<String>,
         cx: &mut Context<Self>,
     ) {
         let now_ms = std::time::SystemTime::now()
@@ -829,6 +997,7 @@ impl ChatApp {
         // Create initial snapshot
         let snapshot = ProcessSnapshot {
             process_id: process_id.clone(),
+            name,
             kind,
             visible: true,
             output: String::new(),

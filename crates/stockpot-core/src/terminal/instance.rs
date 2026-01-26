@@ -55,8 +55,8 @@ impl Terminal {
         kind: ProcessKind,
     ) -> Result<(Self, mpsc::UnboundedReceiver<PtyEvent>), String> {
         let size = PtySize {
-            rows: 16,
-            cols: 50,
+            rows: 24,
+            cols: 120,
             pixel_width: 0,
             pixel_height: 0,
         };
@@ -233,6 +233,7 @@ impl Terminal {
     pub fn snapshot(&self) -> ProcessSnapshot {
         ProcessSnapshot {
             process_id: self.process_id.clone(),
+            name: None, // TODO: Wire up terminal naming feature
             kind: self.kind,
             visible: self.visible,
             output: self.output_buffer.clone(),

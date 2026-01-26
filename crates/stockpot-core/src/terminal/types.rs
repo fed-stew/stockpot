@@ -21,6 +21,8 @@ pub enum ProcessKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessSnapshot {
     pub process_id: String,
+    #[serde(default)] // For backward compatibility
+    pub name: Option<String>, // User-friendly name for the terminal
     pub kind: ProcessKind,
     pub visible: bool,
     pub output: String,

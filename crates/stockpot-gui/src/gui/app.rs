@@ -177,6 +177,8 @@ pub struct ChatApp {
     add_model_api_key_input_entity: Option<Entity<InputState>>,
     add_model_loading: bool,
     add_model_error: Option<String>,
+    /// Filter input for provider list in add model dialog
+    add_model_provider_filter_input: Option<Entity<InputState>>,
 
     /// API keys dialog state
     show_api_keys_dialog: bool,
@@ -364,6 +366,7 @@ impl ChatApp {
             add_model_api_key_input_entity: None,
             add_model_loading: false,
             add_model_error: None,
+            add_model_provider_filter_input: None,
 
             show_api_keys_dialog: false,
             api_keys_list: Vec::new(),
