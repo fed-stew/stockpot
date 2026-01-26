@@ -283,9 +283,6 @@ impl ChatApp {
         self.is_generating = true;
         self.error_message = None;
 
-        // Update context before spawning - gives initial estimate
-        self.update_context_usage();
-
         cx.spawn(async move |this: WeakEntity<ChatApp>, cx: &mut AsyncApp| {
             // Destructure the data bundle
             let ExecuteData {
@@ -391,7 +388,6 @@ impl ChatApp {
                         );
                         if !exec_result.messages.is_empty() {
                             app.message_history = exec_result.messages;
-                            app.update_context_usage();
                         }
                     }
                     Err(e) => {

@@ -305,6 +305,91 @@ impl<'a> Settings<'a> {
         }
         Ok(attachments)
     }
+
+    // ============ Helper Methods for Typed Access ============
+
+    /// Get a string setting (returns None if not found)
+    pub fn get_string(&self, key: &str) -> Option<String> {
+        self.get(key).ok().flatten()
+    }
+
+    /// Set a string setting
+    pub fn set_string(&self, key: &str, value: &str) {
+        let _ = self.set(key, value);
+    }
+
+    /// Get a float setting (returns None if not found or invalid)
+    pub fn get_float(&self, key: &str) -> Option<f64> {
+        self.get(key).ok().flatten().and_then(|s| s.parse().ok())
+    }
+
+    /// Set a float setting
+    pub fn set_float(&self, key: &str, value: f64) {
+        let _ = self.set(key, &value.to_string());
+    }
+
+    /// Get an int setting (returns None if not found or invalid)
+    pub fn get_int(&self, key: &str) -> Option<i64> {
+        self.get(key).ok().flatten().and_then(|s| s.parse().ok())
+    }
+
+    /// Set an int setting
+    pub fn set_int(&self, key: &str, value: i64) {
+        let _ = self.set(key, &value.to_string());
+    }
+
+    /// Set a bool setting
+    pub fn set_bool(&self, key: &str, value: bool) {
+        let _ = self.set(key, if value { "true" } else { "false" });
+    }
+
+    // ============ Context Compression Settings ============
+
+    /// Get whether context compression is enabled (default: true)
+    pub fn get_compression_enabled(&self) -> bool {
+        // Default to true - compression is on by default
+        self.get("compression.enabled")
+            .ok()
+            .flatten()
+            .map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0" | "no" | "off"))
+            .unwrap_or(true)
+    }
+
+    /// Set whether context compression is enabled
+    pub fn set_compression_enabled(&self, enabled: bool) {
+        self.set_bool("compression.enabled", enabled);
+    }
+
+    /// Get compression strategy: "truncate" or "summarize" (default: "truncate")
+    pub fn get_compression_strategy(&self) -> String {
+        self.get_string("compression.strategy")
+            .unwrap_or_else(|| "truncate".to_string())
+    }
+
+    /// Set compression strategy
+    pub fn set_compression_strategy(&self, strategy: &str) {
+        self.set_string("compression.strategy", strategy);
+    }
+
+    /// Get compression threshold (0.0-1.0, default: 0.75)
+    pub fn get_compression_threshold(&self) -> f64 {
+        self.get_float("compression.threshold").unwrap_or(0.75)
+    }
+
+    /// Set compression threshold
+    pub fn set_compression_threshold(&self, threshold: f64) {
+        self.set_float("compression.threshold", threshold);
+    }
+
+    /// Get target tokens for compression (default: 30000)
+    pub fn get_compression_target_tokens(&self) -> usize {
+        self.get_int("compression.target_tokens").unwrap_or(30000) as usize
+    }
+
+    /// Set target tokens for compression
+    pub fn set_compression_target_tokens(&self, tokens: usize) {
+        self.set_int("compression.target_tokens", tokens as i64);
+    }
 }
 
 #[cfg(test)]

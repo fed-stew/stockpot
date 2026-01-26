@@ -1,6 +1,6 @@
 [package]
 name = "stockpot"
-version = "0.21.7"
+version = "0.21.8"
 edition = "2021"
 description = "AI-powered coding assistant with native GUI"
 license = "MIT"
@@ -23,14 +23,15 @@ path = "src/bin/spot_cli.rs"
 
 [dependencies]
 # SerdesAI - AI agent framework
-# Pinned to v0.1.2 commit for reproducibility
-serdes-ai = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74", features = ["full"] }
-serdes-ai-core = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74" }
-serdes-ai-agent = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74", features = ["tracing-integration"] }
-serdes-ai-models = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74", features = ["full", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
-serdes-ai-providers = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74", features = ["full"] }
-serdes-ai-tools = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74" }
-serdes-ai-mcp = { git = "https://github.com/janfeddersen-wq/serdesAI", rev = "9f44e74" }
+# Using local path for development with context compression changes
+# SerdesAI - AI agent framework (crates.io v0.1.3)
+serdes-ai = { version = "0.1.3", features = ["full"] }
+serdes-ai-core = { version = "0.1.3" }
+serdes-ai-agent = { version = "0.1.3", features = ["tracing-integration"] }
+serdes-ai-models = { version = "0.1.3", features = ["full", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
+serdes-ai-providers = { version = "0.1.3", features = ["full"] }
+serdes-ai-tools = { version = "0.1.3" }
+serdes-ai-mcp = { version = "0.1.3" }
 
 # Markdown rendering
 streamdown-parser = { git = "https://github.com/fed-stew/streamdown-rs" }

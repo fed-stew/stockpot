@@ -454,10 +454,20 @@ impl TuiApp {
     /// Handle Down key in settings
     fn handle_settings_down_key(&mut self) {
         use super::settings::{PinnedAgentsPanel, SettingsTab};
+        use crate::config::Settings;
 
         match self.settings_state.active_tab {
             SettingsTab::General => {
-                if self.settings_state.selected_index < 3 {
+                // Max index depends on whether compression is enabled
+                // Indices: 0=PDF, 1=UserMode, 2=Reasoning, 3=YOLO, 4=CompressionToggle
+                // If compression enabled: 5=Strategy, 6=Threshold, 7=Target
+                let settings = Settings::new(&self.db);
+                let max_index = if settings.get_compression_enabled() {
+                    7
+                } else {
+                    4
+                };
+                if self.settings_state.selected_index < max_index {
                     self.settings_state.selected_index += 1;
                 }
             }
@@ -568,6 +578,40 @@ impl TuiApp {
                         // YOLO Mode - toggle
                         let current = settings.yolo_mode();
                         let _ = settings.set_yolo_mode(!current);
+                    }
+                    4 => {
+                        // Compression Enabled - toggle
+                        let current = settings.get_compression_enabled();
+                        settings.set_compression_enabled(!current);
+                    }
+                    5 => {
+                        // Compression Strategy - toggle between truncate/summarize
+                        let current = settings.get_compression_strategy();
+                        let new_strategy = if current == "truncate" {
+                            "summarize"
+                        } else {
+                            "truncate"
+                        };
+                        settings.set_compression_strategy(new_strategy);
+                    }
+                    6 => {
+                        // Compression Threshold - cycle through options
+                        let thresholds = [0.50, 0.65, 0.75, 0.85, 0.95];
+                        let current = settings.get_compression_threshold();
+                        let idx = thresholds
+                            .iter()
+                            .position(|&t| (t - current).abs() < 0.01)
+                            .unwrap_or(2);
+                        let new_idx = (idx + 1) % thresholds.len();
+                        settings.set_compression_threshold(thresholds[new_idx]);
+                    }
+                    7 => {
+                        // Compression Target - cycle through options
+                        let targets = [10_000usize, 20_000, 30_000, 50_000, 75_000];
+                        let current = settings.get_compression_target_tokens();
+                        let idx = targets.iter().position(|&t| t == current).unwrap_or(2);
+                        let new_idx = (idx + 1) % targets.len();
+                        settings.set_compression_target_tokens(targets[new_idx]);
                     }
                     _ => {}
                 }
@@ -695,6 +739,10 @@ impl TuiApp {
                 let current = settings.yolo_mode();
                 let _ = settings.set_yolo_mode(!current);
             }
+            "compression.enabled" => {
+                let current = settings.get_compression_enabled();
+                settings.set_compression_enabled(!current);
+            }
             _ => {}
         }
     }
@@ -723,6 +771,22 @@ impl TuiApp {
                 };
                 let _ = settings.set_user_mode(mode);
                 self.user_mode = mode;
+            }
+            "compression.strategy" => {
+                let strategy = if option == 0 { "truncate" } else { "summarize" };
+                settings.set_compression_strategy(strategy);
+            }
+            "compression.threshold" => {
+                let thresholds = [0.50, 0.65, 0.75, 0.85, 0.95];
+                if let Some(&threshold) = thresholds.get(option) {
+                    settings.set_compression_threshold(threshold);
+                }
+            }
+            "compression.target_tokens" => {
+                let targets = [10_000, 20_000, 30_000, 50_000, 75_000];
+                if let Some(&tokens) = targets.get(option) {
+                    settings.set_compression_target_tokens(tokens);
+                }
             }
             _ => {}
         }
@@ -776,6 +840,41 @@ impl TuiApp {
                         let _ = settings.set_user_mode(new_mode);
                         self.user_mode = new_mode;
                     }
+                    // Index 2 = Show Reasoning (toggle), Index 3 = YOLO Mode (toggle)
+                    // Index 4 = Compression Toggle
+                    5 => {
+                        // Compression Strategy: toggle between truncate/summarize
+                        let current = settings.get_compression_strategy();
+                        let new_strategy = if current == "truncate" {
+                            "summarize"
+                        } else {
+                            "truncate"
+                        };
+                        settings.set_compression_strategy(new_strategy);
+                    }
+                    6 => {
+                        // Compression Threshold: cycle backwards
+                        let thresholds = [0.50, 0.65, 0.75, 0.85, 0.95];
+                        let current = settings.get_compression_threshold();
+                        let idx = thresholds
+                            .iter()
+                            .position(|&t| (t - current).abs() < 0.01)
+                            .unwrap_or(2);
+                        let new_idx = if idx == 0 {
+                            thresholds.len() - 1
+                        } else {
+                            idx - 1
+                        };
+                        settings.set_compression_threshold(thresholds[new_idx]);
+                    }
+                    7 => {
+                        // Compression Target: cycle backwards
+                        let targets = [10_000usize, 20_000, 30_000, 50_000, 75_000];
+                        let current = settings.get_compression_target_tokens();
+                        let idx = targets.iter().position(|&t| t == current).unwrap_or(2);
+                        let new_idx = if idx == 0 { targets.len() - 1 } else { idx - 1 };
+                        settings.set_compression_target_tokens(targets[new_idx]);
+                    }
                     _ => {}
                 }
             }
@@ -820,6 +919,37 @@ impl TuiApp {
                         };
                         let _ = settings.set_user_mode(new_mode);
                         self.user_mode = new_mode;
+                    }
+                    // Index 2 = Show Reasoning (toggle), Index 3 = YOLO Mode (toggle)
+                    // Index 4 = Compression Toggle
+                    5 => {
+                        // Compression Strategy: toggle between truncate/summarize
+                        let current = settings.get_compression_strategy();
+                        let new_strategy = if current == "truncate" {
+                            "summarize"
+                        } else {
+                            "truncate"
+                        };
+                        settings.set_compression_strategy(new_strategy);
+                    }
+                    6 => {
+                        // Compression Threshold: cycle forwards
+                        let thresholds = [0.50, 0.65, 0.75, 0.85, 0.95];
+                        let current = settings.get_compression_threshold();
+                        let idx = thresholds
+                            .iter()
+                            .position(|&t| (t - current).abs() < 0.01)
+                            .unwrap_or(2);
+                        let new_idx = (idx + 1) % thresholds.len();
+                        settings.set_compression_threshold(thresholds[new_idx]);
+                    }
+                    7 => {
+                        // Compression Target: cycle forwards
+                        let targets = [10_000usize, 20_000, 30_000, 50_000, 75_000];
+                        let current = settings.get_compression_target_tokens();
+                        let idx = targets.iter().position(|&t| t == current).unwrap_or(2);
+                        let new_idx = (idx + 1) % targets.len();
+                        settings.set_compression_target_tokens(targets[new_idx]);
                     }
                     _ => {}
                 }
@@ -1099,15 +1229,13 @@ impl TuiApp {
             .unwrap_or_else(|| self.current_model.clone())
     }
 
-    /// Update context usage tracking
+    /// Update the context window size based on current model (tokens come from agent ContextInfo)
     pub fn update_context_usage(&mut self) {
-        // Use the existing token estimation utility
-        self.context_tokens_used = crate::tokens::estimate_tokens(&self.message_history);
-
         // Update window size from current model
         if let Some(model) = self.model_registry.get(&self.current_model) {
             self.context_window_size = model.context_length;
         }
+        // Note: context_tokens_used is ONLY updated by ContextInfo events from the agent
     }
 
     /// Handle an application event
@@ -1850,7 +1978,6 @@ impl TuiApp {
                         self.conversation.finish_current_message();
                         self.is_generating = false;
                         self.stream_start = None;
-                        self.update_context_usage();
                     }
                 }
                 AgentEvent::Error { message } => {
@@ -1888,12 +2015,35 @@ impl TuiApp {
                 // Update message history from executor result
                 if !history_update.messages.is_empty() {
                     self.message_history = history_update.messages;
-                    self.update_context_usage();
                     tracing::debug!(
                         history_len = self.message_history.len(),
                         "Updated message history from executor"
                     );
                 }
+            }
+            Message::ContextInfo(info) => {
+                // Update context usage with real data from the agent
+                self.context_tokens_used = info.estimated_tokens;
+                if let Some(limit) = info.context_limit {
+                    self.context_window_size = limit as usize;
+                }
+                tracing::debug!(
+                    tokens = info.estimated_tokens,
+                    bytes = info.request_bytes,
+                    limit = ?info.context_limit,
+                    "Context info received from agent"
+                );
+            }
+            Message::ContextCompressed(compressed) => {
+                tracing::info!(
+                    original = compressed.original_tokens,
+                    compressed = compressed.compressed_tokens,
+                    strategy = %compressed.strategy,
+                    messages_before = compressed.messages_before,
+                    messages_after = compressed.messages_after,
+                    "Context was compressed"
+                );
+                self.context_tokens_used = compressed.compressed_tokens;
             }
             _ => {}
         }
@@ -1956,8 +2106,6 @@ impl TuiApp {
         self.conversation.add_user_message(final_content.clone());
         self.add_user_activity(&final_content);
         self.message_list_state.scroll_to_bottom();
-
-        self.update_context_usage();
 
         // Prepare for execution
         let agent_name = self.current_agent.clone();

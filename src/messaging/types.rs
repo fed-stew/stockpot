@@ -156,6 +156,24 @@ pub enum ToolStatus {
     Failed,
 }
 
+/// Context size information from agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextInfoMessage {
+    pub estimated_tokens: usize,
+    pub request_bytes: usize,
+    pub context_limit: Option<u64>,
+}
+
+/// Context compression notification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextCompressedMessage {
+    pub original_tokens: usize,
+    pub compressed_tokens: usize,
+    pub strategy: String,
+    pub messages_before: usize,
+    pub messages_after: usize,
+}
+
 /// Streaming text from agent response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextDeltaMessage {
@@ -213,6 +231,8 @@ pub enum Message {
     Thinking(ThinkingMessage),
     HistoryUpdate(HistoryUpdateMessage),
     Retry(RetryMessage),
+    ContextInfo(ContextInfoMessage),
+    ContextCompressed(ContextCompressedMessage),
     Divider,
     Clear,
 }

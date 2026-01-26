@@ -22,7 +22,7 @@ impl ChatApp {
     ) {
         self.conversation.clear();
         self.message_history.clear();
-        self.update_context_usage();
+        self.context_tokens_used = 0;
         self.active_agent_stack.clear();
         self.active_section_ids.clear();
         self.input_state.update(cx, |state, cx| {
@@ -136,7 +136,7 @@ impl ChatApp {
         self.current_agent = name.to_string();
         let _ = self.agents.switch(name);
         self.message_history.clear();
-        self.update_context_usage();
+        self.context_tokens_used = 0;
         self.show_agent_dropdown = false;
         self.show_model_dropdown = false;
     }

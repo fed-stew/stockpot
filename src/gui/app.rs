@@ -98,8 +98,6 @@ pub struct ChatApp {
     context_tokens_used: usize,
     /// Current model's context window size
     context_window_size: usize,
-    /// Last time context usage was updated (for throttling)
-    last_context_update: std::time::Instant,
     /// Rolling window of throughput samples: (chars_in_sample, timestamp)
     throughput_samples: Vec<(usize, std::time::Instant)>,
     /// Current calculated throughput in chars/sec (for display)
@@ -145,6 +143,8 @@ pub struct ChatApp {
     model_settings_save_success: Option<std::time::Instant>,
     /// Error message to display
     error_message: Option<String>,
+    /// Compression notification (shown temporarily when context is compressed)
+    pub compression_notification: Option<(std::time::Instant, String)>,
 
     /// Scroll handle for settings content
     settings_scroll_handle: ScrollHandle,
@@ -317,7 +317,6 @@ impl ChatApp {
             message_history: Vec::new(),
             context_tokens_used: 0,
             context_window_size: 0,
-            last_context_update: std::time::Instant::now(),
             throughput_samples: Vec::new(),
             current_throughput_cps: 0.0,
             is_streaming_active: false,
@@ -340,6 +339,7 @@ impl ChatApp {
             model_api_key_input_entity: None,
             model_settings_save_success: None,
             error_message: None,
+            compression_notification: None,
 
             settings_scroll_handle: ScrollHandle::new(),
             settings_scrollbar_drag: Rc::new(ScrollbarDragState::default()),
@@ -411,9 +411,6 @@ impl ChatApp {
 
         // Set up keyboard focus on the main app
         window.focus(&app.focus_handle, cx);
-
-        // Initial context usage update
-        app.update_context_usage();
 
         app
     }

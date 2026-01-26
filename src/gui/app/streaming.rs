@@ -269,12 +269,6 @@ impl ChatApp {
                     }
                 }
 
-                // Throttled context usage update (every 500ms during streaming)
-                if self.last_context_update.elapsed() > std::time::Duration::from_millis(500) {
-                    self.update_context_usage();
-                    self.last_context_update = std::time::Instant::now();
-                }
-
                 // Mark that we want to scroll to bottom - the independent animation loop handles the actual scrolling
                 if !self.user_scrolled_away {
                     self.start_smooth_scroll_to_bottom();
@@ -368,8 +362,6 @@ impl ChatApp {
                         } else {
                             self.conversation.complete_tool_call(&tool.tool_name, true);
                         }
-                        // Update context usage after tool completes
-                        self.update_context_usage();
                     }
                     ToolStatus::Failed => {
                         if let Some(agent_name) = &tool.agent_name {
@@ -385,8 +377,6 @@ impl ChatApp {
                         } else {
                             self.conversation.complete_tool_call(&tool.tool_name, false);
                         }
-                        // Update context usage after tool fails
-                        self.update_context_usage();
                     }
                     _ => {}
                 }
@@ -404,8 +394,6 @@ impl ChatApp {
                         self.user_scrolled_away = false;
                         // Trigger smooth scroll to show the new assistant message
                         self.start_smooth_scroll_to_bottom();
-                        // Update context at start of conversation
-                        self.update_context_usage();
                         // Reset throughput tracking for new response
                         self.reset_throughput();
                     } else {
@@ -431,9 +419,6 @@ impl ChatApp {
                             self.conversation.set_section_collapsed(section_id, true);
                         }
                     }
-
-                    // Update context usage when agent completes
-                    self.update_context_usage();
 
                     // Only finish generating if main agent completed (stack empty)
                     if self.active_agent_stack.is_empty() {
@@ -475,6 +460,46 @@ impl ChatApp {
                     }
                 }
             },
+            Message::ContextInfo(info) => {
+                // Update context usage with real data from the agent
+                self.context_tokens_used = info.estimated_tokens;
+                if let Some(limit) = info.context_limit {
+                    self.context_window_size = limit as usize;
+                }
+                // Log for debugging
+                tracing::debug!(
+                    tokens = info.estimated_tokens,
+                    bytes = info.request_bytes,
+                    limit = ?info.context_limit,
+                    "Context info received from agent"
+                );
+            }
+            Message::ContextCompressed(compressed) => {
+                // Log compression event
+                tracing::info!(
+                    original = compressed.original_tokens,
+                    compressed = compressed.compressed_tokens,
+                    strategy = %compressed.strategy,
+                    messages_before = compressed.messages_before,
+                    messages_after = compressed.messages_after,
+                    "Context was compressed"
+                );
+                // Update displayed token count
+                self.context_tokens_used = compressed.compressed_tokens;
+
+                // Show notification
+                let saved_tokens = compressed
+                    .original_tokens
+                    .saturating_sub(compressed.compressed_tokens);
+                let notification = format!(
+                    "📦 Context compressed: {} → {} tokens ({} saved) using {}",
+                    crate::tokens::format_tokens_with_separator(compressed.original_tokens),
+                    crate::tokens::format_tokens_with_separator(compressed.compressed_tokens),
+                    crate::tokens::format_tokens_with_separator(saved_tokens),
+                    compressed.strategy
+                );
+                self.compression_notification = Some((std::time::Instant::now(), notification));
+            }
             _ => {}
         }
 

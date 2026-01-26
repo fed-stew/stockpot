@@ -12,7 +12,7 @@ use futures::StreamExt;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
-use serdes_ai_agent::{agent, RunOptions};
+use serdes_ai_agent::{agent, ContextCompression, RunOptions};
 use serdes_ai_core::messages::ToolCallArgs;
 use serdes_ai_core::messages::{UserContent, UserContentPart};
 use serdes_ai_core::{
@@ -119,6 +119,28 @@ fn format_stream_event(event: &StreamEvent) -> String {
         StreamEvent::OutputReady => "OutputReady".to_string(),
         StreamEvent::Error { message } => {
             format!("Error {{ message: {:?} }}", message)
+        }
+        StreamEvent::ContextInfo {
+            estimated_tokens,
+            request_bytes,
+            context_limit,
+        } => {
+            format!(
+                "ContextInfo {{ estimated_tokens: {}, request_bytes: {}, context_limit: {:?} }}",
+                estimated_tokens, request_bytes, context_limit
+            )
+        }
+        StreamEvent::ContextCompressed {
+            original_tokens,
+            compressed_tokens,
+            strategy,
+            messages_before,
+            messages_after,
+        } => {
+            format!(
+                "ContextCompressed {{ original: {}, compressed: {}, strategy: {:?}, messages: {} -> {} }}",
+                original_tokens, compressed_tokens, strategy, messages_before, messages_after
+            )
         }
     }
 }
@@ -430,6 +452,24 @@ impl<'a> AgentExecutor<'a> {
         let tool_return_recorder = tool_return_recorder.clone();
         let (tx, rx) = mpsc::channel(32);
 
+        // Build compression config from settings (loaded before spawn)
+        let compression_config = {
+            let settings = crate::config::Settings::new(self.db);
+            if settings.get_compression_enabled() {
+                let strategy = match settings.get_compression_strategy().as_str() {
+                    "summarize" => serdes_ai_agent::CompressionStrategy::Summarize,
+                    _ => serdes_ai_agent::CompressionStrategy::Truncate,
+                };
+                Some(ContextCompression {
+                    strategy,
+                    threshold: settings.get_compression_threshold(),
+                    target_tokens: settings.get_compression_target_tokens(),
+                })
+            } else {
+                None
+            }
+        };
+
         // Log what we're sending to serdesAI
         match &prompt {
             UserContent::Text(t) => {
@@ -536,10 +576,22 @@ impl<'a> AgentExecutor<'a> {
             debug!(history_messages = history_len, "Setting up run options");
 
             let options = match message_history {
-                Some(history) => RunOptions::new()
-                    .model_settings(core_settings)
-                    .message_history(history),
-                None => RunOptions::new().model_settings(core_settings),
+                Some(history) => {
+                    let mut opts = RunOptions::new()
+                        .model_settings(core_settings)
+                        .message_history(history);
+                    if let Some(compression) = compression_config.clone() {
+                        opts = opts.with_compression(compression);
+                    }
+                    opts
+                }
+                None => {
+                    let mut opts = RunOptions::new().model_settings(core_settings);
+                    if let Some(compression) = compression_config.clone() {
+                        opts = opts.with_compression(compression);
+                    }
+                    opts
+                }
             };
 
             // Use real streaming from serdesAI
@@ -670,6 +722,24 @@ impl<'a> AgentExecutor<'a> {
         let tool_return_recorder = tool_return_recorder.clone();
         let (tx, rx) = mpsc::channel(32);
 
+        // Build compression config from settings (loaded before spawn)
+        let compression_config = {
+            let settings = crate::config::Settings::new(self.db);
+            if settings.get_compression_enabled() {
+                let strategy = match settings.get_compression_strategy().as_str() {
+                    "summarize" => serdes_ai_agent::CompressionStrategy::Summarize,
+                    _ => serdes_ai_agent::CompressionStrategy::Truncate,
+                };
+                Some(ContextCompression {
+                    strategy,
+                    threshold: settings.get_compression_threshold(),
+                    target_tokens: settings.get_compression_target_tokens(),
+                })
+            } else {
+                None
+            }
+        };
+
         debug!(
             tool_count = tool_data.len(),
             "Spawning streaming task with rotated key"
@@ -751,10 +821,22 @@ impl<'a> AgentExecutor<'a> {
             debug!("Agent built successfully");
 
             let options = match message_history {
-                Some(history) => RunOptions::new()
-                    .model_settings(core_settings)
-                    .message_history(history),
-                None => RunOptions::new().model_settings(core_settings),
+                Some(history) => {
+                    let mut opts = RunOptions::new()
+                        .model_settings(core_settings)
+                        .message_history(history);
+                    if let Some(compression) = compression_config.clone() {
+                        opts = opts.with_compression(compression);
+                    }
+                    opts
+                }
+                None => {
+                    let mut opts = RunOptions::new().model_settings(core_settings);
+                    if let Some(compression) = compression_config.clone() {
+                        opts = opts.with_compression(compression);
+                    }
+                    opts
+                }
             };
 
             debug!("Calling run_stream_with_options");

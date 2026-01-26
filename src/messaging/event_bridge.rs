@@ -4,7 +4,7 @@
 //! from the agent runtime into UI-agnostic messages that can be rendered
 //! by any subscriber (terminal, web UI, etc.).
 
-use super::{Message, MessageSender};
+use super::{ContextCompressedMessage, ContextInfoMessage, Message, MessageSender};
 use serdes_ai_agent::AgentStreamEvent as StreamEvent;
 use std::collections::HashMap;
 
@@ -72,6 +72,43 @@ impl EventBridge {
         ));
     }
 
+    /// Send context size information.
+    pub fn context_info(
+        &self,
+        estimated_tokens: usize,
+        request_bytes: usize,
+        context_limit: Option<u64>,
+    ) {
+        self.send(Message::ContextInfo(ContextInfoMessage {
+            estimated_tokens,
+            request_bytes,
+            context_limit,
+        }));
+    }
+
+    /// Send context compression notification.
+    pub fn context_compressed(
+        &self,
+        original_tokens: usize,
+        compressed_tokens: usize,
+        strategy: &str,
+        messages_before: usize,
+        messages_after: usize,
+    ) {
+        self.send(Message::ContextCompressed(ContextCompressedMessage {
+            original_tokens,
+            compressed_tokens,
+            strategy: strategy.to_string(),
+            messages_before,
+            messages_after,
+        }));
+    }
+
+    /// Internal send helper.
+    fn send(&self, message: Message) {
+        let _ = self.sender.send(message);
+    }
+
     /// Process a stream event and publish appropriate messages.
     ///
     /// This is the main entry point - call this for each event from the stream.
@@ -85,6 +122,30 @@ impl EventBridge {
                 // Could emit a step indicator if needed
                 // For now, silent
                 let _ = step;
+            }
+
+            StreamEvent::ContextInfo {
+                estimated_tokens,
+                request_bytes,
+                context_limit,
+            } => {
+                self.context_info(estimated_tokens, request_bytes, context_limit);
+            }
+
+            StreamEvent::ContextCompressed {
+                original_tokens,
+                compressed_tokens,
+                strategy,
+                messages_before,
+                messages_after,
+            } => {
+                self.context_compressed(
+                    original_tokens,
+                    compressed_tokens,
+                    &strategy,
+                    messages_before,
+                    messages_after,
+                );
             }
 
             StreamEvent::TextDelta { text } => {

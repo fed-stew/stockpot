@@ -157,9 +157,9 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "ar_archive_writer"
-version = "0.2.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0c269894b6fe5e9d7ada0cf69b5bf847ff35bc25fc271f08e1d080fce80339a"
+checksum = "7eb93bbb63b9c227414f6eb3a0adfddca591a8ce1e9b60661bb08969b87e340b"
 dependencies = [
  "object",
 ]
@@ -5107,9 +5107,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.32.2"
+version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a622008b6e321afc04970976f62ee297fdbaa6f95318ca343e3eebb9648441"
+checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
 ]
@@ -5730,9 +5730,9 @@ dependencies = [
 
 [[package]]
 name = "psm"
-version = "0.1.28"
+version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d11f2fedc3b7dafdc2851bc52f277377c5473d378859be234bc7ebb593144d01"
+checksum = "1fa96cb91275ed31d6da3e983447320c4eb219ac180fa1679a0889ff32861e2d"
 dependencies = [
  "ar_archive_writer",
  "cc",
@@ -6865,8 +6865,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b41e02386165cdb8fec83d80e7fb2e25bbca81d8b06dd6327a3e088ef50b82c"
 dependencies = [
  "futures",
  "serdes-ai-agent",
@@ -6889,8 +6890,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-agent"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab26921f44708fefe66f55d09a95d422ac6f816699fcdde2aca849ae511eb613"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6911,8 +6913,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-core"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e559e47c870ebbf11754414955c82f66881ae0ea407b2ad8645d3f08095b43bf"
 dependencies = [
  "anyhow",
  "base64",
@@ -6933,8 +6936,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-embeddings"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875d2b1c5106ccaf236126eb153c0b56adc30fef7060933f060d0ca8e8349f15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6948,8 +6952,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-evals"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ff0e48c7e9a76ab2e8bd7d4ead7ac4dc85be74a14dc8f35e4079b7bf85eb37c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6967,8 +6972,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-graph"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c52f132ff260fb27f8be703372ad6bb5c4be0b97317fd88e94ca73cfcafeab59"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6982,8 +6988,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-macros"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "571581d9db1b867d63869a8e3d0b4385bdb298e2fb00b858239e9e62a9121ea4"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -6993,8 +7000,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-mcp"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8297c35b633b0699174acb4a4737fb72e55e94e6d87af5a6e06b73cb1bfc079a"
 dependencies = [
  "async-trait",
  "base64",
@@ -7014,8 +7022,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-models"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "868bf595256250aafb77d682c510d7ff020917e0029c9e1049335f97b0f1ea23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7043,8 +7052,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-output"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e92f2be0e0bfa906aa659a87577df19c3c21b03789441b60ab72358af59afcd8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7063,8 +7073,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-providers"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dab3153f7bb7e887c69e27d917b5026cd808de051d919044c8082351580d3a38"
 dependencies = [
  "async-trait",
  "base64",
@@ -7084,8 +7095,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-retries"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd041889ed575bec15cf2a41981301c426456314c182344a65fc283cb38edb5d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7099,8 +7111,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-streaming"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db4e0ba450710c7a9872aeb3f06188ae1862a98ac79d2c07dd5328d9cd9d45bf"
 dependencies = [
  "async-trait",
  "bytes",
@@ -7118,8 +7131,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-tools"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb92d88d92c800774fbcbc6301eef5924113c7bb72fc5b48ad39b16bee5dbbc5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7137,8 +7151,9 @@ dependencies = [
 
 [[package]]
 name = "serdes-ai-toolsets"
-version = "0.1.2"
-source = "git+https://github.com/janfeddersen-wq/serdesAI?rev=9f44e74#9f44e74882b64cb657337ade1bad4c85e6ac701d"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31e42a66b1cffefb9fd444ad46c4b5e04f5b0055dc7fed589d41d86ecce35d93"
 dependencies = [
  "async-trait",
  "indexmap",
@@ -9141,9 +9156,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
+checksum = "ee48d38b119b0cd71fe4141b30f5ba9c7c5d9f4e7a3a8b4a674e4b6ef789976f"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
@@ -10579,18 +10594,18 @@ checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
 
 [[package]]
 name = "zerocopy"
-version = "0.8.33"
+version = "0.8.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "668f5168d10b9ee831de31933dc111a459c97ec93225beb307aed970d1372dfd"
+checksum = "71ddd76bcebeed25db614f82bf31a9f4222d3fbba300e6fb6c00afa26cbd4d9d"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.33"
+version = "0.8.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7962b26b0a8685668b671ee4b54d007a67d4eaf05fda79ac0ecf41e32270f1"
+checksum = "d8187381b52e32220d50b255276aa16a084ec0a9017a0ca2152a1f55c539758d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -10684,9 +10699,9 @@ dependencies = [
 
 [[package]]
 name = "zmij"
-version = "1.0.16"
+version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfcd145825aace48cff44a8844de64bf75feec3080e0aa5cdbde72961ae51a65"
+checksum = "02aae0f83f69aafc94776e879363e9771d7ecbffe2c7fbb6c14c5e00dfe88439"
 
 [[package]]
 name = "ztracing"

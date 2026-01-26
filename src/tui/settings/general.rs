@@ -1,6 +1,7 @@
 //! General settings tab
 //!
-//! Contains PDF processing mode, user mode, reasoning display, and YOLO mode settings.
+//! Contains PDF processing mode, user mode, reasoning display, YOLO mode,
+//! and context compression settings.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,6 +13,7 @@ use ratatui::{
 
 use crate::agents::UserMode;
 use crate::config::{PdfMode, Settings};
+use crate::tokens::format_tokens_with_separator;
 use crate::tui::app::TuiApp;
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
@@ -31,6 +33,10 @@ pub fn render_general_tab(
     let user_mode = settings.user_mode();
     let show_reasoning = settings.get_bool("show_reasoning").unwrap_or(true);
     let yolo_mode = settings.yolo_mode();
+    let compression_enabled = settings.get_compression_enabled();
+    let compression_strategy = settings.get_compression_strategy();
+    let compression_threshold = settings.get_compression_threshold();
+    let compression_target = settings.get_compression_target_tokens();
 
     // Track which selectable item we're on
     let mut selectable_index = 0;
@@ -46,6 +52,11 @@ pub fn render_general_tab(
             Constraint::Length(3), // Show Reasoning
             Constraint::Length(1), // Spacer
             Constraint::Length(4), // YOLO Mode
+            Constraint::Length(1), // Spacer
+            Constraint::Length(3), // Compression Toggle
+            Constraint::Length(3), // Compression Strategy (conditional)
+            Constraint::Length(3), // Compression Threshold (conditional)
+            Constraint::Length(3), // Compression Target (conditional)
             Constraint::Min(0),    // Remaining space
         ])
         .split(area);
@@ -114,13 +125,106 @@ pub fn render_general_tab(
     let yolo_area = chunks[6];
     let yolo_selected = selected_index == selectable_index;
     render_yolo_mode_toggle(frame, yolo_area, yolo_mode, yolo_selected);
-    // selectable_index += 1; // Uncomment when adding more items
+    selectable_index += 1;
 
     // Register hit target for the entire YOLO toggle row
     hit_registry.register(
         Rect::new(yolo_area.x, yolo_area.y, yolo_area.width, 1),
         ClickTarget::SettingsToggle("yolo_mode".to_string()),
     );
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Context Compression Toggle
+    // ─────────────────────────────────────────────────────────────────────────
+    let compression_toggle_area = chunks[8];
+    let compression_toggle_selected = selected_index == selectable_index;
+    render_compression_toggle(
+        frame,
+        compression_toggle_area,
+        compression_enabled,
+        compression_toggle_selected,
+    );
+    selectable_index += 1;
+
+    // Register hit target for compression toggle
+    hit_registry.register(
+        Rect::new(
+            compression_toggle_area.x,
+            compression_toggle_area.y,
+            compression_toggle_area.width,
+            1,
+        ),
+        ClickTarget::SettingsToggle("compression.enabled".to_string()),
+    );
+
+    // Only show sub-options if compression is enabled
+    if compression_enabled {
+        // ─────────────────────────────────────────────────────────────────────
+        // Compression Strategy (Radio buttons)
+        // ─────────────────────────────────────────────────────────────────────
+        let strategy_area = chunks[9];
+        let strategy_selected = selected_index == selectable_index;
+        render_compression_strategy(
+            frame,
+            strategy_area,
+            &compression_strategy,
+            strategy_selected,
+        );
+        selectable_index += 1;
+
+        // Register hit targets for strategy radio buttons
+        // Layout: "    ◉ ✂️ Truncate   ○ 📝 Summarize"
+        hit_registry.register(
+            Rect::new(strategy_area.x + 4, strategy_area.y + 1, 14, 1),
+            ClickTarget::SettingsRadio("compression.strategy".to_string(), 0), // Truncate
+        );
+        hit_registry.register(
+            Rect::new(strategy_area.x + 20, strategy_area.y + 1, 14, 1),
+            ClickTarget::SettingsRadio("compression.strategy".to_string(), 1), // Summarize
+        );
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Compression Threshold (Radio buttons)
+        // ─────────────────────────────────────────────────────────────────────
+        let threshold_area = chunks[10];
+        let threshold_selected = selected_index == selectable_index;
+        render_compression_threshold(
+            frame,
+            threshold_area,
+            compression_threshold,
+            threshold_selected,
+        );
+        selectable_index += 1;
+
+        // Register hit targets for threshold radio buttons
+        // Layout: "    ◉ 50%  ○ 65%  ○ 75%  ○ 85%  ○ 95%"
+        let thresholds = [0.50, 0.65, 0.75, 0.85, 0.95];
+        for (i, _) in thresholds.iter().enumerate() {
+            let x_offset = 4 + (i as u16 * 8); // Each option takes ~8 chars
+            hit_registry.register(
+                Rect::new(threshold_area.x + x_offset, threshold_area.y + 1, 6, 1),
+                ClickTarget::SettingsRadio("compression.threshold".to_string(), i),
+            );
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Compression Target Tokens (Radio buttons)
+        // ─────────────────────────────────────────────────────────────────────
+        let target_area = chunks[11];
+        let target_selected = selected_index == selectable_index;
+        render_compression_target(frame, target_area, compression_target, target_selected);
+        // selectable_index += 1; // Uncomment when adding more items
+
+        // Register hit targets for target token radio buttons
+        let targets = [10_000usize, 20_000, 30_000, 50_000, 75_000];
+        for (i, _) in targets.iter().enumerate() {
+            let x_offset = 4 + (i as u16 * 10); // Each option takes ~10 chars
+            hit_registry.register(
+                Rect::new(target_area.x + x_offset, target_area.y + 1, 8, 1),
+                ClickTarget::SettingsRadio("compression.target_tokens".to_string(), i),
+            );
+        }
+    }
 }
 
 /// Render PDF Processing Mode section
@@ -351,4 +455,161 @@ fn render_toggle_yolo(enabled: bool, is_focused: bool) -> Span<'static> {
     } else {
         Span::styled("[ ] OFF", style)
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Compression Settings
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Render Context Compression toggle
+fn render_compression_toggle(frame: &mut Frame, area: Rect, enabled: bool, is_selected: bool) {
+    let header_style = if is_selected {
+        Style::default()
+            .fg(Theme::ACCENT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Theme::HEADER)
+    };
+
+    let selector = if is_selected { "▶ " } else { "  " };
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(selector, header_style),
+            Span::styled("📦 Context Compression", header_style),
+            Span::raw("  "),
+            render_toggle(enabled, is_selected),
+        ]),
+        Line::from(Span::styled(
+            "    Automatically compress conversation history when context fills up",
+            Style::default().fg(Theme::MUTED),
+        )),
+    ];
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render Compression Strategy section
+fn render_compression_strategy(frame: &mut Frame, area: Rect, current: &str, is_selected: bool) {
+    let header_style = if is_selected {
+        Style::default()
+            .fg(Theme::ACCENT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Theme::MUTED)
+    };
+
+    let selector = if is_selected { "▶ " } else { "  " };
+
+    let truncate_selected = current == "truncate";
+    let summarize_selected = current == "summarize";
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(selector, header_style),
+            Span::styled("Strategy", header_style),
+        ]),
+        Line::from(vec![
+            Span::raw("    "),
+            render_radio(truncate_selected, is_selected),
+            Span::styled(" ✂️ Truncate", option_style(truncate_selected, is_selected)),
+            Span::raw("   "),
+            render_radio(summarize_selected, is_selected),
+            Span::styled(
+                " 📝 Summarize",
+                option_style(summarize_selected, is_selected),
+            ),
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render Compression Threshold section
+fn render_compression_threshold(frame: &mut Frame, area: Rect, current: f64, is_selected: bool) {
+    let header_style = if is_selected {
+        Style::default()
+            .fg(Theme::ACCENT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Theme::MUTED)
+    };
+
+    let selector = if is_selected { "▶ " } else { "  " };
+
+    let thresholds = [0.50, 0.65, 0.75, 0.85, 0.95];
+
+    let spans = vec![
+        Span::styled(selector, header_style),
+        Span::styled(format!("Threshold: {:.0}%", current * 100.0), header_style),
+    ];
+
+    let threshold_line: Vec<Span> = std::iter::once(Span::raw("    "))
+        .chain(thresholds.iter().enumerate().flat_map(|(i, &t)| {
+            let is_current = (current - t).abs() < 0.01;
+            let mut parts = vec![
+                render_radio(is_current, is_selected),
+                Span::styled(
+                    format!(" {:.0}%", t * 100.0),
+                    option_style(is_current, is_selected),
+                ),
+            ];
+            if i < thresholds.len() - 1 {
+                parts.push(Span::raw("  "));
+            }
+            parts
+        }))
+        .collect();
+
+    let lines = vec![Line::from(spans), Line::from(threshold_line)];
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render Compression Target Tokens section
+fn render_compression_target(frame: &mut Frame, area: Rect, current: usize, is_selected: bool) {
+    let header_style = if is_selected {
+        Style::default()
+            .fg(Theme::ACCENT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Theme::MUTED)
+    };
+
+    let selector = if is_selected { "▶ " } else { "  " };
+
+    let targets: [usize; 5] = [10_000, 20_000, 30_000, 50_000, 75_000];
+
+    let spans = vec![
+        Span::styled(selector, header_style),
+        Span::styled(
+            format!("Target: {} tokens", format_tokens_with_separator(current)),
+            header_style,
+        ),
+    ];
+
+    let target_line: Vec<Span> = std::iter::once(Span::raw("    "))
+        .chain(targets.iter().enumerate().flat_map(|(i, &t)| {
+            let is_current = current == t;
+            let mut parts = vec![
+                render_radio(is_current, is_selected),
+                Span::styled(
+                    format!(" {}", format_tokens_with_separator(t)),
+                    option_style(is_current, is_selected),
+                ),
+            ];
+            if i < targets.len() - 1 {
+                parts.push(Span::raw(" "));
+            }
+            parts
+        }))
+        .collect();
+
+    let lines = vec![Line::from(spans), Line::from(target_line)];
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
 }

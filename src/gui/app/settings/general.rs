@@ -337,5 +337,268 @@ impl ChatApp {
                             .child(if is_enabled { "⚡ YOLO Enabled" } else { "Disabled" })
                     }),
             )
+            // Context Compression Settings
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .text_size(px(14.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.text)
+                            .child("📦 Context Compression"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(theme.text_muted)
+                            .mb(px(4.))
+                            .child("Automatically compress conversation history when context window fills up"),
+                    )
+                    // Enable/Disable Toggle
+                    .child({
+                        let is_enabled = Settings::new(&self.db).get_compression_enabled();
+                        div()
+                            .id("compression-toggle")
+                            .px(px(12.))
+                            .py(px(10.))
+                            .rounded(px(8.))
+                            .bg(if is_enabled {
+                                theme.accent
+                            } else {
+                                theme.tool_card
+                            })
+                            .text_color(if is_enabled {
+                                rgb(0xffffff)
+                            } else {
+                                theme.text
+                            })
+                            .text_size(px(13.))
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.9))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    let settings = Settings::new(&this.db);
+                                    let current = settings.get_compression_enabled();
+                                    settings.set_compression_enabled(!current);
+                                    cx.notify();
+                                }),
+                            )
+                            .child(if is_enabled { "✓ Compression Enabled" } else { "Compression Disabled" })
+                    })
+                    // Strategy Selection (only show if enabled)
+                    .when(Settings::new(&self.db).get_compression_enabled(), |el| {
+                        let current_strategy = Settings::new(&self.db).get_compression_strategy();
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(6.))
+                                .mt(px(8.))
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(theme.text_muted)
+                                        .child("Compression Strategy"),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .gap(px(6.))
+                                        .child({
+                                            let is_selected = current_strategy == "truncate";
+                                            div()
+                                                .id("strategy-truncate")
+                                                .px(px(12.))
+                                                .py(px(8.))
+                                                .rounded(px(6.))
+                                                .bg(if is_selected {
+                                                    theme.accent
+                                                } else {
+                                                    theme.tool_card
+                                                })
+                                                .text_color(if is_selected {
+                                                    rgb(0xffffff)
+                                                } else {
+                                                    theme.text
+                                                })
+                                                .text_size(px(12.))
+                                                .cursor_pointer()
+                                                .hover(|s| s.opacity(0.9))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|this, _, _, cx| {
+                                                        let settings = Settings::new(&this.db);
+                                                        settings.set_compression_strategy("truncate");
+                                                        cx.notify();
+                                                    }),
+                                                )
+                                                .child("✂️ Truncate")
+                                        })
+                                        .child({
+                                            let is_selected = current_strategy == "summarize";
+                                            div()
+                                                .id("strategy-summarize")
+                                                .px(px(12.))
+                                                .py(px(8.))
+                                                .rounded(px(6.))
+                                                .bg(if is_selected {
+                                                    theme.accent
+                                                } else {
+                                                    theme.tool_card
+                                                })
+                                                .text_color(if is_selected {
+                                                    rgb(0xffffff)
+                                                } else {
+                                                    theme.text
+                                                })
+                                                .text_size(px(12.))
+                                                .cursor_pointer()
+                                                .hover(|s| s.opacity(0.9))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|this, _, _, cx| {
+                                                        let settings = Settings::new(&this.db);
+                                                        settings.set_compression_strategy("summarize");
+                                                        cx.notify();
+                                                    }),
+                                                )
+                                                .child("📝 Summarize")
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(theme.text_muted)
+                                        .child(if current_strategy == "summarize" {
+                                            "Uses AI to summarize old messages (slower, preserves context)"
+                                        } else {
+                                            "Removes oldest messages to free space (fast, may lose context)"
+                                        }),
+                                ),
+                        )
+                    })
+                    // Threshold Selection (only show if enabled)
+                    .when(Settings::new(&self.db).get_compression_enabled(), |el| {
+                        let current_threshold = Settings::new(&self.db).get_compression_threshold();
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(6.))
+                                .mt(px(8.))
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(theme.text_muted)
+                                        .child(format!("Trigger Threshold: {:.0}%", current_threshold * 100.0)),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .gap(px(4.))
+                                        .children([0.50, 0.65, 0.75, 0.85, 0.95].iter().map(|threshold| {
+                                            let is_selected = (current_threshold - threshold).abs() < 0.01;
+                                            let threshold_value = *threshold;
+                                            div()
+                                                .id(SharedString::from(format!("threshold-{}", (threshold * 100.0) as i32)))
+                                                .px(px(8.))
+                                                .py(px(6.))
+                                                .rounded(px(4.))
+                                                .bg(if is_selected {
+                                                    theme.accent
+                                                } else {
+                                                    theme.tool_card
+                                                })
+                                                .text_color(if is_selected {
+                                                    rgb(0xffffff)
+                                                } else {
+                                                    theme.text
+                                                })
+                                                .text_size(px(11.))
+                                                .cursor_pointer()
+                                                .hover(|s| s.opacity(0.9))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _, _, cx| {
+                                                        let settings = Settings::new(&this.db);
+                                                        settings.set_compression_threshold(threshold_value);
+                                                        cx.notify();
+                                                    }),
+                                                )
+                                                .child(format!("{:.0}%", threshold * 100.0))
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(theme.text_muted)
+                                        .child("Compress when context usage exceeds this threshold"),
+                                ),
+                        )
+                    })
+                    // Target Tokens (only show if enabled)
+                    .when(Settings::new(&self.db).get_compression_enabled(), |el| {
+                        let current_target = Settings::new(&self.db).get_compression_target_tokens();
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(6.))
+                                .mt(px(8.))
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(theme.text_muted)
+                                        .child(format!("Target Tokens: {}", crate::tokens::format_tokens_with_separator(current_target))),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .gap(px(4.))
+                                        .children([10_000, 20_000, 30_000, 50_000, 75_000].iter().map(|tokens| {
+                                            let is_selected = current_target == *tokens;
+                                            let token_value = *tokens;
+                                            div()
+                                                .id(SharedString::from(format!("tokens-{}", tokens)))
+                                                .px(px(8.))
+                                                .py(px(6.))
+                                                .rounded(px(4.))
+                                                .bg(if is_selected {
+                                                    theme.accent
+                                                } else {
+                                                    theme.tool_card
+                                                })
+                                                .text_color(if is_selected {
+                                                    rgb(0xffffff)
+                                                } else {
+                                                    theme.text
+                                                })
+                                                .text_size(px(11.))
+                                                .cursor_pointer()
+                                                .hover(|s| s.opacity(0.9))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _, _, cx| {
+                                                        let settings = Settings::new(&this.db);
+                                                        settings.set_compression_target_tokens(token_value);
+                                                        cx.notify();
+                                                    }),
+                                                )
+                                                .child(crate::tokens::format_tokens_with_separator(*tokens))
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(theme.text_muted)
+                                        .child("Target token count after compression"),
+                                ),
+                        )
+                    }),
+            )
     }
 }

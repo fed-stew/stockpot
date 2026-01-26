@@ -195,6 +195,27 @@ impl ChatApp {
                                             )),
                                     ),
                             )
+                            // Compression notification (shows for 5 seconds after compression)
+                            .when_some(
+                                self.compression_notification
+                                    .as_ref()
+                                    .filter(|(ts, _)| {
+                                        ts.elapsed() < std::time::Duration::from_secs(5)
+                                    })
+                                    .map(|(_, msg)| msg.clone()),
+                                |el, notification| {
+                                    el.child(
+                                        div()
+                                            .px(px(8.))
+                                            .py(px(4.))
+                                            .rounded(px(4.))
+                                            .bg(self.theme.tool_card)
+                                            .text_size(px(11.))
+                                            .text_color(self.theme.success)
+                                            .child(notification),
+                                    )
+                                },
+                            )
                             // Throughput chart
                             .child(
                                 div()
