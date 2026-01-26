@@ -42,7 +42,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use stockpot::messaging::{MessageBus, EventBridge, TerminalRenderer};
+//! use stockpot_core::messaging::{MessageBus, EventBridge, TerminalRenderer};
 //!
 //! let bus = MessageBus::new();
 //! let renderer = TerminalRenderer::new();

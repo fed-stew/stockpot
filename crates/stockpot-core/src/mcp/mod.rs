@@ -30,7 +30,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use stockpot::mcp::McpManager;
+//! use stockpot_core::mcp::McpManager;
 //!
 //! let mut manager = McpManager::new();
 //! manager.load_config()?;

@@ -19,7 +19,7 @@ use std::env;
 /// # Examples
 ///
 /// ```no_run
-/// use stockpot::display_detect::has_display;
+/// use stockpot_core::display_detect::has_display;
 ///
 /// if has_display() {
 ///     println!("Launching GUI mode");

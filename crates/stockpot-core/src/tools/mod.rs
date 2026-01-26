@@ -8,7 +8,7 @@
 //! that can be used with the agent executor:
 //!
 //! ```ignore
-//! use stockpot::tools::registry::SpotToolRegistry;
+//! use stockpot_core::tools::registry::SpotToolRegistry;
 //!
 //! let registry = SpotToolRegistry::new();
 //! let tools = registry.all_tools();

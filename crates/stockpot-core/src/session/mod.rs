@@ -12,7 +12,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use stockpot::session::SessionManager;
+//! use stockpot_core::session::SessionManager;
 //!
 //! let manager = SessionManager::new();
 //!

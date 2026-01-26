@@ -31,7 +31,7 @@ pub type ArcTool = Arc<dyn Tool + Send + Sync>;
 /// # Example
 ///
 /// ```ignore
-/// use stockpot::tools::registry::SpotToolRegistry;
+/// use stockpot_core::tools::registry::SpotToolRegistry;
 ///
 /// let registry = SpotToolRegistry::new();
 /// let tools = registry.all_tools();

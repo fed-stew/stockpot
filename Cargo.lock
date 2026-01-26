@@ -7519,7 +7519,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stockpot"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -7538,7 +7538,7 @@ dependencies = [
 
 [[package]]
 name = "stockpot-core"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7593,7 +7593,7 @@ dependencies = [
 
 [[package]]
 name = "stockpot-gui"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7627,7 +7627,7 @@ dependencies = [
 
 [[package]]
 name = "stockpot-tui"
-version = "0.22.0"
+version = "0.22.1"
 dependencies = [
  "anyhow",
  "arboard",
