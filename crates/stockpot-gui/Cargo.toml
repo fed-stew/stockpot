@@ -1,6 +1,6 @@
 [package]
 name = "stockpot-gui"
-version = "0.22.0"
+version = "0.22.1"
 edition = "2021"
 description = "GUI for Stockpot AI coding assistant"
 license = "MIT"
@@ -15,7 +15,7 @@ name = "spot-gui"
 path = "src/bin/spot_gui.rs"
 
 [dependencies]
-stockpot-core = { path = "../stockpot-core", version = "0.22.0" }
+stockpot-core = { path = "../stockpot-core", version = "0.22.1" }
 
 # SerdesAI (re-exported types needed directly)
 serdes-ai-core = "0.1.3"

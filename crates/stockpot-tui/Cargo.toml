@@ -1,6 +1,6 @@
 [package]
 name = "stockpot-tui"
-version = "0.22.0"
+version = "0.22.1"
 edition = "2021"
 description = "Terminal UI for Stockpot AI coding assistant"
 license = "MIT"
@@ -8,13 +8,14 @@ authors = ["Stockpot Contributors"]
 repository = "https://github.com/fed-stew/stockpot"
 keywords = ["ai", "coding", "assistant", "tui", "terminal"]
 categories = ["development-tools", "command-line-interface"]
+readme = "README.md"
 
 [[bin]]
 name = "spot-cli"
 path = "src/bin/spot_cli.rs"
 
 [dependencies]
-stockpot-core = { path = "../stockpot-core", version = "0.22.0" }
+stockpot-core = { path = "../stockpot-core", version = "0.22.1" }
 
 # SerdesAI (re-exported types needed directly)
 serdes-ai-core = "0.1.3"
