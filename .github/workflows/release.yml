@@ -73,14 +73,8 @@ jobs:
 
       - name: Build release binaries
         run: |
-          # Smart binary (needs both GUI and TUI features for display detection fallback)
-          cargo build --release --target ${{ matrix.target }} --features gui,tui --bin spot
-          
-          # GUI-only binary
-          cargo build --release --target ${{ matrix.target }} --features gui --no-default-features --bin spot-gui
-          
-          # TUI-only binary
-          cargo build --release --target ${{ matrix.target }} --features tui --no-default-features --bin spot-cli
+          # Build all workspace crates
+          cargo build --release --target ${{ matrix.target }} --workspace
 
       - name: Package binaries (Unix)
         if: matrix.archive_ext == 'tar.gz'
@@ -90,7 +84,7 @@ jobs:
           # Package all three binaries
           tar czvf ../../../${{ matrix.artifact_name }}.tar.gz spot spot-gui spot-cli
           cd ../../..
-          # Generate checksum (use shasum on macOS, sha256sum on Linux)
+          # Generate checksum
           if command -v sha256sum &> /dev/null; then
             sha256sum ${{ matrix.artifact_name }}.tar.gz > ${{ matrix.artifact_name }}.tar.gz.sha256
           else
@@ -136,7 +130,6 @@ jobs:
       - name: Generate combined checksums
         run: |
           cd artifacts
-          # Combine all individual checksums into one file
           cat *.sha256 > ../checksums.sha256
           cd ..
           echo "=== SHA256 Checksums ==="

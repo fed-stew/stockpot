@@ -51,21 +51,21 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: false
-          prefix-key: "v1"
+          prefix-key: "v2-workspace"
 
-      - name: Check all feature combinations
+      - name: Check all workspace crates
         run: |
-          echo "=== Checking smart binary (gui + tui) ==="
-          cargo check --features gui,tui --bin spot
+          echo "=== Checking stockpot-core ==="
+          cargo check -p stockpot-core
           
-          echo "=== Checking GUI-only binary ==="
-          cargo check --features gui --no-default-features --bin spot-gui
+          echo "=== Checking stockpot-tui ==="
+          cargo check -p stockpot-tui
           
-          echo "=== Checking TUI-only binary ==="
-          cargo check --features tui --no-default-features --bin spot-cli
+          echo "=== Checking stockpot-gui ==="
+          cargo check -p stockpot-gui
           
-          echo "=== Checking library with all features ==="
-          cargo check --lib --all-features
+          echo "=== Checking root crate (all features) ==="
+          cargo check --all-features
 
   test:
     name: Tests
@@ -108,10 +108,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: false
-          prefix-key: "v1"
+          prefix-key: "v2-workspace"
 
-      - name: Run tests
-        run: cargo test --all-features
+      - name: Run tests for all workspace crates
+        run: cargo test --workspace
 
   clippy:
     name: Clippy
@@ -156,21 +156,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: false
-          prefix-key: "v1"
+          prefix-key: "v2-workspace"
 
-      - name: Run clippy on all feature combinations
-        run: |
-          echo "=== Linting smart binary (gui + tui) ==="
-          cargo clippy --features gui,tui --bin spot -- -D warnings
-          
-          echo "=== Linting GUI-only binary ==="
-          cargo clippy --features gui --no-default-features --bin spot-gui -- -D warnings
-          
-          echo "=== Linting TUI-only binary ==="
-          cargo clippy --features tui --no-default-features --bin spot-cli -- -D warnings
-          
-          echo "=== Linting library with all features ==="
-          cargo clippy --lib --all-features -- -D warnings
+      - name: Run clippy on all workspace crates
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   fmt:
     name: Formatting
@@ -184,4 +173,4 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all --check
