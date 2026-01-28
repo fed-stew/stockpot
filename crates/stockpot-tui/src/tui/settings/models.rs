@@ -12,6 +12,7 @@ use ratatui::{
     Frame,
 };
 
+use super::ModelSettingsField;
 use crate::tui::app::TuiApp;
 use crate::tui::hit_test::{ClickTarget, HitTestRegistry};
 use crate::tui::theme::Theme;
@@ -63,6 +64,11 @@ pub fn render_models_tab(
         selected_index,
         !in_oauth_section,
         expanded,
+        app.settings_state.expanded_model.as_deref(),
+        &app.settings_state.model_temp_value,
+        &app.settings_state.model_top_p_value,
+        app.settings_state.model_settings_field,
+        app.settings_state.model_settings_editing,
     );
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -181,6 +187,11 @@ fn render_models_section(
     selected_index: usize,
     is_focused: bool,
     expanded: &std::collections::HashSet<String>,
+    expanded_model: Option<&str>,
+    model_temp_value: &str,
+    model_top_p_value: &str,
+    model_settings_field: ModelSettingsField,
+    model_settings_editing: bool,
 ) {
     let border_color = if is_focused {
         Theme::ACCENT
@@ -257,8 +268,20 @@ fn render_models_section(
             for model in models {
                 let is_model_selected = selected_index == item_index && is_focused;
                 let is_default = model.name == default_model;
+                let is_model_expanded = expanded_model == Some(model.name.as_str());
 
                 let selector = if is_model_selected { "▶ " } else { "  " };
+
+                // Chevron for expandable models (non-OAuth only)
+                let chevron = if !model.is_oauth {
+                    if is_model_expanded {
+                        "▼ "
+                    } else {
+                        "▸ "
+                    }
+                } else {
+                    "  "
+                };
 
                 let name_style = if is_model_selected {
                     Style::default()
@@ -272,8 +295,9 @@ fn render_models_section(
 
                 let mut spans = vec![
                     Span::styled(selector, Style::default().fg(Theme::ACCENT)),
-                    Span::raw("    "), // Indent under provider
-                    Span::styled(truncate_model_name(&model.name, 40), name_style),
+                    Span::raw("  "), // Indent under provider
+                    Span::styled(chevron, Style::default().fg(Theme::MUTED)),
+                    Span::styled(truncate_model_name(&model.name, 35), name_style),
                 ];
 
                 if is_default {
@@ -283,13 +307,64 @@ fn render_models_section(
                     ));
                 }
 
-                // Show delete indicator for non-OAuth models
-                if !model.is_oauth {
-                    spans.push(Span::styled("  [Del]", Style::default().fg(Theme::MUTED)));
-                }
-
                 items.push(ListItem::new(Line::from(spans)));
                 item_index += 1;
+
+                // Render expanded settings panel for non-OAuth models
+                if is_model_expanded && !model.is_oauth {
+                    // Temperature row
+                    let temp_focused = model_settings_field == ModelSettingsField::Temperature;
+                    let temp_style = if temp_focused && is_focused {
+                        Style::default().fg(Theme::ACCENT)
+                    } else {
+                        Style::default().fg(Theme::MUTED)
+                    };
+
+                    let temp_value_display = if model_settings_editing && temp_focused {
+                        format!("[{}▏]", model_temp_value)
+                    } else {
+                        format!("[{}]", model_temp_value)
+                    };
+
+                    items.push(ListItem::new(Line::from(vec![
+                        Span::raw("        "), // Deep indent
+                        Span::styled("Temperature: ", temp_style),
+                        Span::styled(temp_value_display, temp_style),
+                        Span::styled(" (0.0-2.0)", Style::default().fg(Theme::MUTED)),
+                    ])));
+
+                    // Top P row
+                    let top_p_focused = model_settings_field == ModelSettingsField::TopP;
+                    let top_p_style = if top_p_focused && is_focused {
+                        Style::default().fg(Theme::ACCENT)
+                    } else {
+                        Style::default().fg(Theme::MUTED)
+                    };
+
+                    let top_p_value_display = if model_settings_editing && top_p_focused {
+                        format!("[{}▏]", model_top_p_value)
+                    } else {
+                        format!("[{}]", model_top_p_value)
+                    };
+
+                    items.push(ListItem::new(Line::from(vec![
+                        Span::raw("        "),
+                        Span::styled("Top P:       ", top_p_style),
+                        Span::styled(top_p_value_display, top_p_style),
+                        Span::styled(" (0.0-1.0)", Style::default().fg(Theme::MUTED)),
+                    ])));
+
+                    // API Keys hint row
+                    items.push(ListItem::new(Line::from(vec![
+                        Span::raw("        "),
+                        Span::styled("Press ", Style::default().fg(Theme::MUTED)),
+                        Span::styled("k", Style::default().fg(Theme::ACCENT)),
+                        Span::styled(" to manage API keys", Style::default().fg(Theme::MUTED)),
+                    ])));
+
+                    // Spacer
+                    items.push(ListItem::new(Line::from("")));
+                }
             }
         }
     }
@@ -389,6 +464,20 @@ fn truncate_model_name(name: &str, max_len: usize) -> String {
     } else {
         name.to_string()
     }
+}
+
+/// Check if a model at given index is expandable (non-OAuth)
+pub fn is_model_expandable(
+    app: &TuiApp,
+    available_models: &[String],
+    selected_index: usize,
+) -> bool {
+    if let Some(model_name) = get_model_at_index(app, available_models, selected_index) {
+        if let Some(config) = app.model_registry.get(&model_name) {
+            return !config.is_oauth();
+        }
+    }
+    false
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

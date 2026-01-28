@@ -219,6 +219,23 @@ impl McpPanel {
     }
 }
 
+/// Which field is being edited in model settings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModelSettingsField {
+    #[default]
+    Temperature,
+    TopP,
+}
+
+impl ModelSettingsField {
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Temperature => Self::TopP,
+            Self::TopP => Self::Temperature,
+        }
+    }
+}
+
 /// State for the settings screen
 #[derive(Debug, Default)]
 pub struct SettingsState {
@@ -244,6 +261,8 @@ pub struct SettingsState {
     pub model_list_index: usize,
     /// Index in default model dropdown
     pub default_model_index: usize,
+    /// Whether the default model dropdown is expanded
+    pub default_model_dropdown_open: bool,
 
     // ─────────────────────────────────────────────────────────────────────────
     // Models tab specific state
@@ -254,6 +273,16 @@ pub struct SettingsState {
     pub models_expanded_providers: std::collections::HashSet<String>,
     /// Whether we're in the OAuth section (vs model list)
     pub models_in_oauth_section: bool,
+    /// Currently expanded model (for editing settings)
+    pub expanded_model: Option<String>,
+    /// Temperature value being edited
+    pub model_temp_value: String,
+    /// Top P value being edited
+    pub model_top_p_value: String,
+    /// Which field is currently focused in the expanded panel
+    pub model_settings_field: ModelSettingsField,
+    /// Whether we're in edit mode for the focused field
+    pub model_settings_editing: bool,
 
     // ─────────────────────────────────────────────────────────────────────────
     // MCP Servers tab specific state
@@ -301,10 +330,17 @@ impl SettingsState {
         self.agent_list_index = 0;
         self.model_list_index = 0;
         self.default_model_index = 0;
+        self.default_model_dropdown_open = false;
         // Reset models state
         self.models_selected_index = 0;
         self.models_in_oauth_section = true;
         // Don't clear expanded providers - keep user's preference
+        // Reset model settings state
+        self.expanded_model = None;
+        self.model_temp_value = String::new();
+        self.model_top_p_value = String::new();
+        self.model_settings_field = ModelSettingsField::default();
+        self.model_settings_editing = false;
         // Reset MCP state
         self.mcp_panel = McpPanel::default();
         self.mcp_server_index = 0;

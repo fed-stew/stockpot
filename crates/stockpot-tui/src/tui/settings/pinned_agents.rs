@@ -46,7 +46,7 @@ pub fn render_pinned_agents_tab(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // Default Model section
+            Constraint::Length(4), // Default Model section (collapsed)
             Constraint::Min(10),   // Two-panel layout
         ])
         .split(area);
@@ -58,9 +58,20 @@ pub fn render_pinned_agents_tab(
         frame,
         chunks[0],
         &default_model,
-        &available_models,
-        default_model_index,
         pinned_panel == PinnedAgentsPanel::DefaultModel,
+        app.settings_state.default_model_dropdown_open,
+    );
+
+    // Register hit target for the collapsed dropdown trigger
+    let default_model_inner = inner_rect(chunks[0]);
+    hit_registry.register(
+        Rect::new(
+            default_model_inner.x,
+            default_model_inner.y,
+            default_model_inner.width,
+            1,
+        ),
+        ClickTarget::DefaultModelItem(default_model_index), // Click triggers dropdown
     );
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -129,6 +140,20 @@ pub fn render_pinned_agents_tab(
     } else {
         render_no_agent_selected(frame, panels[1]);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Default Model Dropdown Overlay (rendered last so it's on top)
+    // ─────────────────────────────────────────────────────────────────────────
+    if app.settings_state.default_model_dropdown_open {
+        render_default_model_dropdown(
+            frame,
+            chunks[0],
+            &default_model,
+            &available_models,
+            default_model_index,
+            hit_registry,
+        );
+    }
 }
 
 /// Calculate inner rect (inside 1-cell border)
@@ -141,14 +166,13 @@ fn inner_rect(area: Rect) -> Rect {
     )
 }
 
-/// Render the Default Model dropdown section
+/// Render the Default Model section (collapsed dropdown style)
 fn render_default_model_section(
     frame: &mut Frame,
     area: Rect,
     current_model: &str,
-    _available_models: &[String],
-    _selected_index: usize,
     is_focused: bool,
+    dropdown_open: bool,
 ) {
     let border_color = if is_focused {
         Theme::ACCENT
@@ -171,27 +195,123 @@ fn render_default_model_section(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let chevron = if dropdown_open { "▲" } else { "▼" };
     let selector = if is_focused { "▶ " } else { "  " };
 
     let lines = vec![
         Line::from(vec![
             Span::styled(selector, Style::default().fg(Theme::ACCENT)),
-            Span::styled("Current: ", Style::default().fg(Theme::MUTED)),
             Span::styled(
-                current_model,
+                truncate_model_name(current_model),
                 Style::default()
                     .fg(Theme::GREEN)
                     .add_modifier(Modifier::BOLD),
             ),
+            Span::styled(format!(" {}", chevron), Style::default().fg(Theme::MUTED)),
         ]),
         Line::from(Span::styled(
-            "    Used when an agent does not have a pinned model",
+            "    Press Enter to change default model",
             Style::default().fg(Theme::MUTED),
         )),
     ];
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
+}
+
+/// Render the Default Model dropdown overlay (when expanded)
+fn render_default_model_dropdown(
+    frame: &mut Frame,
+    anchor_area: Rect,
+    current_model: &str,
+    available_models: &[String],
+    selected_index: usize,
+    hit_registry: &mut HitTestRegistry,
+) {
+    use crate::tui::theme::dim_background;
+    use ratatui::widgets::Clear;
+
+    // Dim background for modal effect
+    dim_background(frame, frame.area());
+
+    // Calculate dropdown dimensions
+    let max_model_len = available_models.iter().map(|m| m.len()).max().unwrap_or(20);
+    let dropdown_width = (max_model_len + 15).min(60) as u16;
+    let dropdown_height = (available_models.len() + 2).min(15) as u16;
+
+    // Position below the anchor
+    let dropdown_area = Rect::new(
+        anchor_area.x,
+        anchor_area.y + anchor_area.height,
+        dropdown_width.min(anchor_area.width),
+        dropdown_height,
+    );
+
+    // Clear and draw dropdown
+    frame.render_widget(Clear, dropdown_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Theme::ACCENT))
+        .title(Span::styled(
+            " Select Default Model ",
+            Style::default().fg(Theme::ACCENT),
+        ))
+        .style(Style::default().bg(Theme::INPUT_BG));
+
+    let inner = block.inner(dropdown_area);
+    frame.render_widget(block, dropdown_area);
+
+    // Build list of models
+    let items: Vec<ListItem> = available_models
+        .iter()
+        .enumerate()
+        .map(|(i, model)| {
+            let is_current = model == current_model;
+            let is_selected = i == selected_index;
+
+            let selector = if is_selected { "▶ " } else { "  " };
+
+            let style = if is_current {
+                Style::default()
+                    .fg(Theme::GREEN)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_selected {
+                Style::default()
+                    .fg(Theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Theme::TEXT)
+            };
+
+            let mut line_spans = vec![
+                Span::styled(selector, Style::default().fg(Theme::ACCENT)),
+                Span::styled(truncate_model_name(model), style),
+            ];
+
+            if is_current {
+                line_spans.push(Span::styled(" ✓", Style::default().fg(Theme::GREEN)));
+            }
+
+            ListItem::new(Line::from(line_spans))
+        })
+        .collect();
+
+    let list = List::new(items);
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected_index));
+    frame.render_stateful_widget(list, inner, &mut list_state);
+
+    // Register hit targets for dropdown items
+    for (idx, _) in available_models.iter().enumerate() {
+        let item_y = inner.y + idx as u16;
+        if item_y < inner.y + inner.height {
+            hit_registry.register(
+                Rect::new(inner.x, item_y, inner.width, 1),
+                ClickTarget::DefaultModelItem(idx),
+            );
+        }
+    }
 }
 
 /// Render the left panel with agent list

@@ -41,6 +41,8 @@ pub enum ClickTarget {
     ModelsProvider(String),
     /// Models tab: model row clicked to set as default
     ModelsItem(String),
+    /// Pinned Agents tab: default model item clicked (index)
+    DefaultModelItem(usize),
     /// Pinned Agents tab: agent selected
     PinnedAgentItem(usize),
     /// Pinned Agents tab: model selected for pinning

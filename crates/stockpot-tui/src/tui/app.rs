@@ -25,7 +25,7 @@ use super::event::{AppEvent, ClipboardManager, EventHandler};
 use super::execution::execute_agent;
 use super::hit_test::{ClickTarget, HitTestRegistry};
 use super::selection::SelectionState;
-use super::settings::SettingsState;
+use super::settings::{ModelSettingsField, SettingsState};
 use super::state::TuiConversation;
 use super::theme::Theme;
 use super::ui;
@@ -402,7 +402,12 @@ impl TuiApp {
             }
             SettingsTab::PinnedAgents => match self.settings_state.pinned_panel {
                 PinnedAgentsPanel::DefaultModel => {
-                    // No navigation in default model section for now
+                    if self.settings_state.default_model_dropdown_open {
+                        // Navigate within dropdown
+                        if self.settings_state.default_model_index > 0 {
+                            self.settings_state.default_model_index -= 1;
+                        }
+                    }
                 }
                 PinnedAgentsPanel::Agents => {
                     if self.settings_state.agent_list_index > 0 {
@@ -418,6 +423,13 @@ impl TuiApp {
                 }
             },
             SettingsTab::Models => {
+                // If a model is expanded, navigate within its settings
+                if self.settings_state.expanded_model.is_some() {
+                    self.settings_state.model_settings_field =
+                        self.settings_state.model_settings_field.next();
+                    return;
+                }
+
                 if self.settings_state.models_in_oauth_section {
                     // Can't go up from OAuth section, stay there
                 } else if self.settings_state.models_selected_index > 0 {
@@ -473,7 +485,14 @@ impl TuiApp {
             }
             SettingsTab::PinnedAgents => match self.settings_state.pinned_panel {
                 PinnedAgentsPanel::DefaultModel => {
-                    // No navigation in default model section for now
+                    if self.settings_state.default_model_dropdown_open {
+                        // Navigate within dropdown
+                        let available_models = self.model_registry.list_available(&self.db);
+                        let max_idx = available_models.len().saturating_sub(1);
+                        if self.settings_state.default_model_index < max_idx {
+                            self.settings_state.default_model_index += 1;
+                        }
+                    }
                 }
                 PinnedAgentsPanel::Agents => {
                     let agent_count = self.agents.list().len();
@@ -491,6 +510,13 @@ impl TuiApp {
                 }
             },
             SettingsTab::Models => {
+                // If a model is expanded, navigate within its settings
+                if self.settings_state.expanded_model.is_some() {
+                    self.settings_state.model_settings_field =
+                        self.settings_state.model_settings_field.next();
+                    return;
+                }
+
                 if self.settings_state.models_in_oauth_section {
                     // Go from OAuth section to models list
                     self.settings_state.models_in_oauth_section = false;
@@ -619,7 +645,21 @@ impl TuiApp {
             SettingsTab::PinnedAgents => {
                 match self.settings_state.pinned_panel {
                     PinnedAgentsPanel::DefaultModel => {
-                        // Could open a dropdown in the future
+                        if self.settings_state.default_model_dropdown_open {
+                            // Select the model and close dropdown
+                            let available_models = self.model_registry.list_available(&self.db);
+                            if let Some(model_name) =
+                                available_models.get(self.settings_state.default_model_index)
+                            {
+                                self.current_model = model_name.clone();
+                                let _ = settings.set("model", model_name);
+                                self.update_context_usage();
+                            }
+                            self.settings_state.default_model_dropdown_open = false;
+                        } else {
+                            // Open the dropdown
+                            self.settings_state.default_model_dropdown_open = true;
+                        }
                     }
                     PinnedAgentsPanel::Agents => {
                         // Selecting an agent - switch focus to models panel
@@ -655,6 +695,19 @@ impl TuiApp {
                 let available_models = self.model_registry.list_available(&self.db);
                 let selected_index = self.settings_state.models_selected_index;
 
+                // If we're in an expanded model, handle field editing
+                if self.settings_state.expanded_model.is_some() {
+                    if self.settings_state.model_settings_editing {
+                        // Exit edit mode and save
+                        self.settings_state.model_settings_editing = false;
+                        self.save_current_model_settings();
+                    } else {
+                        // Enter edit mode for current field
+                        self.settings_state.model_settings_editing = true;
+                    }
+                    return;
+                }
+
                 // Check if it's a group header (to expand/collapse)
                 if let Some(type_label) = super::settings::models::is_group_header(
                     self,
@@ -680,10 +733,29 @@ impl TuiApp {
                     &available_models,
                     selected_index,
                 ) {
-                    // Set as default model
-                    self.current_model = model_name.clone();
-                    let _ = settings.set("model", &model_name);
-                    self.update_context_usage();
+                    // Check if model is expandable (non-OAuth)
+                    if super::settings::models::is_model_expandable(
+                        self,
+                        &available_models,
+                        selected_index,
+                    ) {
+                        // Toggle model expansion
+                        if self.settings_state.expanded_model.as_deref() == Some(&model_name) {
+                            // Collapse and save any changes
+                            self.save_current_model_settings();
+                            self.settings_state.expanded_model = None;
+                            self.settings_state.model_settings_editing = false;
+                        } else {
+                            // Expand and load settings
+                            self.load_model_settings(&model_name);
+                            self.settings_state.expanded_model = Some(model_name);
+                            self.settings_state.model_settings_field =
+                                ModelSettingsField::Temperature;
+                            self.settings_state.model_settings_editing = false;
+                        }
+                    }
+                    // OAuth models have no settings to configure - do nothing
+                    // Default model selection is done in Pinned Agents tab
                 }
             }
             SettingsTab::McpServers => {
@@ -1046,11 +1118,65 @@ impl TuiApp {
     fn handle_settings_key_pool_open(&mut self) {
         use super::settings::SettingsTab;
 
-        // Only works in Models tab and when not in OAuth section
+        // Only works in Models tab
         if self.settings_state.active_tab != SettingsTab::Models {
             return;
         }
 
+        // If a model is expanded, use that model's provider
+        if let Some(ref expanded_model) = self.settings_state.expanded_model.clone() {
+            // Get the model config to find its provider
+            if let Some(config) = self.model_registry.get(expanded_model) {
+                // Check for api_key environment variable in custom endpoint
+                let api_key_env = config
+                    .custom_endpoint
+                    .as_ref()
+                    .and_then(|e| e.api_key.as_ref())
+                    .and_then(|k| {
+                        if k.starts_with('$') {
+                            Some(
+                                k.trim_start_matches('$')
+                                    .trim_matches(|c| c == '{' || c == '}')
+                                    .to_string(),
+                            )
+                        } else {
+                            None
+                        }
+                    });
+
+                if let Some(env_var) = api_key_env {
+                    // Load keys from database
+                    let keys = self.db.get_pool_keys(&env_var).unwrap_or_default();
+                    // Open the key pool overlay
+                    self.settings_state.key_pool.open(&env_var, &env_var, keys);
+                    return;
+                }
+
+                // Fallback: try to get provider from model type
+                let provider = match config.model_type {
+                    stockpot_core::models::ModelType::Openai => Some(("openai", "OpenAI")),
+                    stockpot_core::models::ModelType::Anthropic => Some(("anthropic", "Anthropic")),
+                    stockpot_core::models::ModelType::Gemini => Some(("gemini", "Google Gemini")),
+                    stockpot_core::models::ModelType::AzureOpenai => {
+                        Some(("azure_openai", "Azure OpenAI"))
+                    }
+                    stockpot_core::models::ModelType::Openrouter => {
+                        Some(("openrouter", "OpenRouter"))
+                    }
+                    _ => None, // OAuth and custom providers without api_key_env
+                };
+
+                if let Some((provider_key, display_name)) = provider {
+                    let keys = self.db.get_pool_keys(provider_key).unwrap_or_default();
+                    self.settings_state
+                        .key_pool
+                        .open(provider_key, display_name, keys);
+                }
+            }
+            return;
+        }
+
+        // Fallback to original behavior when no model is expanded
         if self.settings_state.models_in_oauth_section {
             return;
         }
@@ -1075,6 +1201,118 @@ impl TuiApp {
                     .key_pool
                     .open(provider, display_name, keys);
             }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Model Settings Methods
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Load model settings into edit state
+    fn load_model_settings(&mut self, model_name: &str) {
+        use stockpot_core::models::settings::ModelSettings;
+
+        let settings = ModelSettings::load(&self.db, model_name).unwrap_or_default();
+
+        self.settings_state.model_temp_value = settings
+            .temperature
+            .map(|t| format!("{:.1}", t))
+            .unwrap_or_else(|| "0.7".to_string());
+
+        self.settings_state.model_top_p_value = settings
+            .top_p
+            .map(|t| {
+                let s = format!("{:.3}", t);
+                s.trim_end_matches('0').trim_end_matches('.').to_string()
+            })
+            .unwrap_or_else(|| "1.0".to_string());
+    }
+
+    /// Save current model settings from edit state
+    fn save_current_model_settings(&mut self) {
+        use stockpot_core::models::settings::ModelSettings;
+
+        let Some(model_name) = self.settings_state.expanded_model.clone() else {
+            return;
+        };
+
+        // Save temperature
+        if !self.settings_state.model_temp_value.is_empty() {
+            if let Err(e) = ModelSettings::save_setting(
+                &self.db,
+                &model_name,
+                "temperature",
+                &self.settings_state.model_temp_value,
+            ) {
+                tracing::warn!("Failed to save temperature: {}", e);
+            }
+        }
+
+        // Save top_p
+        if !self.settings_state.model_top_p_value.is_empty() {
+            if let Err(e) = ModelSettings::save_setting(
+                &self.db,
+                &model_name,
+                "top_p",
+                &self.settings_state.model_top_p_value,
+            ) {
+                tracing::warn!("Failed to save top_p: {}", e);
+            }
+        }
+    }
+
+    /// Handle character input for model settings editing
+    fn handle_model_settings_char(&mut self, c: char) {
+        if !self.settings_state.model_settings_editing {
+            return;
+        }
+
+        // Only allow digits and decimal point
+        if !c.is_ascii_digit() && c != '.' {
+            return;
+        }
+
+        match self.settings_state.model_settings_field {
+            ModelSettingsField::Temperature => {
+                // Validate: max 3 chars (e.g., "2.0")
+                if self.settings_state.model_temp_value.len() < 4 {
+                    self.settings_state.model_temp_value.push(c);
+                }
+            }
+            ModelSettingsField::TopP => {
+                // Validate: max 5 chars (e.g., "0.951")
+                if self.settings_state.model_top_p_value.len() < 5 {
+                    self.settings_state.model_top_p_value.push(c);
+                }
+            }
+        }
+    }
+
+    /// Handle backspace for model settings editing
+    fn handle_model_settings_backspace(&mut self) {
+        if !self.settings_state.model_settings_editing {
+            return;
+        }
+
+        match self.settings_state.model_settings_field {
+            ModelSettingsField::Temperature => {
+                self.settings_state.model_temp_value.pop();
+            }
+            ModelSettingsField::TopP => {
+                self.settings_state.model_top_p_value.pop();
+            }
+        }
+    }
+
+    /// Handle Tab key in model settings to cycle fields
+    fn handle_model_settings_tab(&mut self) {
+        if self.settings_state.expanded_model.is_some() {
+            // Save current field before switching
+            if self.settings_state.model_settings_editing {
+                self.settings_state.model_settings_editing = false;
+            }
+            self.settings_state.model_settings_field =
+                self.settings_state.model_settings_field.next();
         }
     }
 
@@ -1358,8 +1596,23 @@ impl TuiApp {
                         return Ok(());
                     }
                     (_, KeyCode::Esc) => {
-                        // Settings takes priority, then folder modal, then dropdowns, then help
-                        if self.show_settings {
+                        // Default model dropdown takes highest priority
+                        if self.show_settings && self.settings_state.default_model_dropdown_open {
+                            self.settings_state.default_model_dropdown_open = false;
+                        } else if self.show_settings
+                            && self.settings_state.active_tab
+                                == super::settings::SettingsTab::Models
+                            && self.settings_state.expanded_model.is_some()
+                        {
+                            // Model settings expanded
+                            if self.settings_state.model_settings_editing {
+                                self.settings_state.model_settings_editing = false;
+                            } else {
+                                self.save_current_model_settings();
+                                self.settings_state.expanded_model = None;
+                            }
+                        } else if self.show_settings {
+                            // Settings takes priority, then folder modal, then dropdowns, then help
                             self.show_settings = false;
                         } else if self.show_folder_modal {
                             self.close_folder_modal();
@@ -1498,6 +1751,39 @@ impl TuiApp {
                     // 'k' key opens key pool management in Models tab
                     (KeyModifiers::NONE, KeyCode::Char('k')) if self.show_settings => {
                         self.handle_settings_key_pool_open();
+                        return Ok(());
+                    }
+                    // ─────────────────────────────────────────────────────────────
+                    // Model settings editing handlers
+                    // ─────────────────────────────────────────────────────────────
+                    // Tab key in Models tab with expanded model - cycle fields
+                    (KeyModifiers::NONE, KeyCode::Tab)
+                        if self.show_settings
+                            && self.settings_state.active_tab
+                                == super::settings::SettingsTab::Models
+                            && self.settings_state.expanded_model.is_some() =>
+                    {
+                        self.handle_model_settings_tab();
+                        return Ok(());
+                    }
+                    // Character input for model settings
+                    (KeyModifiers::NONE, KeyCode::Char(c))
+                        if self.show_settings
+                            && self.settings_state.active_tab
+                                == super::settings::SettingsTab::Models
+                            && self.settings_state.model_settings_editing =>
+                    {
+                        self.handle_model_settings_char(c);
+                        return Ok(());
+                    }
+                    // Backspace for model settings editing
+                    (KeyModifiers::NONE, KeyCode::Backspace)
+                        if self.show_settings
+                            && self.settings_state.active_tab
+                                == super::settings::SettingsTab::Models
+                            && self.settings_state.model_settings_editing =>
+                    {
+                        self.handle_model_settings_backspace();
                         return Ok(());
                     }
                     // Absorb all other keys when settings is open
@@ -1683,6 +1969,19 @@ impl TuiApp {
                             }
                             ClickTarget::ModelsItem(model_name) => {
                                 self.handle_settings_model_click(model_name);
+                                return Ok(());
+                            }
+                            ClickTarget::DefaultModelItem(idx) => {
+                                // Set the model as default and close dropdown
+                                let available_models = self.model_registry.list_available(&self.db);
+                                if let Some(model_name) = available_models.get(*idx) {
+                                    self.current_model = model_name.clone();
+                                    let settings = Settings::new(&self.db);
+                                    let _ = settings.set("model", model_name);
+                                    self.update_context_usage();
+                                }
+                                self.settings_state.default_model_dropdown_open = false;
+                                self.settings_state.default_model_index = *idx;
                                 return Ok(());
                             }
                             ClickTarget::PinnedAgentItem(idx) => {

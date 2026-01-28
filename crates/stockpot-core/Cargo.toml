@@ -1,6 +1,6 @@
 [package]
 name = "stockpot-core"
-version = "0.22.3"
+version = "0.23.0"
 edition = "2021"
 description = "Core library for Stockpot AI coding assistant"
 license = "MIT"

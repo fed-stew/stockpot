@@ -43,21 +43,58 @@ impl Default for PtyConfig {
 pub fn headless_env() -> HashMap<String, String> {
     let mut env = HashMap::new();
 
-    // Disable interactive terminal features
+    // === Terminal Type ===
+    // Signal non-interactive terminal to tools
     env.insert("TERM".to_string(), "dumb".to_string());
 
-    // Disable pagers
+    // === Pager Configuration ===
+    // Disable interactive pagers that wait for user input
     env.insert("PAGER".to_string(), "cat".to_string());
     env.insert("GIT_PAGER".to_string(), "cat".to_string());
+    env.insert("MANPAGER".to_string(), "cat".to_string());
     env.insert("BAT_PAGER".to_string(), String::new());
+    env.insert("DELTA_PAGER".to_string(), "cat".to_string());
     env.insert("SYSTEMD_PAGER".to_string(), String::new());
-
-    // Configure less to not wait for input
+    // Configure less to exit if content fits on screen, preserve colors
     env.insert("LESS".to_string(), "-FRX".to_string());
 
-    // Disable git terminal prompts
-    env.insert("GIT_TERMINAL_PROMPT".to_string(), "0".to_string());
+    // === Editor Configuration ===
+    // Prevent commands from opening interactive editors (git commit, crontab, etc.)
+    // 'true' is a shell command that exits immediately with success
+    env.insert("EDITOR".to_string(), "true".to_string());
+    env.insert("VISUAL".to_string(), "true".to_string());
+    env.insert("GIT_EDITOR".to_string(), "true".to_string());
 
+    // === CI/Non-Interactive Mode Flags ===
+    // These signal to many tools that they're running in a non-interactive environment
+    env.insert("CI".to_string(), "true".to_string());
+    env.insert("NONINTERACTIVE".to_string(), "1".to_string());
+
+    // === Package Manager Configuration ===
+    // npm/npx: Auto-answer "yes" to "Ok to proceed?" prompts
+    env.insert("npm_config_yes".to_string(), "true".to_string());
+    env.insert("NPM_CONFIG_YES".to_string(), "true".to_string());
+    // Yarn
+    env.insert(
+        "YARN_ENABLE_IMMUTABLE_INSTALLS".to_string(),
+        "false".to_string(),
+    );
+    // pip
+    env.insert("PIP_NO_INPUT".to_string(), "1".to_string());
+
+    // === Platform-Specific ===
+    // Debian/Ubuntu apt
+    env.insert("DEBIAN_FRONTEND".to_string(), "noninteractive".to_string());
+    // Homebrew
+    env.insert("HOMEBREW_NO_AUTO_UPDATE".to_string(), "1".to_string());
+
+    // === Git Configuration ===
+    // Disable git terminal prompts for credentials
+    env.insert("GIT_TERMINAL_PROMPT".to_string(), "0".to_string());
+    // Prevent git from asking for GPG passphrase
+    env.insert("GIT_ASKPASS".to_string(), "true".to_string());
+
+    // === Color Output ===
     // Force color output (many tools disable color when TERM=dumb)
     env.insert("FORCE_COLOR".to_string(), "1".to_string());
     env.insert("CLICOLOR_FORCE".to_string(), "1".to_string());

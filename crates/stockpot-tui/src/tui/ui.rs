@@ -15,7 +15,9 @@ use super::layout::AppLayout;
 use super::settings::render_settings;
 use crate::tui::hit_test::ClickTarget;
 use crate::tui::theme::{dim_background, Theme};
-use crate::tui::widgets::{ActivityFeed, DropdownWidget, Header, StatusBar, TextSelection};
+use crate::tui::widgets::{
+    ActivityFeed, DropdownWidget, Header, Scrollbar, StatusBar, TextSelection,
+};
 
 /// Render the entire UI
 pub fn render(frame: &mut Frame, app: &mut TuiApp) {
@@ -125,6 +127,21 @@ fn render_activity_feed(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
         return;
     }
 
+    // Reserve 1 column for scrollbar on the right
+    let content_area = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width.saturating_sub(1),
+        height: area.height,
+    };
+
+    let scrollbar_area = Rect {
+        x: area.x + area.width.saturating_sub(1),
+        y: area.y,
+        width: 1,
+        height: area.height,
+    };
+
     // Build selection for the widget
     let selection = if app.selection.is_active() {
         let mut sel = TextSelection::default();
@@ -148,7 +165,19 @@ fn render_activity_feed(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
         activity_feed = activity_feed.selection(sel);
     }
 
-    frame.render_stateful_widget(activity_feed, area, &mut app.activity_state);
+    // Render activity feed in content area
+    frame.render_stateful_widget(activity_feed, content_area, &mut app.activity_state);
+
+    // Render scrollbar (only if content exceeds viewport)
+    let scrollbar = Scrollbar::new(
+        app.activity_state.scroll_offset,
+        app.activity_state.total_content_height,
+        app.activity_state.viewport_height,
+    );
+
+    if scrollbar.is_visible() {
+        frame.render_widget(scrollbar, scrollbar_area);
+    }
 }
 
 fn render_welcome(frame: &mut Frame, area: Rect) {

@@ -3,6 +3,8 @@
 use std::process::{Command, Stdio};
 use thiserror::Error;
 
+use crate::terminal::headless_env;
+
 /// Maximum characters in shell command output to protect context window
 const SHELL_MAX_OUTPUT_CHARS: usize = 50_000;
 
@@ -75,6 +77,11 @@ impl CommandRunner {
 
         let mut cmd = Command::new(shell);
         cmd.arg(shell_arg).arg(command);
+
+        // Apply headless environment for non-interactive execution
+        for (key, value) in headless_env() {
+            cmd.env(key, value);
+        }
 
         if let Some(dir) = &self.working_dir {
             cmd.current_dir(dir);

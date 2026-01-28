@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2025-01-27
+
+### Added
+- **TUI**: 3-line default input bar for more comfortable prompt typing (expandable to 5 lines)
+- **TUI**: Visual scrollbar on message container showing position in conversation
+- **TUI**: Per-model settings (temperature, top_p) in Settings > Models tab - press Enter to expand a model
+- **TUI**: Default model dropdown in Settings > Pinned Agents tab with modal overlay
+- **TUI**: Up/Down arrow navigation within expanded model settings panel
+
+### Fixed
+- **TUI**: 'k' key now correctly opens API key pool management for expanded models
+- **TUI**: Escape key properly closes default model dropdown before closing settings
+
 ## [0.22.3] - 2025-01-26
 
 ### Fixed
