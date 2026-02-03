@@ -28,6 +28,11 @@ pub trait AuthProgress: Send + Sync {
     fn warning(&self, msg: &str);
     /// Report an error message.
     fn error(&self, msg: &str);
+    /// Called with the auth URL and callback port before waiting for tokens.
+    /// TUI can use this to show a dialog with the URL.
+    fn on_auth_url(&self, _url: &str, _port: u16) {
+        // Default: do nothing (messages already contain this info)
+    }
 }
 
 /// Default progress reporter that prints to stdout.

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.4] - 2025-01-27
+
+### Added
+- **TUI**: OAuth authentication dialog with copyable URL for SSH/headless users
+  - Modal dialog shows auth URL prominently for easy copy/paste
+  - Shows callback port for SSH port forwarding: `ssh -L PORT:localhost:PORT`
+  - Auto-closes on successful authentication
+  - Escape key dismisses dialog
+
+### Changed  
+- **Core**: `AuthProgress::on_auth_url()` callback for capturing URL/port before waiting
+
 ## [0.23.3] - 2025-01-27
 
 ### Added

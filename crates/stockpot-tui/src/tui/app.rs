@@ -122,6 +122,20 @@ pub struct TuiApp {
     /// Scroll offset for folder modal
     pub folder_modal_scroll: usize,
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // OAuth dialog state
+    // ─────────────────────────────────────────────────────────────────────────
+    /// Whether OAuth dialog is visible
+    pub show_oauth_dialog: bool,
+    /// OAuth provider being authenticated
+    pub oauth_dialog_provider: Option<String>,
+    /// OAuth auth URL to display
+    pub oauth_dialog_url: Option<String>,
+    /// OAuth callback port
+    pub oauth_dialog_port: Option<u16>,
+    /// OAuth status message
+    pub oauth_dialog_status: String,
+
     /// Throughput samples (count, time)
     pub throughput_samples: Vec<(usize, Instant)>,
     /// Current throughput (chars/sec)
@@ -154,6 +168,10 @@ pub struct TuiApp {
     pub oauth_completion_rx: tokio::sync::mpsc::UnboundedReceiver<(String, Result<(), String>)>,
     /// OAuth completion sender - cloned and passed to OAuth tasks
     oauth_completion_tx: tokio::sync::mpsc::UnboundedSender<(String, Result<(), String>)>,
+    /// OAuth dialog info receiver - receives (provider, url, port) to show dialog
+    pub oauth_dialog_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String, u16)>,
+    /// OAuth dialog info sender - cloned and passed to OAuth tasks
+    oauth_dialog_tx: tokio::sync::mpsc::UnboundedSender<(String, String, u16)>,
 }
 
 impl TuiApp {
@@ -197,6 +215,7 @@ impl TuiApp {
 
         // OAuth completion channel
         let (oauth_completion_tx, oauth_completion_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (oauth_dialog_tx, oauth_dialog_rx) = tokio::sync::mpsc::unbounded_channel();
 
         // Event handler with ~60 FPS tick rate
         let events = EventHandler::new(Duration::from_millis(16));
@@ -241,6 +260,12 @@ impl TuiApp {
             folder_modal_entries: Vec::new(),
             folder_modal_selected: 0,
             folder_modal_scroll: 0,
+            // OAuth dialog
+            show_oauth_dialog: false,
+            oauth_dialog_provider: None,
+            oauth_dialog_url: None,
+            oauth_dialog_port: None,
+            oauth_dialog_status: String::new(),
             throughput_samples: Vec::new(),
             current_throughput_cps: 0.0,
             // Activity feed state
@@ -256,6 +281,8 @@ impl TuiApp {
             error_message: None,
             oauth_completion_rx,
             oauth_completion_tx,
+            oauth_dialog_rx,
+            oauth_dialog_tx,
         })
     }
 
@@ -1247,9 +1274,10 @@ impl TuiApp {
         // Clone what we need for the async task
         let db = self.db.clone();
         let sender = self.message_bus.sender();
-        let progress = MessageBusProgress::new(sender);
+        let dialog_tx = self.oauth_dialog_tx.clone();
         let completion_tx = self.oauth_completion_tx.clone();
         let provider_str = provider.to_string();
+        let progress = MessageBusProgress::new(sender, provider_str.clone(), dialog_tx);
 
         // Spawn OAuth flow as local task (Database is not Send-safe)
         tokio::task::spawn_local(async move {
@@ -1575,8 +1603,24 @@ impl TuiApp {
             self.terminal
                 .draw(|frame| unsafe { ui::render(frame, &mut *app_ptr) })?;
 
+            // Check for OAuth dialog info (non-blocking)
+            while let Ok((provider, url, port)) = self.oauth_dialog_rx.try_recv() {
+                self.show_oauth_dialog = true;
+                self.oauth_dialog_provider = Some(provider);
+                self.oauth_dialog_url = Some(url);
+                self.oauth_dialog_port = Some(port);
+                self.oauth_dialog_status = "Waiting for authentication...".to_string();
+            }
+
             // Check for OAuth completion (non-blocking)
             while let Ok((provider, result)) = self.oauth_completion_rx.try_recv() {
+                // Close dialog
+                if self.oauth_dialog_provider.as_deref() == Some(&provider) {
+                    self.show_oauth_dialog = false;
+                    self.oauth_dialog_provider = None;
+                    self.oauth_dialog_url = None;
+                    self.oauth_dialog_port = None;
+                }
                 // Clear the in-progress state
                 if self.settings_state.oauth_in_progress.as_deref() == Some(&provider) {
                     self.settings_state.oauth_in_progress = None;
@@ -1715,6 +1759,12 @@ impl TuiApp {
                             self.show_settings = false;
                         } else if self.show_folder_modal {
                             self.close_folder_modal();
+                        } else if self.show_oauth_dialog {
+                            // Cancel OAuth - just close dialog (flow continues in background)
+                            self.show_oauth_dialog = false;
+                            self.oauth_dialog_url = None;
+                            self.oauth_dialog_port = None;
+                            self.oauth_dialog_provider = None;
                         } else {
                             self.show_agent_dropdown = false;
                             self.show_model_dropdown = false;
@@ -1831,6 +1881,10 @@ impl TuiApp {
                     }
                     // Absorb all other keys when folder modal is open
                     _ if self.show_folder_modal => {
+                        return Ok(());
+                    }
+                    // Absorb all other keys when OAuth dialog is open
+                    _ if self.show_oauth_dialog => {
                         return Ok(());
                     }
                     (KeyModifiers::NONE, KeyCode::Enter)
@@ -2675,11 +2729,17 @@ use stockpot_core::messaging::MessageSender;
 /// through the TUI's activity feed instead of printing to stdout.
 pub struct MessageBusProgress {
     sender: MessageSender,
+    provider: String,
+    dialog_tx: tokio::sync::mpsc::UnboundedSender<(String, String, u16)>,
 }
 
 impl MessageBusProgress {
-    pub fn new(sender: MessageSender) -> Self {
-        Self { sender }
+    pub fn new(
+        sender: MessageSender,
+        provider: String,
+        dialog_tx: tokio::sync::mpsc::UnboundedSender<(String, String, u16)>,
+    ) -> Self {
+        Self { sender, provider, dialog_tx }
     }
 }
 
@@ -2698,5 +2758,10 @@ impl stockpot_core::auth::AuthProgress for MessageBusProgress {
 
     fn error(&self, msg: &str) {
         self.sender.error(msg);
+    }
+
+    fn on_auth_url(&self, url: &str, port: u16) {
+        // Send URL/port to TUI to show in dialog
+        let _ = self.dialog_tx.send((self.provider.clone(), url.to_string(), port));
     }
 }

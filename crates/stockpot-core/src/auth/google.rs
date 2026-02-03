@@ -311,19 +311,18 @@ pub async fn run_google_auth_with_progress(
 
     let config = google_oauth_config();
     let (auth_url, handle) = run_pkce_flow(&config).await?;
+    let port = handle.port();
 
-    progress.info("📋 Open this URL in your browser:");
-    progress.info(&format!("   {}", auth_url));
-    progress.info("");
-    progress.info(&format!(
-        "⏳ Waiting for authentication callback on port {}...",
-        handle.port()
-    ));
+    // Notify about auth URL (for TUI dialog)
+    progress.on_auth_url(&auth_url, port);
+
+    progress.info(&format!("⏳ Waiting for callback on localhost:{}...", port));
+    progress.info("💡 SSH users: forward this port or copy URL to local browser");
 
     // Try to open browser
     if let Err(e) = webbrowser::open(&auth_url) {
-        progress.warning(&format!("⚠️  Could not open browser automatically: {}", e));
-        progress.info("   Please open the URL manually.");
+        progress.warning(&format!("⚠️  Could not open browser: {}", e));
+        progress.info("   Copy the URL from the dialog and open it manually.");
     }
 
     let tokens = handle.wait_for_tokens().await?;

@@ -64,6 +64,11 @@ pub fn render(frame: &mut Frame, app: &mut TuiApp) {
     if app.show_settings {
         render_settings(frame, frame.area(), app);
     }
+
+    // OAuth dialog overlay (highest priority - shows on top of settings)
+    if app.show_oauth_dialog {
+        render_oauth_dialog(frame, app);
+    }
 }
 
 fn render_header(frame: &mut Frame, app: &mut TuiApp, area: Rect) {
@@ -444,6 +449,82 @@ fn render_folder_modal(frame: &mut Frame, app: &mut TuiApp, header_area: Rect) {
             " Change Working Folder (Ctrl+Enter to confirm) ",
             Style::default().fg(Theme::ACCENT),
         ))
+        .style(Style::default().bg(Theme::INPUT_BG));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, modal_area);
+}
+
+fn render_oauth_dialog(frame: &mut Frame, app: &TuiApp) {
+    // Dim background for modal effect
+    dim_background(frame, frame.area());
+
+    // Get dialog info
+    let provider = app.oauth_dialog_provider.as_deref().unwrap_or("OAuth");
+    let url = app.oauth_dialog_url.as_deref().unwrap_or("");
+
+    // Modal dimensions - wide enough for URL
+    let modal_width: u16 = 72.min(frame.area().width.saturating_sub(4));
+    let modal_height: u16 = 12;
+
+    // Center the modal
+    let modal_x = (frame.area().width.saturating_sub(modal_width)) / 2;
+    let modal_y = (frame.area().height.saturating_sub(modal_height)) / 2;
+    let modal_area = Rect::new(modal_x, modal_y, modal_width, modal_height);
+
+    // Clear the area
+    frame.render_widget(Clear, modal_area);
+
+    // Build content
+    let inner_width = modal_width.saturating_sub(4) as usize;
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Copy this URL and open in your browser:",
+        Style::default().fg(Theme::TEXT),
+    )));
+    lines.push(Line::from(""));
+
+    // URL - may need to wrap if too long
+    if url.len() <= inner_width {
+        lines.push(Line::from(Span::styled(
+            url.to_string(),
+            Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        // Wrap URL across multiple lines
+        for chunk in url.as_bytes().chunks(inner_width) {
+            if let Ok(s) = std::str::from_utf8(chunk) {
+                lines.push(Line::from(Span::styled(
+                    s.to_string(),
+                    Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                )));
+            }
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "─".repeat(inner_width),
+        Style::default().fg(Theme::BORDER),
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        &app.oauth_dialog_status,
+        Style::default().fg(Theme::GREEN),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Esc to cancel",
+        Style::default().fg(Theme::MUTED),
+    )));
+
+    // Render the modal
+    let title = format!(" {} Authentication ", provider);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Theme::ACCENT))
+        .title(Span::styled(title, Style::default().fg(Theme::ACCENT)))
         .style(Style::default().bg(Theme::INPUT_BG));
 
     let paragraph = Paragraph::new(lines).block(block);
