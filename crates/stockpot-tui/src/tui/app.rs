@@ -1538,7 +1538,14 @@ impl TuiApp {
     async fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Key(key) => {
-                use crossterm::event::{KeyCode, KeyModifiers};
+                use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
+
+                // IMPORTANT: Only process Press events to avoid double-firing on Windows.
+                // Windows fires Press + Release (and sometimes Repeat) for arrow keys,
+                // while macOS typically only fires Press.
+                if key.kind != KeyEventKind::Press {
+                    return Ok(());
+                }
 
                 // Clear any error message on keypress
                 self.error_message = None;

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.2] - 2025-01-27
+
+### Fixed
+- **TUI**: Arrow keys no longer double-fire on Windows in dropdown menus and folder selection
+  - Added `KeyEventKind::Press` filter to prevent processing Release/Repeat events
+  - Windows crossterm fires multiple event kinds for arrow keys; macOS only fires Press
+
 ## [0.23.0] - 2025-01-27
 
 ### Added

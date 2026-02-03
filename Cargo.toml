@@ -8,7 +8,7 @@ resolver = "2"
 
 [package]
 name = "stockpot"
-version = "0.23.1"
+version = "0.23.2"
 edition = "2021"
 description = "AI-powered coding assistant with native GUI"
 license = "MIT"
@@ -23,9 +23,9 @@ name = "spot"
 path = "src/bin/spot.rs"
 
 [dependencies]
-stockpot-core = { path = "crates/stockpot-core", version = "0.23.1" }
-stockpot-tui = { path = "crates/stockpot-tui", version = "0.23.1", optional = true }
-stockpot-gui = { path = "crates/stockpot-gui", version = "0.23.1", optional = true }
+stockpot-core = { path = "crates/stockpot-core", version = "0.23.2" }
+stockpot-tui = { path = "crates/stockpot-tui", version = "0.23.2", optional = true }
+stockpot-gui = { path = "crates/stockpot-gui", version = "0.23.2", optional = true }
 
 # Needed for spot.rs binary
 tokio = { version = "1.0", features = ["full"] }
