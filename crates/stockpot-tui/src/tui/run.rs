@@ -15,8 +15,9 @@ use super::TuiApp;
 ///
 /// Returns an error if the TUI fails to start.
 pub fn run_tui(config: AppConfig) -> Result<()> {
-    // Set up file logging for TUI debugging
-    let log_file = File::create("/tmp/stockpot-tui.log").expect("Failed to create log file");
+    // Set up file logging for TUI debugging (cross-platform temp directory)
+    let log_path = std::env::temp_dir().join("stockpot-tui.log");
+    let log_file = File::create(&log_path).expect("Failed to create log file");
     let default_filter = if config.verbose {
         "trace"
     } else if config.debug {
