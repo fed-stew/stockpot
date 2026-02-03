@@ -150,6 +150,10 @@ pub struct TuiApp {
     pub stream_start: Option<Instant>,
     /// Error message to display (e.g., folder change failures)
     pub error_message: Option<String>,
+    /// OAuth completion receiver - receives (provider, Ok(()) | Err(msg)) when OAuth finishes
+    pub oauth_completion_rx: tokio::sync::mpsc::UnboundedReceiver<(String, Result<(), String>)>,
+    /// OAuth completion sender - cloned and passed to OAuth tasks
+    oauth_completion_tx: tokio::sync::mpsc::UnboundedSender<(String, Result<(), String>)>,
 }
 
 impl TuiApp {
@@ -190,6 +194,9 @@ impl TuiApp {
         let tool_registry = Arc::new(SpotToolRegistry::new());
         let mcp_manager = Arc::new(McpManager::new());
         let message_bus = MessageBus::new();
+
+        // OAuth completion channel
+        let (oauth_completion_tx, oauth_completion_rx) = tokio::sync::mpsc::unbounded_channel();
 
         // Event handler with ~60 FPS tick rate
         let events = EventHandler::new(Duration::from_millis(16));
@@ -247,6 +254,8 @@ impl TuiApp {
             copy_feedback: None,
             stream_start: None,
             error_message: None,
+            oauth_completion_rx,
+            oauth_completion_tx,
         })
     }
 
@@ -431,7 +440,10 @@ impl TuiApp {
                 }
 
                 if self.settings_state.models_in_oauth_section {
-                    // Can't go up from OAuth section, stay there
+                    // Navigate within OAuth section (3 providers)
+                    if self.settings_state.oauth_selected_index > 0 {
+                        self.settings_state.oauth_selected_index -= 1;
+                    }
                 } else if self.settings_state.models_selected_index > 0 {
                     self.settings_state.models_selected_index -= 1;
                 } else {
@@ -518,9 +530,14 @@ impl TuiApp {
                 }
 
                 if self.settings_state.models_in_oauth_section {
-                    // Go from OAuth section to models list
-                    self.settings_state.models_in_oauth_section = false;
-                    self.settings_state.models_selected_index = 0;
+                    // Navigate within OAuth section (3 providers: 0=Claude, 1=ChatGPT, 2=Google)
+                    if self.settings_state.oauth_selected_index < 2 {
+                        self.settings_state.oauth_selected_index += 1;
+                    } else {
+                        // At bottom of OAuth section, go to models list
+                        self.settings_state.models_in_oauth_section = false;
+                        self.settings_state.models_selected_index = 0;
+                    }
                 } else {
                     let available_models = self.model_registry.list_available(&self.db);
                     let max_index =
@@ -688,7 +705,8 @@ impl TuiApp {
             }
             SettingsTab::Models => {
                 if self.settings_state.models_in_oauth_section {
-                    // Can't interact with OAuth section in TUI
+                    // Start OAuth flow for selected provider
+                    self.start_oauth_flow();
                     return;
                 }
 
@@ -1205,6 +1223,68 @@ impl TuiApp {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // OAuth Flow Methods
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Start OAuth authentication flow for the selected provider
+    fn start_oauth_flow(&mut self) {
+        // Determine which provider is selected
+        let (provider, _provider_name) = match self.settings_state.oauth_selected_index {
+            0 => ("claude-code", "Claude Code"),
+            1 => ("chatgpt", "ChatGPT"),
+            2 => ("google", "Google"),
+            _ => return,
+        };
+
+        // Don't start if already in progress
+        if self.settings_state.oauth_in_progress.is_some() {
+            return;
+        }
+
+        // Mark as in progress
+        self.settings_state.oauth_in_progress = Some(provider.to_string());
+
+        // Clone what we need for the async task
+        let db = self.db.clone();
+        let sender = self.message_bus.sender();
+        let progress = MessageBusProgress::new(sender);
+        let completion_tx = self.oauth_completion_tx.clone();
+        let provider_str = provider.to_string();
+
+        // Spawn OAuth flow as local task (Database is not Send-safe)
+        tokio::task::spawn_local(async move {
+            let result = match provider_str.as_str() {
+                "chatgpt" => {
+                    stockpot_core::auth::run_chatgpt_auth_with_progress(&db, &progress)
+                        .await
+                        .map_err(|e| e.to_string())
+                }
+                "claude-code" => {
+                    stockpot_core::auth::run_claude_code_auth_with_progress(&db, &progress)
+                        .await
+                        .map_err(|e| e.to_string())
+                }
+                "google" => {
+                    stockpot_core::auth::run_google_auth_with_progress(&db, &progress)
+                        .await
+                        .map_err(|e| e.to_string())
+                }
+                _ => Err(format!("Unknown provider: {}", provider_str)),
+            };
+
+            // Signal completion via channel
+            let _ = completion_tx.send((provider_str, result.map(|_| ())));
+        });
+    }
+
+    /// Refresh model registry after OAuth completion
+    pub fn refresh_model_registry(&mut self) {
+        if let Ok(registry) = stockpot_core::models::ModelRegistry::load_from_db(&self.db) {
+            self.model_registry = std::sync::Arc::new(registry);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Model Settings Methods
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1494,6 +1574,18 @@ impl TuiApp {
             let app_ptr: *mut TuiApp = self;
             self.terminal
                 .draw(|frame| unsafe { ui::render(frame, &mut *app_ptr) })?;
+
+            // Check for OAuth completion (non-blocking)
+            while let Ok((provider, result)) = self.oauth_completion_rx.try_recv() {
+                // Clear the in-progress state
+                if self.settings_state.oauth_in_progress.as_deref() == Some(&provider) {
+                    self.settings_state.oauth_in_progress = None;
+                }
+                // Refresh model registry on success
+                if result.is_ok() {
+                    self.refresh_model_registry();
+                }
+            }
 
             // Handle events and messages
             tokio::select! {
@@ -2568,5 +2660,43 @@ impl Drop for TuiApp {
             DisableMouseCapture
         );
         let _ = self.terminal.show_cursor();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OAuth Progress Reporter for TUI
+// ─────────────────────────────────────────────────────────────────────────────
+
+use stockpot_core::messaging::MessageSender;
+
+/// Progress reporter that sends messages to the TUI via MessageBus.
+/// 
+/// This implements `AuthProgress` to route OAuth flow messages
+/// through the TUI's activity feed instead of printing to stdout.
+pub struct MessageBusProgress {
+    sender: MessageSender,
+}
+
+impl MessageBusProgress {
+    pub fn new(sender: MessageSender) -> Self {
+        Self { sender }
+    }
+}
+
+impl stockpot_core::auth::AuthProgress for MessageBusProgress {
+    fn info(&self, msg: &str) {
+        self.sender.info(msg);
+    }
+
+    fn success(&self, msg: &str) {
+        self.sender.success(msg);
+    }
+
+    fn warning(&self, msg: &str) {
+        self.sender.warning(msg);
+    }
+
+    fn error(&self, msg: &str) {
+        self.sender.error(msg);
     }
 }

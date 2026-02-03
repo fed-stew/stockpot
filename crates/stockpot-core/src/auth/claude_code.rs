@@ -264,25 +264,33 @@ fn save_claude_models_to_db(db: &Database, models: &[String]) -> Result<(), std:
     Ok(())
 }
 
-/// Run the Claude Code OAuth flow.
+/// Run the Claude Code OAuth flow (prints to stdout).
 pub async fn run_claude_code_auth(db: &Database) -> Result<(), ClaudeCodeAuthError> {
-    println!("🔐 Starting Claude Code OAuth authentication...");
+    run_claude_code_auth_with_progress(db, &super::StdoutProgress).await
+}
+
+/// Run the Claude Code OAuth flow with custom progress reporting.
+pub async fn run_claude_code_auth_with_progress(
+    db: &Database,
+    progress: &impl super::AuthProgress,
+) -> Result<(), ClaudeCodeAuthError> {
+    progress.info("🔐 Starting Claude Code OAuth authentication...");
 
     let config = claude_code_oauth_config();
     let (auth_url, handle) = run_pkce_flow(&config).await?;
 
-    println!("📋 Open this URL in your browser:");
-    println!("   {}", auth_url);
-    println!();
-    println!(
+    progress.info("📋 Open this URL in your browser:");
+    progress.info(&format!("   {}", auth_url));
+    progress.info("");
+    progress.info(&format!(
         "⏳ Waiting for authentication callback on port {}...",
         handle.port()
-    );
+    ));
 
     // Try to open browser
     if let Err(e) = webbrowser::open(&auth_url) {
-        println!("⚠️  Could not open browser automatically: {}", e);
-        println!("   Please open the URL manually.");
+        progress.warning(&format!("⚠️  Could not open browser automatically: {}", e));
+        progress.info("   Please open the URL manually.");
     }
 
     let tokens = handle.wait_for_tokens().await?;
@@ -290,38 +298,38 @@ pub async fn run_claude_code_auth(db: &Database) -> Result<(), ClaudeCodeAuthErr
     let auth = ClaudeCodeAuth::new(db);
     auth.save_tokens(&tokens)?;
 
-    println!("✅ Authentication successful!");
+    progress.success("✅ Authentication successful!");
 
     // Fetch and save available models
-    println!("📥 Fetching available Claude models...");
+    progress.info("📥 Fetching available Claude models...");
     match fetch_claude_models(&tokens.access_token).await {
         Ok(models) => {
             let filtered = filter_latest_models(models);
             if filtered.is_empty() {
-                println!("⚠️  No Claude models found. You may need to check your subscription.");
+                progress.warning("⚠️  No Claude models found. You may need to check your subscription.");
             } else {
                 match save_claude_models_to_db(db, &filtered) {
                     Ok(()) => {
-                        println!("✅ Saved {} Claude Code models:", filtered.len());
+                        progress.success(&format!("✅ Saved {} Claude Code models:", filtered.len()));
                         for model in &filtered {
-                            println!("   • claude-code-{}", model);
+                            progress.info(&format!("   • claude-code-{}", model));
                         }
                     }
                     Err(e) => {
-                        println!("⚠️  Failed to save models: {}", e);
+                        progress.warning(&format!("⚠️  Failed to save models: {}", e));
                     }
                 }
             }
         }
         Err(e) => {
-            println!("⚠️  Failed to fetch models: {}", e);
-            println!("   You can try /claude-code-auth again later.");
+            progress.warning(&format!("⚠️  Failed to fetch models: {}", e));
+            progress.info("   You can try /claude-code-auth again later.");
         }
     }
 
-    println!();
-    println!("🎉 Claude Code authentication complete!");
-    println!("   Use /model to select a claude-code-* model.");
+    progress.info("");
+    progress.success("🎉 Claude Code authentication complete!");
+    progress.info("   Use /model to select a claude-code-* model.");
 
     Ok(())
 }

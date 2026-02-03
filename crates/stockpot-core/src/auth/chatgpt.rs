@@ -266,25 +266,33 @@ fn save_chatgpt_models_to_db(db: &Database, models: &[String]) -> Result<(), std
     Ok(())
 }
 
-/// Run the ChatGPT OAuth flow.
+/// Run the ChatGPT OAuth flow (prints to stdout).
 pub async fn run_chatgpt_auth(db: &Database) -> Result<(), ChatGptAuthError> {
-    println!("🔐 Starting ChatGPT OAuth authentication...");
+    run_chatgpt_auth_with_progress(db, &super::StdoutProgress).await
+}
+
+/// Run the ChatGPT OAuth flow with custom progress reporting.
+pub async fn run_chatgpt_auth_with_progress(
+    db: &Database,
+    progress: &impl super::AuthProgress,
+) -> Result<(), ChatGptAuthError> {
+    progress.info("🔐 Starting ChatGPT OAuth authentication...");
 
     let config = chatgpt_oauth_config();
     let (auth_url, handle) = run_pkce_flow(&config).await?;
 
-    println!("📋 Open this URL in your browser:");
-    println!("   {}", auth_url);
-    println!();
-    println!(
+    progress.info("📋 Open this URL in your browser:");
+    progress.info(&format!("   {}", auth_url));
+    progress.info("");
+    progress.info(&format!(
         "⏳ Waiting for authentication callback on port {}...",
         handle.port()
-    );
+    ));
 
     // Try to open browser
     if let Err(e) = webbrowser::open(&auth_url) {
-        println!("⚠️  Could not open browser automatically: {}", e);
-        println!("   Please open the URL manually.");
+        progress.warning(&format!("⚠️  Could not open browser automatically: {}", e));
+        progress.info("   Please open the URL manually.");
     }
 
     let tokens = handle.wait_for_tokens().await?;
@@ -292,29 +300,29 @@ pub async fn run_chatgpt_auth(db: &Database) -> Result<(), ChatGptAuthError> {
     let auth = ChatGptAuth::new(db);
     auth.save_tokens(&tokens)?;
 
-    println!("✅ Authentication successful!");
+    progress.success("✅ Authentication successful!");
 
     // Use hardcoded list of known ChatGPT models
     // (OAuth token lacks api.model.read scope to fetch from API)
     let models = known_chatgpt_models();
-    println!("📋 Using {} known ChatGPT models", models.len());
+    progress.info(&format!("📋 Using {} known ChatGPT models", models.len()));
 
     // Save models to database
     match save_chatgpt_models_to_db(db, &models) {
         Ok(()) => {
-            println!("✅ Registered {} ChatGPT models:", models.len());
+            progress.success(&format!("✅ Registered {} ChatGPT models:", models.len()));
             for model in &models {
-                println!("   • chatgpt-{}", model);
+                progress.info(&format!("   • chatgpt-{}", model));
             }
         }
         Err(e) => {
-            println!("⚠️  Failed to save models: {}", e);
+            progress.warning(&format!("⚠️  Failed to save models: {}", e));
         }
     }
 
     // Verify models were actually saved by querying the database
-    println!();
-    println!("🔍 Verifying saved models in database...");
+    progress.info("");
+    progress.info("🔍 Verifying saved models in database...");
     match db
         .conn()
         .prepare("SELECT name, model_type FROM models WHERE model_type = 'chatgpt_oauth'")
@@ -324,21 +332,21 @@ pub async fn run_chatgpt_auth(db: &Database) -> Result<(), ChatGptAuthError> {
                 .query_map([], |row| row.get::<_, String>(0))
                 .map(|iter| iter.flatten().collect())
                 .unwrap_or_default();
-            println!("📊 Found {} chatgpt_oauth models in database:", rows.len());
+            progress.info(&format!("📊 Found {} chatgpt_oauth models in database:", rows.len()));
             for name in &rows {
-                println!("   • {}", name);
+                progress.info(&format!("   • {}", name));
             }
             if rows.is_empty() {
-                println!("❌ WARNING: No models found in database after save!");
-                println!("   This suggests the INSERT is failing silently.");
+                progress.error("❌ WARNING: No models found in database after save!");
+                progress.error("   This suggests the INSERT is failing silently.");
             }
         }
-        Err(e) => println!("❌ Failed to verify: {}", e),
+        Err(e) => progress.error(&format!("❌ Failed to verify: {}", e)),
     }
 
-    println!();
-    println!("🎉 ChatGPT authentication complete!");
-    println!("   Use /model to select a chatgpt-* model.");
+    progress.info("");
+    progress.success("🎉 ChatGPT authentication complete!");
+    progress.info("   Use /model to select a chatgpt-* model.");
 
     Ok(())
 }

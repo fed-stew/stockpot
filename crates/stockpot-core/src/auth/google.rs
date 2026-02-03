@@ -297,45 +297,53 @@ fn save_google_models_to_db(db: &Database, project_id: &str) -> Result<(), std::
 // Auth Flow
 // ============================================================================
 
-/// Run the Google OAuth flow.
+/// Run the Google OAuth flow (prints to stdout).
 pub async fn run_google_auth(db: &Database) -> Result<(), GoogleAuthError> {
-    println!("🔐 Starting Google OAuth authentication...");
+    run_google_auth_with_progress(db, &super::StdoutProgress).await
+}
+
+/// Run the Google OAuth flow with custom progress reporting.
+pub async fn run_google_auth_with_progress(
+    db: &Database,
+    progress: &impl super::AuthProgress,
+) -> Result<(), GoogleAuthError> {
+    progress.info("🔐 Starting Google OAuth authentication...");
 
     let config = google_oauth_config();
     let (auth_url, handle) = run_pkce_flow(&config).await?;
 
-    println!("📋 Open this URL in your browser:");
-    println!("   {}", auth_url);
-    println!();
-    println!(
+    progress.info("📋 Open this URL in your browser:");
+    progress.info(&format!("   {}", auth_url));
+    progress.info("");
+    progress.info(&format!(
         "⏳ Waiting for authentication callback on port {}...",
         handle.port()
-    );
+    ));
 
     // Try to open browser
     if let Err(e) = webbrowser::open(&auth_url) {
-        println!("⚠️  Could not open browser automatically: {}", e);
-        println!("   Please open the URL manually.");
+        progress.warning(&format!("⚠️  Could not open browser automatically: {}", e));
+        progress.info("   Please open the URL manually.");
     }
 
     let tokens = handle.wait_for_tokens().await?;
-    println!("✅ OAuth tokens received.");
+    progress.success("✅ OAuth tokens received.");
 
     // Fetch Project ID via loadCodeAssist API
-    println!("🚀 Fetching Antigravity Project ID...");
+    progress.info("🚀 Fetching Antigravity Project ID...");
     let project_id = match fetch_project_id(&tokens.access_token).await {
         Ok(id) => {
             if id == ANTIGRAVITY_DEFAULT_PROJECT_ID {
-                println!("📋 Using default Antigravity project: {}", id);
+                progress.info(&format!("📋 Using default Antigravity project: {}", id));
             } else {
-                println!("✅ Got Project ID: {}", id);
+                progress.success(&format!("✅ Got Project ID: {}", id));
             }
             id
         }
         Err(e) => {
             // This shouldn't happen since fetch_project_id now has fallback
-            println!("⚠️  Failed to fetch Project ID: {}", e);
-            println!("   Using default project ID.");
+            progress.warning(&format!("⚠️  Failed to fetch Project ID: {}", e));
+            progress.info("   Using default project ID.");
             ANTIGRAVITY_DEFAULT_PROJECT_ID.to_string()
         }
     };
@@ -343,16 +351,16 @@ pub async fn run_google_auth(db: &Database) -> Result<(), GoogleAuthError> {
     let auth = GoogleAuth::new(db);
     auth.save_tokens(&tokens, Some(&project_id))?;
 
-    println!("✅ Authentication successful!");
+    progress.success("✅ Authentication successful!");
 
     // Register models with the project ID
     if let Err(e) = save_google_models_to_db(db, &project_id) {
-        println!("⚠️  Failed to save models: {}", e);
+        progress.warning(&format!("⚠️  Failed to save models: {}", e));
     }
 
-    println!();
-    println!("🎉 Google authentication complete!");
-    println!("   Use /model to select a google-* model.");
+    progress.info("");
+    progress.success("🎉 Google authentication complete!");
+    progress.info("   Use /model to select a google-* model.");
 
     Ok(())
 }

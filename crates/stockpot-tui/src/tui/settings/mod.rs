@@ -273,6 +273,10 @@ pub struct SettingsState {
     pub models_expanded_providers: std::collections::HashSet<String>,
     /// Whether we're in the OAuth section (vs model list)
     pub models_in_oauth_section: bool,
+    /// Selected OAuth provider index (0=Claude, 1=ChatGPT, 2=Google)
+    pub oauth_selected_index: usize,
+    /// OAuth flow in progress for this provider (e.g., "chatgpt")
+    pub oauth_in_progress: Option<String>,
     /// Currently expanded model (for editing settings)
     pub expanded_model: Option<String>,
     /// Temperature value being edited
@@ -334,6 +338,8 @@ impl SettingsState {
         // Reset models state
         self.models_selected_index = 0;
         self.models_in_oauth_section = true;
+        self.oauth_selected_index = 0;
+        // Don't reset oauth_in_progress - keep it if flow is running
         // Don't clear expanded providers - keep user's preference
         // Reset model settings state
         self.expanded_model = None;

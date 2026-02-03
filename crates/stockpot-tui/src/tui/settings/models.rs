@@ -145,13 +145,17 @@ fn render_oauth_section(frame: &mut Frame, area: Rect, app: &TuiApp, is_focused:
     let chatgpt_connected = has_oauth_tokens(&app.db, "chatgpt");
     let google_connected = has_oauth_tokens(&app.db, "google");
 
+    // Get selection state
+    let selected_index = app.settings_state.oauth_selected_index;
+    let in_progress = app.settings_state.oauth_in_progress.as_deref();
+
     let lines = vec![
-        render_oauth_line("Claude Code", claude_connected),
-        render_oauth_line("ChatGPT", chatgpt_connected),
-        render_oauth_line("Google", google_connected),
+        render_oauth_line("Claude Code", "claude-code", claude_connected, is_focused && selected_index == 0, in_progress),
+        render_oauth_line("ChatGPT", "chatgpt", chatgpt_connected, is_focused && selected_index == 1, in_progress),
+        render_oauth_line("Google", "google", google_connected, is_focused && selected_index == 2, in_progress),
         Line::from(""),
         Line::from(Span::styled(
-            "  Note: OAuth login requires GUI mode",
+            if is_focused { "  ↵ Enter to connect  •  ↑↓ Navigate" } else { "  Press Enter to connect" },
             Style::default().fg(Theme::MUTED),
         )),
     ];
@@ -161,15 +165,35 @@ fn render_oauth_section(frame: &mut Frame, area: Rect, app: &TuiApp, is_focused:
 }
 
 /// Render a single OAuth status line
-fn render_oauth_line(name: &str, connected: bool) -> Line<'static> {
-    let (status_icon, status_text, status_color) = if connected {
+fn render_oauth_line(
+    name: &str,
+    provider_id: &str,
+    connected: bool,
+    is_selected: bool,
+    in_progress: Option<&str>,
+) -> Line<'static> {
+    // Check if this provider is currently authenticating
+    let is_in_progress = in_progress == Some(provider_id);
+
+    let (status_icon, status_text, status_color) = if is_in_progress {
+        ("⟳", "Connecting...", Theme::ACCENT)
+    } else if connected {
         ("✓", "Connected", Theme::GREEN)
     } else {
-        ("✗", "Not connected", Theme::MUTED)
+        ("○", "Not connected", Theme::MUTED)
+    };
+
+    // Selection indicator
+    let prefix = if is_selected { "▸ " } else { "  " };
+    let name_style = if is_selected {
+        Style::default().fg(Theme::ACCENT)
+    } else {
+        Style::default().fg(Theme::TEXT)
     };
 
     Line::from(vec![
-        Span::styled(format!("  {:<14}", name), Style::default().fg(Theme::TEXT)),
+        Span::styled(prefix.to_string(), Style::default().fg(Theme::ACCENT)),
+        Span::styled(format!("{:<14}", name), name_style),
         Span::styled(
             format!("{} ", status_icon),
             Style::default().fg(status_color),
