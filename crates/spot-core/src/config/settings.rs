@@ -443,7 +443,9 @@ impl<'a> Settings<'a> {
         match mode {
             Some(true) => self.set_string("vdi.mode", "true"),
             Some(false) => self.set_string("vdi.mode", "false"),
-            None => { let _ = self.delete("vdi.mode"); },
+            None => {
+                let _ = self.delete("vdi.mode");
+            }
         }
     }
 
@@ -510,7 +512,7 @@ pub fn detect_vdi_environment() -> bool {
 /// Resolve the effective VDI mode: check user setting first, fall back to auto-detect.
 pub fn is_vdi_mode_active(settings: &Settings) -> bool {
     match settings.get_vdi_mode() {
-        Some(explicit) => explicit, // User explicitly set it
+        Some(explicit) => explicit,       // User explicitly set it
         None => detect_vdi_environment(), // Auto-detect
     }
 }
