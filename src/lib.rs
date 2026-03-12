@@ -1,11 +1,11 @@
-//! Stockpot - AI-powered coding assistant
+//! Spot - Precision computer control system
 //!
 //! This crate re-exports the core library and provides the main `spot` binary.
 
-pub use stockpot_core as core;
+pub use spot_core as core;
 
 #[cfg(feature = "tui")]
-pub use stockpot_tui as tui;
+pub use spot_tui as tui;
 
 #[cfg(feature = "gui")]
-pub use stockpot_gui as gui;
+pub use spot_gui as gui;

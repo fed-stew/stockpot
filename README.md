@@ -1,79 +1,79 @@
-# Stockpot
+# Spot 👁️
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Your AI-powered coding companion** — A blazing-fast coding assistant built in Rust with GUI, CLI, and TUI modes.
+**"Spot what matters. Control everything."** — A blazing-fast precision computer control system built in Rust with GUI, CLI, and TUI modes.
 
-Stockpot is an open-source alternative to expensive AI coding tools like Cursor and Windsurf. It features a beautiful native GUI (default), a powerful terminal REPL, and bridge mode for IDE integration. Supports multiple LLM providers including OAuth authentication for ChatGPT Plus and Claude Code subscriptions.
+Spot is an open-source alternative to expensive AI coding tools like Cursor and Windsurf. It features a beautiful native GUI (default), a powerful terminal REPL, and bridge mode for IDE integration. Supports multiple LLM providers including OAuth authentication for ChatGPT Plus and Claude Code subscriptions.
 
-## ✨ Features
+## Features
 
-### 🤖 Multi-Provider AI Support
+### Multi-Provider AI Support
 - **OpenAI**: GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, GPT-4o, O3, O4-mini
 - **Anthropic**: Claude Sonnet 4, Claude Opus 4, Claude 3.5 Haiku
 - **Google**: Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash
 - **ChatGPT OAuth**: Use your ChatGPT Plus/Pro subscription directly (no API key needed!)
 - **Claude Code OAuth**: Use your Claude Pro/Max subscription via VS Code credentials
 
-### 🖥️ Native GUI (Default)
+### Native GUI (Default)
 - **Beautiful Interface**: Modern, responsive design built with GPUI
 - **Real-time Streaming**: Watch responses flow in with live markdown rendering
 - **Model & Agent Switching**: Easy dropdowns for quick context switching
 - **Settings Panel**: Configure everything visually
-- **Dark Theme**: Easy on the eyes for long coding sessions
+- **Dark Theme**: Easy on the eyes for long sessions
 
-### 🛠️ Powerful Tools
+### Powerful Tools
 - **File Operations**: Read, write, list, grep with smart filtering
 - **Shell Commands**: Execute with streaming output and timeout handling
 - **Diff Application**: Proper unified diff parsing and patching
 - **Syntax Highlighting**: Rich markdown rendering with syntect
 
-### 🎯 Agent System
-- **Built-in Agents**: Stockpot, Planner, Language-specific Reviewers
+### Agent System
+- **Built-in Agents**: Spot, Planner, Language-specific Reviewers
 - **Custom JSON Agents**: Define your own agents with custom prompts
 - **Sub-Agent Invocation**: Agents can delegate to specialized agents
 - **Capability Controls**: Fine-grained permissions per agent
 
-### 🔌 MCP Integration
+### MCP Integration
 - **Model Context Protocol**: Connect to MCP servers for extended tools
 - **Auto-Discovery**: Load tools from filesystem, GitHub, and custom servers
 - **Hot-Reload**: Add/remove servers without restarting
 
-### 💾 Session Management
+### Session Management
 - **Save/Load Sessions**: Persist conversations for later
 - **Context Control**: Truncate, pin models, manage history
 - **Auto-Cleanup**: Smart session retention
 
-### 🎨 Developer Experience
+### Developer Experience
 - **Tab Completion**: Commands, models, agents, sessions
 - **Animated Spinner**: Activity indicator during LLM calls
 - **Rich Output**: Markdown, code blocks, diffs with colors
 - **Bridge Mode**: NDJSON protocol for external UI integration
 
-## 📦 Installation
+## Installation
 
 ### From GitHub Releases (Recommended)
 
-Download the latest release for your platform from the [Releases page](https://github.com/your-org/stockpot/releases).
+Download the latest release for your platform from the [Releases page](https://github.com/your-org/spot/releases).
 
 **Linux (x86_64)**:
 ```bash
-curl -LO https://github.com/your-org/stockpot/releases/latest/download/spot-linux-x86_64.tar.gz
+curl -LO https://github.com/your-org/spot/releases/latest/download/spot-linux-x86_64.tar.gz
 tar xzf spot-linux-x86_64.tar.gz
 sudo mv spot /usr/local/bin/
 ```
 
 **macOS (Intel)**:
 ```bash
-curl -LO https://github.com/your-org/stockpot/releases/latest/download/spot-macos-x86_64.tar.gz
+curl -LO https://github.com/your-org/spot/releases/latest/download/spot-macos-x86_64.tar.gz
 tar xzf spot-macos-x86_64.tar.gz
 sudo mv spot /usr/local/bin/
 ```
 
 **macOS (Apple Silicon)**:
 ```bash
-curl -LO https://github.com/your-org/stockpot/releases/latest/download/spot-macos-aarch64.tar.gz
+curl -LO https://github.com/your-org/spot/releases/latest/download/spot-macos-aarch64.tar.gz
 tar xzf spot-macos-aarch64.tar.gz
 sudo mv spot /usr/local/bin/
 ```
@@ -84,8 +84,8 @@ Download `spot-windows-x86_64.zip` from the releases page, extract it, and add t
 ### From Source
 
 ```bash
-git clone https://github.com/your-org/stockpot.git
-cd stockpot
+git clone https://github.com/your-org/spot.git
+cd spot
 cargo install --path .
 ```
 
@@ -98,7 +98,7 @@ spot --version
 ### Prerequisites
 - Rust 1.75 or later (only needed for building from source)
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Set up your API key
 
@@ -113,7 +113,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 export GOOGLE_API_KEY="..."
 ```
 
-### Start Stockpot
+### Start Spot
 
 ```bash
 # Launch GUI (default)
@@ -140,13 +140,13 @@ spot --model anthropic:claude-3-5-sonnet
 /claude-code-auth  # For Claude Code (uses VS Code credentials)
 ```
 
-## 📋 Commands
+## Commands
 
 ### Navigation
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all commands |
-| `/exit` | Exit Stockpot |
+| `/exit` | Exit Spot |
 | `/clear` | Clear the screen |
 | `/new` | Start a new conversation |
 
@@ -188,12 +188,12 @@ spot --model anthropic:claude-3-5-sonnet
 | `/set [key=value]` | Show or set configuration |
 | `/yolo` | Toggle YOLO mode (auto-approve) |
 
-## ⚙️ Configuration
+## Configuration
 
 ### Config Files
 
 ```
-~/.stockpot/
+~/.spot/
 ├── config.db          # SQLite database (settings, tokens)
 ├── sessions/          # Saved conversation sessions
 │   └── *.json
@@ -204,11 +204,11 @@ spot --model anthropic:claude-3-5-sonnet
 
 ### User Modes & Agent Visibility
 
-Stockpot organizes agents into three visibility levels to reduce clutter for different user experience levels:
+Spot organizes agents into three visibility levels to reduce clutter for different user experience levels:
 
 | Visibility | Description |
 |------------|-------------|
-| **Main** | Core agents always visible (stockpot, planning) |
+| **Main** | Core agents always visible (spot, planning) |
 | **Sub** | Specialized agents for power users (reviewers, explore) |
 | **Hidden** | Development/example agents |
 
@@ -238,12 +238,12 @@ Custom JSON agents can specify their visibility:
 }
 ```
 
-### Custom Agents (`~/.stockpot/agents/*.json`)
+### Custom Agents (`~/.spot/agents/*.json`)
 
 ```json
 {
   "name": "my-agent",
-  "display_name": "My Agent 🤖",
+  "display_name": "My Agent",
   "description": "A custom specialized agent",
   "system_prompt": "You are a helpful assistant specialized in...",
   "tools": ["read_file", "edit_file", "grep", "run_shell_command"],
@@ -257,7 +257,7 @@ Custom JSON agents can specify their visibility:
 }
 ```
 
-### MCP Configuration (`~/.stockpot/mcp.json`)
+### MCP Configuration (`~/.spot/mcp.json`)
 
 ```json
 {
@@ -279,7 +279,7 @@ Custom JSON agents can specify their visibility:
 }
 ```
 
-## 🌐 Bridge Mode
+## Bridge Mode
 
 For external UI integration (VS Code extension, web UI, etc.):
 
@@ -290,19 +290,19 @@ spot --bridge
 Communicates via NDJSON over stdio:
 
 ```json
-// → Outbound
-{"type": "ready", "version": "0.5.0", "agent": "stockpot", "model": "gpt-4o"}
+// Outbound
+{"type": "ready", "version": "0.5.0", "agent": "spot", "model": "gpt-4o"}
 {"type": "text_delta", "text": "Hello..."}
 {"type": "tool_call_start", "tool_name": "read_file"}
 {"type": "complete", "run_id": "..."}
 
-// ← Inbound
+// Inbound
 {"type": "prompt", "text": "Help me code"}
 {"type": "cancel"}
 {"type": "shutdown"}
 ```
 
-## 🧪 Development
+## Development
 
 ```bash
 # Run tests
@@ -318,12 +318,12 @@ cargo clippy
 cargo fmt
 ```
 
-## 📚 Architecture
+## Architecture
 
 ```
 src/
 ├── agents/           # Agent system
-│   ├── base.rs       # PuppyAgent trait
+│   ├── base.rs       # SpotAgent trait
 │   ├── builtin/      # Built-in agents
 │   ├── executor.rs   # Agent execution with streaming
 │   ├── json_agent.rs # JSON agent loader
@@ -348,7 +348,7 @@ src/
     └── shell.rs      # Shell execution
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -358,11 +358,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with [serdesAI](https://github.com/janfeddersen-wq/serdesAI) - AI agent framework
 - Inspired by [Claude Code](https://anthropic.com) and [Cursor](https://cursor.so)
@@ -371,4 +371,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ by the Fed Stew team**
+**Made with care by the Spot team**

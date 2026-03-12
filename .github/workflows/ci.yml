@@ -55,15 +55,15 @@ jobs:
 
       - name: Check all workspace crates
         run: |
-          echo "=== Checking stockpot-core ==="
-          cargo check -p stockpot-core
-          
-          echo "=== Checking stockpot-tui ==="
-          cargo check -p stockpot-tui
-          
-          echo "=== Checking stockpot-gui ==="
-          cargo check -p stockpot-gui
-          
+          echo "=== Checking spot-core ==="
+          cargo check -p spot-core
+
+          echo "=== Checking spot-tui ==="
+          cargo check -p spot-tui
+
+          echo "=== Checking spot-gui ==="
+          cargo check -p spot-gui
+
           echo "=== Checking root crate (all features) ==="
           cargo check --all-features
 

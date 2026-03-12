@@ -1,4 +1,4 @@
-//! Stockpot CLI - Auto-detecting GUI/TUI launcher
+//! Spot CLI - Auto-detecting GUI/TUI launcher
 //!
 //! Automatically selects GUI or TUI based on environment and available features.
 
@@ -7,7 +7,7 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(name = "spot")]
-#[command(about = "Stockpot AI Coding Assistant")]
+#[command(about = "Spot - Precision Computer Control")]
 #[command(version)]
 struct Args {
     /// Change to this directory before running
@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     }
 
     // Build AppConfig from args
-    let config = stockpot_core::runner::AppConfig {
+    let config = spot_core::runner::AppConfig {
         debug: args.debug,
         verbose: args.verbose,
         skip_update_check: args.skip_update_check,
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     if args.render_test {
         #[cfg(feature = "gui")]
         {
-            return stockpot_gui::gui::run_render_test();
+            return spot_gui::gui::run_render_test();
         }
         #[cfg(not(feature = "gui"))]
         {
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
         // Auto-detect: prefer GUI if available and we have a display
         #[cfg(feature = "gui")]
         {
-            stockpot_core::display_detect::has_display()
+            spot_core::display_detect::has_display()
         }
         #[cfg(not(feature = "gui"))]
         {
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
     if use_gui {
         #[cfg(feature = "gui")]
         {
-            stockpot_gui::gui::run_gui(config)
+            spot_gui::gui::run_gui(config)
         }
         #[cfg(not(feature = "gui"))]
         {
@@ -95,7 +95,7 @@ fn main() -> Result<()> {
     } else {
         #[cfg(feature = "tui")]
         {
-            stockpot_tui::tui::run_tui(config)
+            spot_tui::tui::run_tui(config)
         }
         #[cfg(not(feature = "tui"))]
         {

@@ -1,31 +1,31 @@
 [workspace]
 members = [
-    "crates/stockpot-core",
-    "crates/stockpot-tui",
-    "crates/stockpot-gui",
+    "crates/spot-core",
+    "crates/spot-tui",
+    "crates/spot-gui",
 ]
 resolver = "2"
 
 [package]
-name = "stockpot"
+name = "spot"
 version = "0.23.4"
 edition = "2021"
-description = "AI-powered coding assistant with native GUI"
+description = "Precision computer control system with native GUI"
 license = "MIT"
-authors = ["Stockpot Contributors"]
+authors = ["Spot Contributors"]
 repository = "https://github.com/fed-stew/stockpot"
-keywords = ["ai", "gui", "coding", "assistant", "llm"]
+keywords = ["ai", "gui", "control", "system", "llm"]
 categories = ["development-tools", "gui"]
-publish = false  # Cannot publish: depends on stockpot-gui which has git deps
+publish = false  # Cannot publish: depends on spot-gui which has git deps
 
 [[bin]]
 name = "spot"
 path = "src/bin/spot.rs"
 
 [dependencies]
-stockpot-core = { path = "crates/stockpot-core", version = "0.23.4" }
-stockpot-tui = { path = "crates/stockpot-tui", version = "0.23.4", optional = true }
-stockpot-gui = { path = "crates/stockpot-gui", version = "0.23.4", optional = true }
+spot-core = { path = "crates/spot-core", version = "0.23.4" }
+spot-tui = { path = "crates/spot-tui", version = "0.23.4", optional = true }
+spot-gui = { path = "crates/spot-gui", version = "0.23.4", optional = true }
 
 # Needed for spot.rs binary
 tokio = { version = "1.0", features = ["full"] }
@@ -43,8 +43,8 @@ serial_test = "3"
 
 [features]
 default = ["gui", "tui"]
-gui = ["dep:stockpot-gui"]
-tui = ["dep:stockpot-tui"]
+gui = ["dep:spot-gui"]
+tui = ["dep:spot-tui"]
 
 [profile.release]
 lto = "thin"

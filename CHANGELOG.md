@@ -60,21 +60,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - CI workflows updated for workspace structure
-- Doctests updated to use `stockpot_core` crate name
+- Doctests updated to use `spot_core` crate name
 - Clippy warnings and formatting issues resolved
 
 ## [0.22.1] - 2025-01-26
 
 ### Added
-- README.md files for stockpot-core and stockpot-tui crates
+- README.md files for spot-core and spot-tui crates
 
 ## [0.22.0] - 2025-01-26
 
 ### Changed
 - **BREAKING**: Split into workspace with 3 crates:
-  - `stockpot-core` - Core library (publishable to crates.io)
-  - `stockpot-tui` - Terminal UI (publishable to crates.io)
-  - `stockpot-gui` - GUI (git-only due to gpui dependency)
+  - `spot-core` - Core library (publishable to crates.io)
+  - `spot-tui` - Terminal UI (publishable to crates.io)
+  - `spot-gui` - GUI (git-only due to gpui dependency)
 - Updated streamdown dependencies to crates.io versions (0.1.4)
 
 ### Added
