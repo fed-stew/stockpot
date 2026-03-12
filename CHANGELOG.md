@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-03-12
+
+### Added
+- **GUI**: VDI mode with auto-detection for Citrix, VMware Horizon, RDP, and Amazon WorkSpaces
+  - Reduces animation frame rate from 120fps to ~15fps in VDI environments
+  - Toggle in Settings > General (shows "auto-detected" when VDI is detected)
+  - Configurable frame interval via `vdi.frame_interval_ms` setting
+- **Core**: `detect_vdi_environment()` and `is_vdi_mode_active()` for VDI detection
+- **GUI**: Configurable spinner timer interval for VDI mode (`Spinner::with_interval()`)
+
+### Changed
+- **GUI**: Animation loop only triggers re-renders when content actually changes
+  - Scroll moved, pending text updates, or explicit render flag required
+  - Decoupled data updates (throughput, scroll physics) from render triggers
+- **CI**: Pipeline restructured as sequential gate: fmt -> clippy -> tests
+  - Removed redundant cargo check job (clippy already covers it)
+  - Saves runner time by failing fast on formatting/lint issues
+- **Release**: Pipeline restructured with same fmt -> clippy -> tests gate before multi-platform build
+- Renamed crates from `stockpot-*` to `spot-*`
+
 ## [0.23.4] - 2025-01-27
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "spot-gui"
-version = "0.23.4"
+version = "0.24.0"
 edition = "2021"
 description = "GUI for Spot precision computer control system"
 license = "MIT"
@@ -15,7 +15,7 @@ name = "spot-gui"
 path = "src/bin/spot_gui.rs"
 
 [dependencies]
-spot-core = { path = "../spot-core", version = "0.23.4" }
+spot-core = { path = "../spot-core", version = "0.24.0" }
 
 # SerdesAI (re-exported types needed directly)
 serdes-ai-core = "0.2.6"

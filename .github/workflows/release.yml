@@ -9,8 +9,123 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ── Fast checks (no system deps, no compilation) ──────────────────────
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  # ── Lint (catches issues before expensive multi-platform build) ────────
+  clippy:
+    name: Clippy
+    needs: [fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            clang \
+            libxcb1 \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon0 \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libvulkan1 \
+            libvulkan-dev \
+            libssl-dev \
+            pkg-config \
+            libasound2t64 \
+            libasound2-dev \
+            libfontconfig1 \
+            libfontconfig1-dev \
+            libfreetype6 \
+            libfreetype6-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+          prefix-key: "v2-workspace"
+
+      - name: Run clippy on all workspace crates
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # ── Tests (only after lint passes) ─────────────────────────────────────
+  test:
+    name: Tests
+    needs: [clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            clang \
+            libxcb1 \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon0 \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libvulkan1 \
+            libvulkan-dev \
+            libssl-dev \
+            pkg-config \
+            libasound2t64 \
+            libasound2-dev \
+            libfontconfig1 \
+            libfontconfig1-dev \
+            libfreetype6 \
+            libfreetype6-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+          prefix-key: "v2-workspace"
+
+      - name: Run tests for all workspace crates
+        run: cargo test --workspace
+
+  # ── Multi-platform release build (only after tests pass) ───────────────
   build:
     name: Build ${{ matrix.target }}
+    needs: [test]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -113,6 +228,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # ── Create GitHub Release (after all builds succeed) ───────────────────
   release:
     name: Create GitHub Release
     needs: build

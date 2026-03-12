@@ -7484,7 +7484,7 @@ dependencies = [
 
 [[package]]
 name = "spot"
-version = "0.23.4"
+version = "0.24.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -7503,7 +7503,7 @@ dependencies = [
 
 [[package]]
 name = "spot-core"
-version = "0.23.4"
+version = "0.24.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7558,7 +7558,7 @@ dependencies = [
 
 [[package]]
 name = "spot-gui"
-version = "0.23.4"
+version = "0.24.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7592,7 +7592,7 @@ dependencies = [
 
 [[package]]
 name = "spot-tui"
-version = "0.23.4"
+version = "0.24.0"
 dependencies = [
  "anyhow",
  "arboard",
