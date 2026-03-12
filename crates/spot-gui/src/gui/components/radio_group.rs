@@ -375,6 +375,7 @@ where
 // =============================================================================
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 
@@ -388,14 +389,17 @@ mod tests {
         assert_eq!(RADIO_OUTER_SIZE, 18.0);
         assert_eq!(RADIO_INNER_SIZE, 8.0);
         // Inner circle should fit inside outer
-        assert!(RADIO_INNER_SIZE < RADIO_OUTER_SIZE - (RADIO_BORDER_WIDTH * 2.0));
+        assert!(
+            RADIO_INNER_SIZE < RADIO_OUTER_SIZE - (RADIO_BORDER_WIDTH * 2.0),
+            "inner must fit inside outer"
+        );
     }
 
     #[test]
     fn test_selected_bg_opacity() {
         // Should be a subtle tint, not a solid fill
         assert_eq!(SELECTED_BG_OPACITY, 0.08);
-        assert!(SELECTED_BG_OPACITY < 0.2); // Ensure it's subtle
+        assert!(SELECTED_BG_OPACITY < 0.2, "opacity should be subtle");
     }
 
     #[test]
@@ -429,6 +433,9 @@ mod tests {
         assert_eq!(LABEL_FONT_SIZE, 13.0);
         assert_eq!(DESCRIPTION_FONT_SIZE, 12.0);
         // Description should be slightly smaller
-        assert!(DESCRIPTION_FONT_SIZE < LABEL_FONT_SIZE);
+        assert!(
+            DESCRIPTION_FONT_SIZE < LABEL_FONT_SIZE,
+            "description should be smaller"
+        );
     }
 }

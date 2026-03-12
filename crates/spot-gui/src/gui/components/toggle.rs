@@ -142,6 +142,7 @@ pub fn labeled_toggle(
 }
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 
@@ -156,8 +157,14 @@ mod tests {
         assert_eq!(KNOB_SIZE, 20.0);
         assert_eq!(KNOB_PADDING, 2.0);
         // Knob should fit inside track with padding on both sides
-        assert!(KNOB_SIZE + (KNOB_PADDING * 2.0) <= TRACK_WIDTH);
-        assert!(KNOB_SIZE + (KNOB_PADDING * 2.0) <= TRACK_HEIGHT);
+        assert!(
+            KNOB_SIZE + (KNOB_PADDING * 2.0) <= TRACK_WIDTH,
+            "knob must fit in track width"
+        );
+        assert!(
+            KNOB_SIZE + (KNOB_PADDING * 2.0) <= TRACK_HEIGHT,
+            "knob must fit in track height"
+        );
     }
 
     #[test]

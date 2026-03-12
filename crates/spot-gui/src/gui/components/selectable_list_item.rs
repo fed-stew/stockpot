@@ -281,6 +281,7 @@ where
 // =============================================================================
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 
@@ -299,7 +300,7 @@ mod tests {
     fn test_selected_bg_opacity() {
         // Should be a subtle tint, not a solid fill
         assert_eq!(SELECTED_BG_OPACITY, 0.08);
-        assert!(SELECTED_BG_OPACITY < 0.2); // Ensure it's subtle
+        assert!(SELECTED_BG_OPACITY < 0.2, "opacity should be subtle");
     }
 
     #[test]
@@ -307,6 +308,9 @@ mod tests {
         assert_eq!(LABEL_FONT_SIZE, 13.0);
         assert_eq!(SUBTITLE_FONT_SIZE, 11.0);
         // Subtitle should be smaller than label
-        assert!(SUBTITLE_FONT_SIZE < LABEL_FONT_SIZE);
+        assert!(
+            SUBTITLE_FONT_SIZE < LABEL_FONT_SIZE,
+            "subtitle should be smaller"
+        );
     }
 }

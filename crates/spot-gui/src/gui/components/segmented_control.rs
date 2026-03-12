@@ -227,7 +227,7 @@ mod tests {
             C,
         }
 
-        let options = vec![
+        let options = [
             (TestMode::A, "Option A"),
             (TestMode::B, "Option B"),
             (TestMode::C, "Option C"),
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn test_generic_with_strings() {
         // Verify it works with &'static str as well
-        let options = vec![
+        let options = [
             ("light", "Light Mode"),
             ("dark", "Dark Mode"),
             ("system", "System"),

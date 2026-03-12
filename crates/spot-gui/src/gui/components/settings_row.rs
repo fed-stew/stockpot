@@ -312,6 +312,7 @@ fn render_label_row_dynamic(
 // =============================================================================
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 
@@ -325,15 +326,18 @@ mod tests {
         assert_eq!(LABEL_FONT_SIZE, 14.0);
         assert_eq!(DESCRIPTION_FONT_SIZE, 12.0);
         // Description should be smaller than label
-        assert!(DESCRIPTION_FONT_SIZE < LABEL_FONT_SIZE);
+        assert!(
+            DESCRIPTION_FONT_SIZE < LABEL_FONT_SIZE,
+            "description should be smaller"
+        );
     }
 
     #[test]
     fn test_description_max_width() {
         // Should have a reasonable max width to prevent overflow
         assert_eq!(DESCRIPTION_MAX_WIDTH, 400.0);
-        assert!(DESCRIPTION_MAX_WIDTH > 200.0); // Not too narrow
-        assert!(DESCRIPTION_MAX_WIDTH < 600.0); // Not too wide
+        assert!(DESCRIPTION_MAX_WIDTH > 200.0, "not too narrow");
+        assert!(DESCRIPTION_MAX_WIDTH < 600.0, "not too wide");
     }
 
     #[test]
