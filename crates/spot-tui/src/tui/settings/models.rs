@@ -225,6 +225,7 @@ fn render_oauth_line(
 }
 
 /// Render the models list section
+#[allow(clippy::too_many_arguments)]
 fn render_models_section(
     frame: &mut Frame,
     area: Rect,

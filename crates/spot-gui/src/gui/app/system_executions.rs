@@ -173,7 +173,7 @@ impl SystemExecutionsState {
     /// Get visible terminal snapshots sorted:
     /// 1. Named terminals first (alphabetically by name)
     /// 2. Then unnamed terminals by start time (oldest first)
-    /// Hidden terminals (like finished LLM commands) are filtered out
+    ///    Hidden terminals (like finished LLM commands) are filtered out
     pub fn get_sorted_snapshots(&self) -> Vec<ProcessSnapshot> {
         let mut snapshots: Vec<_> = self
             .store
@@ -929,6 +929,7 @@ impl ChatApp {
     }
 
     /// Spawn a terminal process with interactive input support (for User terminals)
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn_terminal_internal(
         &mut self,
         process_id: String,
