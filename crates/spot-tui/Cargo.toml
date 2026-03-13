@@ -1,6 +1,6 @@
 [package]
 name = "spot-tui"
-version = "0.24.0"
+version = "0.25.0"
 edition = "2021"
 description = "Terminal UI for Spot precision computer control system"
 license = "MIT"
@@ -15,7 +15,7 @@ name = "spot-cli"
 path = "src/bin/spot_cli.rs"
 
 [dependencies]
-spot-core = { path = "../spot-core", version = "0.24.0" }
+spot-core = { path = "../spot-core", version = "0.25.0" }
 
 # SerdesAI (re-exported types needed directly)
 serdes-ai-core = "0.2.6"

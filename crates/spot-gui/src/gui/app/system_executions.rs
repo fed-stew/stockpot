@@ -1075,15 +1075,37 @@ impl ChatApp {
 
                 cx.spawn(async move |this, cx| {
                     let mut output_rx = spawned.output_rx;
-                    // Use the processor from alacritty_terminal
                     use alacritty_terminal::vte::ansi::Processor as VteProcessor;
                     let mut vte_processor: VteProcessor = VteProcessor::new();
 
-                    while let Some(event) = output_rx.recv().await {
+                    // Throttle UI notifications to ~60fps to prevent overwhelming
+                    // the renderer during fast terminal output (e.g., cargo build).
+                    // VTE processing happens immediately; only the render is deferred.
+                    let frame_interval = std::time::Duration::from_millis(16);
+                    let mut needs_render = false;
+
+                    loop {
+                        // If we have pending output, wait with a timeout for more
+                        // data to batch before triggering a single render.
+                        let event = if needs_render {
+                            match tokio::time::timeout(frame_interval, output_rx.recv()).await {
+                                Ok(event) => event,
+                                Err(_) => {
+                                    // Timeout elapsed: flush the pending render
+                                    let _ = this.update(cx, |_this, cx| {
+                                        cx.notify();
+                                    });
+                                    needs_render = false;
+                                    continue;
+                                }
+                            }
+                        } else {
+                            output_rx.recv().await
+                        };
+
                         match event {
-                            PtyEvent::Output(bytes) => {
+                            Some(PtyEvent::Output(bytes)) => {
                                 // Process through VTE for terminal emulation
-                                // Use catch_unwind to prevent panics from crashing the app
                                 let vte_result = std::panic::catch_unwind(
                                     std::panic::AssertUnwindSafe(|| {
                                         let mut term_guard = term_for_vte.lock();
@@ -1093,7 +1115,6 @@ impl ChatApp {
                                     }),
                                 );
                                 if let Err(e) = vte_result {
-                                    // Log the panic but continue processing
                                     let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
                                         s.to_string()
                                     } else if let Some(s) = e.downcast_ref::<String>() {
@@ -1104,24 +1125,19 @@ impl ChatApp {
                                     error!(process_id = %pid, error = %panic_msg, "VTE processing panic (recovered)");
                                 }
 
-                                // Also store raw text for tool response
+                                // Store raw text for tool response
                                 let text = String::from_utf8_lossy(&bytes);
                                 if let Some(mut snapshot) = store.snapshot(&pid) {
                                     snapshot.output.push_str(&text);
                                     store.upsert_process(snapshot);
                                 }
 
-                                // Notify UI to re-render
-                                let _ = this.update(cx, |_this, cx| {
-                                    cx.notify();
-                                });
+                                needs_render = true;
                             }
-                            PtyEvent::Exit(code) => {
+                            Some(PtyEvent::Exit(code)) => {
                                 debug!(process_id = %pid, exit_code = ?code, "Terminal exited");
                                 store.mark_finished(&pid, code);
 
-                                // Auto-hide LLM terminals when they exit
-                                // User terminals stay visible for the user to review
                                 if process_kind == ProcessKind::Llm {
                                     store.set_visible(&pid, false);
                                 }
@@ -1131,7 +1147,7 @@ impl ChatApp {
                                 });
                                 break;
                             }
-                            PtyEvent::Error(e) => {
+                            Some(PtyEvent::Error(e)) => {
                                 error!(process_id = %pid, error = %e, "Terminal error");
                                 store.set_output(&pid, format!("Error: {}", e));
                                 store.mark_finished(&pid, Some(-1));
@@ -1140,6 +1156,7 @@ impl ChatApp {
                                 });
                                 break;
                             }
+                            None => break,
                         }
                     }
                 })

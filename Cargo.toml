@@ -8,7 +8,7 @@ resolver = "2"
 
 [package]
 name = "spot"
-version = "0.24.0"
+version = "0.25.0"
 edition = "2021"
 description = "Precision computer control system with native GUI"
 license = "MIT"
@@ -23,9 +23,9 @@ name = "spot"
 path = "src/bin/spot.rs"
 
 [dependencies]
-spot-core = { path = "crates/spot-core", version = "0.24.0" }
-spot-tui = { path = "crates/spot-tui", version = "0.24.0", optional = true }
-spot-gui = { path = "crates/spot-gui", version = "0.24.0", optional = true }
+spot-core = { path = "crates/spot-core", version = "0.25.0" }
+spot-tui = { path = "crates/spot-tui", version = "0.25.0", optional = true }
+spot-gui = { path = "crates/spot-gui", version = "0.25.0", optional = true }
 
 # Needed for spot.rs binary
 tokio = { version = "1.0", features = ["full"] }

@@ -1,6 +1,7 @@
 //! SQLite database for config, sessions, and OAuth tokens.
 
 mod migrations;
+pub mod repositories;
 mod schema;
 
 use rusqlite::Connection;
@@ -131,55 +132,55 @@ impl Database {
     }
 
     // =========================================================================
-    // API Key Storage
+    // Repository Accessors
+    // =========================================================================
+
+    /// Get an API key repository for the legacy `api_keys` table.
+    pub fn api_keys(&self) -> repositories::ApiKeyRepository<'_> {
+        repositories::ApiKeyRepository::new(&self.conn)
+    }
+
+    /// Get a key pool repository for the `api_key_pools` table.
+    pub fn key_pool(&self) -> repositories::KeyPoolRepository<'_> {
+        repositories::KeyPoolRepository::new(&self.conn)
+    }
+
+    /// Get a settings repository for the `settings` table.
+    pub fn settings_repo(&self) -> repositories::SettingsRepository<'_> {
+        repositories::SettingsRepository::new(&self.conn)
+    }
+
+    // =========================================================================
+    // API Key Storage (delegation wrappers for backward compatibility)
     // =========================================================================
 
     /// Save an API key to the database.
     pub fn save_api_key(&self, name: &str, api_key: &str) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "INSERT INTO api_keys (name, api_key, updated_at) VALUES (?, ?, unixepoch())
-             ON CONFLICT(name) DO UPDATE SET api_key = excluded.api_key, updated_at = excluded.updated_at",
-            [name, api_key],
-        )?;
-        Ok(())
+        self.api_keys().save(name, api_key)
     }
 
     /// Get an API key from the database.
     pub fn get_api_key(&self, name: &str) -> Result<Option<String>, rusqlite::Error> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT api_key FROM api_keys WHERE name = ?")?;
-        let result = stmt.query_row([name], |row| row.get(0));
-        match result {
-            Ok(key) => Ok(Some(key)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
+        self.api_keys().get(name)
     }
 
     /// Check if an API key exists in the database.
     pub fn has_api_key(&self, name: &str) -> bool {
-        self.get_api_key(name).ok().flatten().is_some()
+        self.api_keys().has(name)
     }
 
     /// List all stored API key names.
     pub fn list_api_keys(&self) -> Result<Vec<String>, rusqlite::Error> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name FROM api_keys ORDER BY name")?;
-        let rows = stmt.query_map([], |row| row.get(0))?;
-        rows.collect()
+        self.api_keys().list()
     }
 
     /// Delete an API key.
     pub fn delete_api_key(&self, name: &str) -> Result<(), rusqlite::Error> {
-        self.conn
-            .execute("DELETE FROM api_keys WHERE name = ?", [name])?;
-        Ok(())
+        self.api_keys().delete(name)
     }
 
     // =========================================================================
-    // API Key Pool Storage (Multi-key support)
+    // API Key Pool Storage (delegation wrappers for backward compatibility)
     // =========================================================================
 
     /// Save a new API key to the pool for a provider.
@@ -191,114 +192,42 @@ impl Database {
         label: Option<&str>,
         priority: Option<i32>,
     ) -> Result<i64, rusqlite::Error> {
-        let priority = priority.unwrap_or(0);
-        self.conn.execute(
-            "INSERT INTO api_key_pools (provider_name, api_key, label, priority, updated_at)
-             VALUES (?, ?, ?, ?, unixepoch())",
-            rusqlite::params![provider, api_key, label, priority],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        self.key_pool().save(provider, api_key, label, priority)
     }
 
     /// Get all keys for a provider, ordered by priority (active keys first).
     pub fn get_pool_keys(&self, provider: &str) -> Result<Vec<PoolKey>, rusqlite::Error> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, provider_name, api_key, priority, label, is_active,
-                    last_used_at, last_error_at, error_count
-             FROM api_key_pools
-             WHERE provider_name = ?
-             ORDER BY is_active DESC, priority ASC, id ASC",
-        )?;
-        let rows = stmt.query_map([provider], |row| {
-            Ok(PoolKey {
-                id: row.get(0)?,
-                provider_name: row.get(1)?,
-                api_key: row.get(2)?,
-                priority: row.get(3)?,
-                label: row.get(4)?,
-                is_active: row.get::<_, i32>(5)? == 1,
-                last_used_at: row.get(6)?,
-                last_error_at: row.get(7)?,
-                error_count: row.get(8)?,
-            })
-        })?;
-        rows.collect()
+        self.key_pool().get_all(provider)
     }
 
     /// Get only active keys for a provider, ordered by priority.
     pub fn get_active_pool_keys(&self, provider: &str) -> Result<Vec<PoolKey>, rusqlite::Error> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, provider_name, api_key, priority, label, is_active,
-                    last_used_at, last_error_at, error_count
-             FROM api_key_pools
-             WHERE provider_name = ? AND is_active = 1
-             ORDER BY priority ASC, id ASC",
-        )?;
-        let rows = stmt.query_map([provider], |row| {
-            Ok(PoolKey {
-                id: row.get(0)?,
-                provider_name: row.get(1)?,
-                api_key: row.get(2)?,
-                priority: row.get(3)?,
-                label: row.get(4)?,
-                is_active: row.get::<_, i32>(5)? == 1,
-                last_used_at: row.get(6)?,
-                last_error_at: row.get(7)?,
-                error_count: row.get(8)?,
-            })
-        })?;
-        rows.collect()
+        self.key_pool().get_active(provider)
     }
 
     /// Update key usage statistics (call after successful use).
     pub fn mark_key_used(&self, key_id: i64) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "UPDATE api_key_pools
-             SET last_used_at = unixepoch(), updated_at = unixepoch()
-             WHERE id = ?",
-            [key_id],
-        )?;
-        Ok(())
+        self.key_pool().mark_used(key_id)
     }
 
     /// Update key error statistics (call after 429 or other error).
     pub fn mark_key_error(&self, key_id: i64) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "UPDATE api_key_pools
-             SET last_error_at = unixepoch(), error_count = error_count + 1, updated_at = unixepoch()
-             WHERE id = ?",
-            [key_id],
-        )?;
-        Ok(())
+        self.key_pool().mark_error(key_id)
     }
 
     /// Reset error count for a key (call after successful use following errors).
     pub fn reset_key_errors(&self, key_id: i64) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "UPDATE api_key_pools
-             SET error_count = 0, updated_at = unixepoch()
-             WHERE id = ?",
-            [key_id],
-        )?;
-        Ok(())
+        self.key_pool().reset_errors(key_id)
     }
 
     /// Toggle key active status.
     pub fn set_key_active(&self, key_id: i64, is_active: bool) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "UPDATE api_key_pools
-             SET is_active = ?, updated_at = unixepoch()
-             WHERE id = ?",
-            rusqlite::params![if is_active { 1 } else { 0 }, key_id],
-        )?;
-        Ok(())
+        self.key_pool().set_active(key_id, is_active)
     }
 
     /// Delete a key from the pool.
     pub fn delete_pool_key(&self, key_id: i64) -> Result<(), rusqlite::Error> {
-        self.conn
-            .execute("DELETE FROM api_key_pools WHERE id = ?", [key_id])?;
-        Ok(())
+        self.key_pool().delete(key_id)
     }
 
     /// Update key priority (for reordering).
@@ -307,33 +236,17 @@ impl Database {
         key_id: i64,
         new_priority: i32,
     ) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "UPDATE api_key_pools
-             SET priority = ?, updated_at = unixepoch()
-             WHERE id = ?",
-            rusqlite::params![new_priority, key_id],
-        )?;
-        Ok(())
+        self.key_pool().update_priority(key_id, new_priority)
     }
 
     /// Check if a provider has any pool keys configured.
     pub fn has_pool_keys(&self, provider: &str) -> bool {
-        let result: Result<i32, _> = self.conn.query_row(
-            "SELECT 1 FROM api_key_pools WHERE provider_name = ? LIMIT 1",
-            [provider],
-            |row| row.get(0),
-        );
-        result.is_ok()
+        self.key_pool().has_keys(provider)
     }
 
     /// Count active keys for a provider.
     pub fn count_active_pool_keys(&self, provider: &str) -> Result<usize, rusqlite::Error> {
-        let count: i32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM api_key_pools WHERE provider_name = ? AND is_active = 1",
-            [provider],
-            |row| row.get(0),
-        )?;
-        Ok(count as usize)
+        self.key_pool().count_active(provider)
     }
 }
 

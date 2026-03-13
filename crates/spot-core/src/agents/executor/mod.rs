@@ -274,13 +274,38 @@ impl<'a> AgentExecutor<'a> {
             "No message bus configured. Use with_bus() first.".into(),
         ))?;
 
-        // Use internal streaming execution with retry support
         let exec_context = ExecuteContext {
             tool_registry,
             mcp_manager,
         };
 
-        // If we have a retry handler and the provider has pool keys, use retry logic
+        let user_content = UserContent::text(prompt);
+
+        self.check_retry_and_execute(
+            spot_agent,
+            model_name,
+            user_content,
+            message_history,
+            &exec_context,
+            bus,
+        )
+        .await
+    }
+
+    /// Check if retry handling is available and dispatch accordingly.
+    ///
+    /// If a retry handler is configured and the provider has pool keys,
+    /// delegates to `execute_with_retry_loop`. Otherwise falls back to
+    /// `execute_single` for a single attempt.
+    async fn check_retry_and_execute(
+        &self,
+        spot_agent: &dyn SpotAgent,
+        model_name: &str,
+        user_content: UserContent,
+        message_history: Option<Vec<ModelRequest>>,
+        context: &ExecuteContext<'_>,
+        bus: &MessageSender,
+    ) -> Result<ExecutorResult, ExecutorError> {
         if let Some(ref handler) = self.retry_handler {
             debug!("Retry handler is configured, checking provider");
             let provider = self.extract_provider_for_model(model_name);
@@ -297,12 +322,12 @@ impl<'a> AgentExecutor<'a> {
                         "Using API key rotation for request"
                     );
                     return self
-                        .execute_with_bus_retry(
+                        .execute_with_retry_loop(
                             spot_agent,
                             model_name,
-                            prompt,
+                            user_content,
                             message_history,
-                            &exec_context,
+                            context,
                             bus,
                             handler,
                             p,
@@ -327,23 +352,26 @@ impl<'a> AgentExecutor<'a> {
         }
 
         // Standard execution without retry
-        self.execute_with_bus_single(
+        self.execute_single(
             spot_agent,
             model_name,
-            prompt,
+            user_content,
             message_history,
-            &exec_context,
+            context,
             bus,
         )
         .await
     }
 
-    /// Execute with bus - single attempt (no retry).
-    async fn execute_with_bus_single(
+    /// Execute a single attempt (no retry).
+    ///
+    /// Unified implementation for both text-only and multimodal content.
+    /// Logs multimodal content details when the user content contains parts.
+    async fn execute_single(
         &self,
         spot_agent: &dyn SpotAgent,
         model_name: &str,
-        prompt: &str,
+        user_content: UserContent,
         message_history: Option<Vec<ModelRequest>>,
         context: &ExecuteContext<'_>,
         bus: &MessageSender,
@@ -358,17 +386,22 @@ impl<'a> AgentExecutor<'a> {
         let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> =
             Arc::new(Mutex::new(Vec::new()));
 
+        // Log multimodal content details
+        if matches!(&user_content, UserContent::Parts(_)) {
+            self.log_user_content(&user_content);
+        }
+
         // Start with any provided history, then add the current user prompt.
         let mut messages = message_history.clone().unwrap_or_default();
         let mut user_req = ModelRequest::new();
-        user_req.add_user_prompt(prompt.to_string());
+        user_req.add_user_prompt(user_content.clone());
         messages.push(user_req);
 
         let stream_result = self
             .execute_stream_internal(
                 spot_agent,
                 model_name,
-                UserContent::text(prompt),
+                user_content,
                 message_history,
                 context,
                 Some(Arc::clone(&tool_return_recorder)),
@@ -441,13 +474,16 @@ impl<'a> AgentExecutor<'a> {
         }
     }
 
-    /// Execute with bus and retry on rate limits.
+    /// Execute with retry on rate limits.
+    ///
+    /// Unified retry loop for both text-only and multimodal content.
+    /// Automatically rotates API keys when rate limit errors occur.
     #[allow(clippy::too_many_arguments)]
-    async fn execute_with_bus_retry(
+    async fn execute_with_retry_loop(
         &self,
         spot_agent: &dyn SpotAgent,
         model_name: &str,
-        prompt: &str,
+        user_content: UserContent,
         message_history: Option<Vec<ModelRequest>>,
         context: &ExecuteContext<'_>,
         bus: &MessageSender,
@@ -474,10 +510,15 @@ impl<'a> AgentExecutor<'a> {
             let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> =
                 Arc::new(Mutex::new(Vec::new()));
 
+            // Log multimodal content details
+            if matches!(&user_content, UserContent::Parts(_)) {
+                self.log_user_content(&user_content);
+            }
+
             // Build messages
             let mut messages = message_history.clone().unwrap_or_default();
             let mut user_req = ModelRequest::new();
-            user_req.add_user_prompt(prompt.to_string());
+            user_req.add_user_prompt(user_content.clone());
             messages.push(user_req);
 
             // Create stream with the current key
@@ -485,7 +526,7 @@ impl<'a> AgentExecutor<'a> {
                 .execute_stream_internal_with_key(
                     spot_agent,
                     model_name,
-                    UserContent::text(prompt),
+                    user_content.clone(),
                     message_history.clone(),
                     context,
                     Some(Arc::clone(&tool_return_recorder)),
@@ -664,54 +705,7 @@ impl<'a> AgentExecutor<'a> {
         // Build the user content (text + images)
         let user_content = self.build_user_content(prompt, images);
 
-        // If we have a retry handler and the provider has pool keys, use retry logic
-        if let Some(ref handler) = self.retry_handler {
-            debug!("Retry handler is configured for images, checking provider");
-            let provider = self.extract_provider_for_model(model_name);
-            debug!(model = %model_name, provider = ?provider, "Extracted provider for model (images)");
-
-            if let Some(ref p) = provider {
-                let has_rotation = handler.should_use_rotation(p);
-                debug!(provider = %p, has_rotation = %has_rotation, "Checking rotation availability (images)");
-
-                if has_rotation {
-                    info!(
-                        model = %model_name,
-                        provider = %p,
-                        "Using API key rotation for image request"
-                    );
-                    return self
-                        .execute_with_images_retry(
-                            spot_agent,
-                            model_name,
-                            user_content,
-                            message_history,
-                            context,
-                            bus,
-                            handler,
-                            p,
-                        )
-                        .await;
-                } else {
-                    warn!(
-                        model = %model_name,
-                        provider = %p,
-                        "No pool keys for provider - rate limit rotation unavailable for images. Add keys with: spot key pool add {}",
-                        p
-                    );
-                }
-            } else {
-                warn!(
-                    model = %model_name,
-                    "Could not determine provider for model - rate limit rotation unavailable for images"
-                );
-            }
-        } else {
-            debug!(model = %model_name, "No retry handler configured for images");
-        }
-
-        // Standard execution without retry
-        self.execute_with_images_single(
+        self.check_retry_and_execute(
             spot_agent,
             model_name,
             user_content,
@@ -742,216 +736,6 @@ impl<'a> AgentExecutor<'a> {
                 ));
             }
             UserContent::parts(parts)
-        }
-    }
-
-    /// Execute with images - single attempt (no retry).
-    async fn execute_with_images_single(
-        &self,
-        spot_agent: &dyn SpotAgent,
-        model_name: &str,
-        user_content: UserContent,
-        message_history: Option<Vec<ModelRequest>>,
-        context: &ExecuteContext<'_>,
-        bus: &MessageSender,
-    ) -> Result<ExecutorResult, ExecutorError> {
-        // Create event bridge for this agent
-        let mut bridge =
-            EventBridge::new(bus.clone(), spot_agent.name(), spot_agent.display_name());
-
-        bridge.agent_started();
-
-        // Track tool returns during streaming
-        let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> =
-            Arc::new(Mutex::new(Vec::new()));
-
-        // Log what we built
-        self.log_user_content(&user_content);
-
-        // Start with any provided history, then add the current user prompt.
-        let mut messages = message_history.clone().unwrap_or_default();
-        let mut user_req = ModelRequest::new();
-        user_req.add_user_prompt(user_content.clone());
-        messages.push(user_req);
-
-        // Use internal streaming execution
-        let mut stream = self
-            .execute_stream_internal(
-                spot_agent,
-                model_name,
-                user_content,
-                message_history,
-                context,
-                Some(Arc::clone(&tool_return_recorder)),
-            )
-            .await?;
-
-        // Process stream and accumulate results
-        let (accumulated_text, final_run_id, messages) = self
-            .process_stream(
-                &mut stream,
-                &mut bridge,
-                messages,
-                model_name,
-                &tool_return_recorder,
-            )
-            .await?;
-
-        let run_id = final_run_id.ok_or_else(|| {
-            ExecutorError::Execution("Stream ended without RunComplete event".into())
-        })?;
-
-        bridge.agent_completed(&run_id);
-
-        Ok(ExecutorResult {
-            output: accumulated_text,
-            messages,
-            run_id,
-        })
-    }
-
-    /// Execute with images and retry on rate limits.
-    #[allow(clippy::too_many_arguments)]
-    async fn execute_with_images_retry(
-        &self,
-        spot_agent: &dyn SpotAgent,
-        model_name: &str,
-        user_content: UserContent,
-        message_history: Option<Vec<ModelRequest>>,
-        context: &ExecuteContext<'_>,
-        bus: &MessageSender,
-        handler: &RetryHandler,
-        provider: &str,
-    ) -> Result<ExecutorResult, ExecutorError> {
-        // Load the provider's keys
-        let _ = handler.load_provider(provider);
-
-        // Get the initial key
-        let (mut current_key, mut current_key_id) =
-            handler.get_current_key(provider).ok_or_else(|| {
-                ExecutorError::Config(format!("No pool keys available for provider: {}", provider))
-            })?;
-
-        loop {
-            // Create event bridge for this attempt
-            let mut bridge =
-                EventBridge::new(bus.clone(), spot_agent.name(), spot_agent.display_name());
-
-            bridge.agent_started();
-
-            // Track tool returns during streaming
-            let tool_return_recorder: Arc<Mutex<Vec<ToolReturnPart>>> =
-                Arc::new(Mutex::new(Vec::new()));
-
-            // Log content
-            self.log_user_content(&user_content);
-
-            // Build messages
-            let mut messages = message_history.clone().unwrap_or_default();
-            let mut user_req = ModelRequest::new();
-            user_req.add_user_prompt(user_content.clone());
-            messages.push(user_req);
-
-            // Create stream with the current key
-            let stream_result = self
-                .execute_stream_internal_with_key(
-                    spot_agent,
-                    model_name,
-                    user_content.clone(),
-                    message_history.clone(),
-                    context,
-                    Some(Arc::clone(&tool_return_recorder)),
-                    &current_key,
-                )
-                .await;
-
-            let mut stream = match stream_result {
-                Ok(s) => s,
-                Err(e) if e.is_rate_limit() => {
-                    info!(
-                        provider = %provider,
-                        key_id = current_key_id,
-                        "Rate limit on stream creation, rotating key"
-                    );
-                    match handler.handle_rate_limit(provider, current_key_id).await {
-                        RetryDecision::RetryWithKey { key, key_id } => {
-                            info!(new_key_id = key_id, "Rotated to new key, retrying");
-                            current_key = key;
-                            current_key_id = key_id;
-                            continue;
-                        }
-                        RetryDecision::WaitAndRetry { wait_duration } => {
-                            info!(wait_secs = ?wait_duration, "All keys exhausted, waiting");
-                            tokio::time::sleep(wait_duration).await;
-                            continue;
-                        }
-                        RetryDecision::GiveUp { reason } => {
-                            return Err(ExecutorError::RateLimit(reason));
-                        }
-                        RetryDecision::DontRetry => {
-                            return Err(e);
-                        }
-                    }
-                }
-                Err(e) => return Err(e),
-            };
-
-            // Process stream
-            let process_result = self
-                .process_stream(
-                    &mut stream,
-                    &mut bridge,
-                    messages,
-                    model_name,
-                    &tool_return_recorder,
-                )
-                .await;
-
-            match process_result {
-                Ok((accumulated_text, final_run_id, messages)) => {
-                    handler.mark_success(provider, current_key_id);
-
-                    let run_id = final_run_id.ok_or_else(|| {
-                        ExecutorError::Execution("Stream ended without RunComplete event".into())
-                    })?;
-
-                    bridge.agent_completed(&run_id);
-
-                    return Ok(ExecutorResult {
-                        output: accumulated_text,
-                        messages,
-                        run_id,
-                    });
-                }
-                Err(e) if e.is_rate_limit() => {
-                    info!(
-                        provider = %provider,
-                        key_id = current_key_id,
-                        error = %e,
-                        "Rate limit during streaming, rotating key"
-                    );
-                    match handler.handle_rate_limit(provider, current_key_id).await {
-                        RetryDecision::RetryWithKey { key, key_id } => {
-                            info!(new_key_id = key_id, "Rotated to new key, retrying");
-                            current_key = key;
-                            current_key_id = key_id;
-                            continue;
-                        }
-                        RetryDecision::WaitAndRetry { wait_duration } => {
-                            info!(wait_secs = ?wait_duration, "All keys exhausted, waiting");
-                            tokio::time::sleep(wait_duration).await;
-                            continue;
-                        }
-                        RetryDecision::GiveUp { reason } => {
-                            return Err(ExecutorError::RateLimit(reason));
-                        }
-                        RetryDecision::DontRetry => {
-                            return Err(e);
-                        }
-                    }
-                }
-                Err(e) => return Err(e),
-            }
         }
     }
 

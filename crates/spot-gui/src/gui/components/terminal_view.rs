@@ -286,61 +286,90 @@ impl TerminalView {
         self.send_input(sequence);
     }
 
-    /// Build a single row element from the terminal grid
+    /// Build a single row element from the terminal grid.
     ///
-    /// Each character is rendered in its own fixed-width container to ensure
-    /// perfect grid alignment. Character at column N is positioned at exactly
-    /// N × cell_width pixels from the left edge.
+    /// Consecutive cells with the same style (color, bold, cursor) are coalesced
+    /// into a single span element to minimize the number of GPUI Div nodes.
+    /// A typical 120-column row produces ~5-15 spans instead of 120 divs.
     fn render_row(&self, term: &Term<TerminalEventBridge>, row_idx: usize) -> Div {
         let line = Line(row_idx as i32);
         let cols = term.columns();
         let cursor = term.grid().cursor.point;
-        let cursor_visible = true;
-
-        // Render each character in its own fixed-width cell for perfect grid alignment
-        let mut cells: Vec<AnyElement> = Vec::with_capacity(cols);
         let cell_width = self.cell_width;
+
+        let mut spans: Vec<AnyElement> = Vec::new();
+        let mut span_text = String::new();
+        let mut span_fg = AnsiColor::Named(NamedColor::Foreground);
+        let mut span_bold = false;
+        let mut span_is_cursor = false;
+        let mut span_len: usize = 0;
 
         for col_idx in 0..cols {
             let point = Point::new(line, Column(col_idx));
             let cell = &term.grid()[point];
-            let c = cell.c;
-
-            // Get cell colors
             let is_bold = cell.flags.contains(Flags::BOLD);
-            let fg = self.colors.convert_color(cell.fg, is_bold);
+            let is_cursor = cursor.line == line && cursor.column == Column(col_idx);
+            let c = if cell.c == '\0' { ' ' } else { cell.c };
 
-            // Determine the character to display
-            let display_char = if c == '\0' { ' ' } else { c };
+            // If style changed, flush the current span
+            if span_len > 0
+                && (cell.fg != span_fg || is_bold != span_bold || is_cursor != span_is_cursor)
+            {
+                let width = cell_width * span_len as f32;
+                let fg = self.colors.convert_color(span_fg, span_bold);
+                let text = std::mem::take(&mut span_text);
 
-            // Check if this is the cursor position
-            let is_cursor =
-                cursor_visible && cursor.line == line && cursor.column == Column(col_idx);
+                let span_div = if span_is_cursor {
+                    div()
+                        .w(px(width))
+                        .bg(self.colors.foreground)
+                        .text_color(self.colors.background)
+                        .child(text)
+                } else if span_bold {
+                    div()
+                        .w(px(width))
+                        .text_color(fg)
+                        .font_weight(FontWeight::BOLD)
+                        .child(text)
+                } else {
+                    div().w(px(width)).text_color(fg).child(text)
+                };
 
-            // Build the cell div with fixed width
-            let cell_div = if is_cursor {
-                // Cursor: inverted colors
+                spans.push(span_div.into_any_element());
+                span_len = 0;
+            }
+
+            if span_len == 0 {
+                span_fg = cell.fg;
+                span_bold = is_bold;
+                span_is_cursor = is_cursor;
+            }
+            span_text.push(c);
+            span_len += 1;
+        }
+
+        // Flush final span
+        if span_len > 0 {
+            let width = cell_width * span_len as f32;
+            let fg = self.colors.convert_color(span_fg, span_bold);
+
+            let span_div = if span_is_cursor {
                 div()
-                    .w(px(cell_width))
+                    .w(px(width))
                     .bg(self.colors.foreground)
                     .text_color(self.colors.background)
-                    .child(display_char.to_string())
-            } else if is_bold {
-                // Bold text
+                    .child(span_text)
+            } else if span_bold {
                 div()
-                    .w(px(cell_width))
+                    .w(px(width))
                     .text_color(fg)
                     .font_weight(FontWeight::BOLD)
-                    .child(display_char.to_string())
+                    .child(span_text)
             } else {
-                // Regular text
-                div()
-                    .w(px(cell_width))
-                    .text_color(fg)
-                    .child(display_char.to_string())
+                div().w(px(width)).text_color(fg).child(span_text)
             };
 
-            cells.push(cell_div.into_any_element());
+            spans.push(span_div.into_any_element());
         }
 
         div()
@@ -349,7 +378,7 @@ impl TerminalView {
             .flex_row()
             .font_family("Berkeley Mono, Menlo, Monaco, Consolas, monospace")
             .text_size(px(13.))
-            .children(cells)
+            .children(spans)
     }
 }
 

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::agents::UserMode;
 use crate::db::Database;
+use super::keys;
 use thiserror::Error;
 
 /// PDF processing mode for attachments
@@ -127,56 +128,56 @@ impl<'a> Settings<'a> {
 
     /// Get the current model name.
     pub fn model(&self) -> String {
-        self.get_or("model", "gpt-4o")
+        self.get_or(keys::MODEL, "gpt-4o")
     }
 
     /// Get YOLO mode status (auto-accept shell commands without confirmation).
     pub fn yolo_mode(&self) -> bool {
-        self.get_bool("yolo_mode").unwrap_or(false)
+        self.get_bool(keys::YOLO_MODE).unwrap_or(false)
     }
 
     /// Set YOLO mode status.
     pub fn set_yolo_mode(&self, enabled: bool) -> Result<(), SettingsError> {
-        self.set("yolo_mode", if enabled { "true" } else { "false" })
+        self.set(keys::YOLO_MODE, if enabled { "true" } else { "false" })
     }
 
     /// Get the assistant name.
     pub fn assistant_name(&self) -> String {
-        self.get_or("assistant_name", "Spot")
+        self.get_or(keys::ASSISTANT_NAME, "Spot")
     }
 
     /// Get the owner name.
     pub fn owner_name(&self) -> String {
-        self.get_or("owner_name", "Master")
+        self.get_or(keys::OWNER_NAME, "Master")
     }
 
     /// Get the current user mode.
     pub fn user_mode(&self) -> UserMode {
-        self.get_or("user_mode", "normal")
+        self.get_or(keys::USER_MODE, "normal")
             .parse()
             .unwrap_or_default()
     }
 
     /// Set the user mode.
     pub fn set_user_mode(&self, mode: UserMode) -> Result<(), SettingsError> {
-        self.set("user_mode", &mode.to_string())
+        self.set(keys::USER_MODE, &mode.to_string())
     }
 
     /// Get PDF processing mode (default: Image)
     pub fn pdf_mode(&self) -> PdfMode {
-        self.get_or("pdf_mode", "image").parse().unwrap_or_default()
+        self.get_or(keys::PDF_MODE, "image").parse().unwrap_or_default()
     }
 
     /// Set PDF processing mode
     pub fn set_pdf_mode(&self, mode: PdfMode) -> Result<(), SettingsError> {
-        self.set("pdf_mode", &mode.to_string())
+        self.set(keys::PDF_MODE, &mode.to_string())
     }
 
     // Agent model pin management
 
     /// Build the settings key for an agent pin.
     fn agent_pin_key(agent_name: &str) -> String {
-        format!("agent_pin.{}", agent_name)
+        keys::agent_pin_key(agent_name)
     }
 
     /// Get the pinned model for an agent.
@@ -200,7 +201,7 @@ impl<'a> Settings<'a> {
 
     /// Get all agent->model pin mappings.
     pub fn get_all_agent_pinned_models(&self) -> Result<HashMap<String, String>, SettingsError> {
-        let prefix = "agent_pin.";
+        let prefix = keys::agent_pin_prefix();
         let mut stmt = self
             .db
             .conn()
@@ -213,7 +214,6 @@ impl<'a> Settings<'a> {
         let mut pins = HashMap::new();
         for row in rows {
             let (key, value) = row?;
-            // Strip the "agent_pin." prefix to get the agent name
             if let Some(agent_name) = key.strip_prefix(prefix) {
                 pins.insert(agent_name.to_string(), value);
             }
@@ -256,7 +256,7 @@ impl<'a> Settings<'a> {
 
     /// Build the settings key for an agent's MCP attachments.
     fn agent_mcp_key(agent_name: &str) -> String {
-        format!("agent_mcp.{}", agent_name)
+        keys::agent_mcp_key(agent_name)
     }
 
     /// Get the MCPs attached to an agent (comma-separated list stored as single value).
@@ -310,7 +310,7 @@ impl<'a> Settings<'a> {
 
     /// Get all agent->MCPs mappings.
     pub fn get_all_agent_mcps(&self) -> Result<HashMap<String, Vec<String>>, SettingsError> {
-        let prefix = "agent_mcp.";
+        let prefix = keys::agent_mcp_prefix();
         let mut stmt = self
             .db
             .conn()
@@ -374,147 +374,6 @@ impl<'a> Settings<'a> {
         let _ = self.set(key, if value { "true" } else { "false" });
     }
 
-    // ============ Context Compression Settings ============
-
-    /// Get whether context compression is enabled (default: true)
-    pub fn get_compression_enabled(&self) -> bool {
-        // Default to true - compression is on by default
-        self.get("compression.enabled")
-            .ok()
-            .flatten()
-            .map(|v| !matches!(v.to_lowercase().as_str(), "false" | "0" | "no" | "off"))
-            .unwrap_or(true)
-    }
-
-    /// Set whether context compression is enabled
-    pub fn set_compression_enabled(&self, enabled: bool) {
-        self.set_bool("compression.enabled", enabled);
-    }
-
-    /// Get compression strategy: "truncate" or "summarize" (default: "truncate")
-    pub fn get_compression_strategy(&self) -> String {
-        self.get_string("compression.strategy")
-            .unwrap_or_else(|| "truncate".to_string())
-    }
-
-    /// Set compression strategy
-    pub fn set_compression_strategy(&self, strategy: &str) {
-        self.set_string("compression.strategy", strategy);
-    }
-
-    /// Get compression threshold (0.0-1.0, default: 0.75)
-    pub fn get_compression_threshold(&self) -> f64 {
-        self.get_float("compression.threshold").unwrap_or(0.75)
-    }
-
-    /// Set compression threshold
-    pub fn set_compression_threshold(&self, threshold: f64) {
-        self.set_float("compression.threshold", threshold);
-    }
-
-    /// Get target tokens for compression (default: 30000)
-    pub fn get_compression_target_tokens(&self) -> usize {
-        self.get_int("compression.target_tokens").unwrap_or(30000) as usize
-    }
-
-    /// Set target tokens for compression
-    pub fn set_compression_target_tokens(&self, tokens: usize) {
-        self.set_int("compression.target_tokens", tokens as i64);
-    }
-
-    // ============ VDI Mode Settings ============
-
-    /// Get whether VDI mode is enabled (default: auto-detect)
-    /// When "auto", detects Citrix VDI environment automatically.
-    /// When explicitly set to true/false, uses that value.
-    pub fn get_vdi_mode(&self) -> Option<bool> {
-        match self.get("vdi.mode").ok().flatten() {
-            Some(v) => match v.to_lowercase().as_str() {
-                "true" | "1" | "yes" | "on" => Some(true),
-                "false" | "0" | "no" | "off" => Some(false),
-                _ => None, // "auto" or unset = auto-detect
-            },
-            None => None, // Not set = auto-detect
-        }
-    }
-
-    /// Set VDI mode. Pass None for auto-detect, Some(true) to force on, Some(false) to force off.
-    pub fn set_vdi_mode(&self, mode: Option<bool>) {
-        match mode {
-            Some(true) => self.set_string("vdi.mode", "true"),
-            Some(false) => self.set_string("vdi.mode", "false"),
-            None => {
-                let _ = self.delete("vdi.mode");
-            }
-        }
-    }
-
-    /// Get the VDI animation frame interval in milliseconds (default: 66ms = ~15fps)
-    pub fn get_vdi_frame_interval_ms(&self) -> u64 {
-        self.get_int("vdi.frame_interval_ms")
-            .map(|v| v.clamp(16, 500) as u64)
-            .unwrap_or(66)
-    }
-
-    /// Set the VDI animation frame interval in milliseconds
-    pub fn set_vdi_frame_interval_ms(&self, ms: u64) {
-        self.set_int("vdi.frame_interval_ms", ms as i64);
-    }
-}
-
-/// Detect if running inside a Citrix VDI environment.
-///
-/// Checks for common Citrix environment indicators:
-/// - CITRIX_SESSION_ID env var (Citrix Virtual Apps/Desktops)
-/// - SESSIONNAME containing "ICA" (Citrix ICA protocol)
-/// - Citrix Receiver/Workspace process indicators
-/// - ViewClient_* env vars (VMware Horizon, similar VDI)
-pub fn detect_vdi_environment() -> bool {
-    // Citrix-specific environment variables
-    if std::env::var("CITRIX_SESSION_ID").is_ok() {
-        tracing::info!("VDI detected: CITRIX_SESSION_ID present");
-        return true;
-    }
-
-    // Citrix ICA session
-    if let Ok(session) = std::env::var("SESSIONNAME") {
-        if session.contains("ICA") || session.contains("Citrix") {
-            tracing::info!("VDI detected: SESSIONNAME={}", session);
-            return true;
-        }
-    }
-
-    // VMware Horizon
-    if std::env::var("ViewClient_IP_Address").is_ok()
-        || std::env::var("ViewClient_Machine_Name").is_ok()
-    {
-        tracing::info!("VDI detected: VMware Horizon environment variables present");
-        return true;
-    }
-
-    // Generic Remote Desktop (Windows RDP)
-    if let Ok(session) = std::env::var("SESSIONNAME") {
-        if session.starts_with("RDP-") {
-            tracing::info!("VDI detected: RDP session (SESSIONNAME={})", session);
-            return true;
-        }
-    }
-
-    // Amazon WorkSpaces
-    if std::env::var("WORKSPACES_BUNDLE_ID").is_ok() {
-        tracing::info!("VDI detected: Amazon WorkSpaces");
-        return true;
-    }
-
-    false
-}
-
-/// Resolve the effective VDI mode: check user setting first, fall back to auto-detect.
-pub fn is_vdi_mode_active(settings: &Settings) -> bool {
-    match settings.get_vdi_mode() {
-        Some(explicit) => explicit,       // User explicitly set it
-        None => detect_vdi_environment(), // Auto-detect
-    }
 }
 
 #[cfg(test)]
