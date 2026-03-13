@@ -3,6 +3,8 @@
 //! This binary always launches the graphical interface.
 //! Use this when you explicitly want the GUI, regardless of environment detection.
 
+#![windows_subsystem = "windows"]
+
 use anyhow::Result;
 use clap::Parser;
 use spot_core::runner::AppConfig;
