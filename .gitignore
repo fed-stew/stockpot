@@ -50,3 +50,4 @@ run_with_proxy_claude.sh
 analyze.md
 scripts/
 log.txt
+.claude/worktrees/

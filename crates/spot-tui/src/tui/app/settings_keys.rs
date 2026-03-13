@@ -196,7 +196,8 @@ impl TuiApp {
                         }
                     }
                     McpPanel::McpCheckboxes => {
-                        let enabled_count = crate::tui::settings::mcp_servers::enabled_server_count();
+                        let enabled_count =
+                            crate::tui::settings::mcp_servers::enabled_server_count();
                         if enabled_count > 0
                             && self.settings_state.mcp_checkbox_index < enabled_count - 1
                         {
@@ -424,7 +425,9 @@ impl TuiApp {
                             let checkbox_idx = self.settings_state.mcp_checkbox_index;
 
                             if let Some(mcp_name) =
-                                crate::tui::settings::mcp_servers::get_enabled_server_name(checkbox_idx)
+                                crate::tui::settings::mcp_servers::get_enabled_server_name(
+                                    checkbox_idx,
+                                )
                             {
                                 let current_mcps = settings.get_agent_mcps(agent_name);
                                 if current_mcps.contains(&mcp_name) {
@@ -826,9 +829,11 @@ impl TuiApp {
         let selected_index = self.settings_state.models_selected_index;
 
         // Get the type label for the current selection
-        if let Some(type_label) =
-            crate::tui::settings::models::get_current_type_label(self, &available_models, selected_index)
-        {
+        if let Some(type_label) = crate::tui::settings::models::get_current_type_label(
+            self,
+            &available_models,
+            selected_index,
+        ) {
             // Check if this provider supports API key pools
             if let Some((provider, display_name)) =
                 crate::tui::settings::models::provider_for_type_label(&type_label)

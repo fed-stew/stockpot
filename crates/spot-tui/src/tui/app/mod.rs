@@ -174,7 +174,8 @@ pub struct TuiApp {
     /// OAuth completion receiver - receives (provider, Ok(()) | Err(msg)) when OAuth finishes
     pub oauth_completion_rx: tokio::sync::mpsc::UnboundedReceiver<(String, Result<(), String>)>,
     /// OAuth completion sender - cloned and passed to OAuth tasks
-    pub(super) oauth_completion_tx: tokio::sync::mpsc::UnboundedSender<(String, Result<(), String>)>,
+    pub(super) oauth_completion_tx:
+        tokio::sync::mpsc::UnboundedSender<(String, Result<(), String>)>,
     /// OAuth dialog info receiver - receives (provider, url, port) to show dialog
     pub oauth_dialog_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String, u16)>,
     /// OAuth dialog info sender - cloned and passed to OAuth tasks
@@ -393,7 +394,10 @@ impl TuiApp {
             let settings = Settings::new(&self.db);
             if spot_core::config::is_vdi_mode_active(&settings) {
                 let ms = settings.get_vdi_frame_interval_ms();
-                tracing::info!(frame_interval_ms = ms, "VDI mode active - using reduced frame rate");
+                tracing::info!(
+                    frame_interval_ms = ms,
+                    "VDI mode active - using reduced frame rate"
+                );
                 Duration::from_millis(ms)
             } else {
                 Duration::from_millis(16)

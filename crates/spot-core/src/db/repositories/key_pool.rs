@@ -123,11 +123,7 @@ impl<'a> KeyPoolRepository<'a> {
     }
 
     /// Update key priority (for reordering).
-    pub fn update_priority(
-        &self,
-        key_id: i64,
-        new_priority: i32,
-    ) -> Result<(), rusqlite::Error> {
+    pub fn update_priority(&self, key_id: i64, new_priority: i32) -> Result<(), rusqlite::Error> {
         self.conn.execute(
             "UPDATE api_key_pools
              SET priority = ?, updated_at = unixepoch()

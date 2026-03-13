@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
+use super::keys;
 use crate::agents::UserMode;
 use crate::db::Database;
-use super::keys;
 use thiserror::Error;
 
 /// PDF processing mode for attachments
@@ -165,7 +165,9 @@ impl<'a> Settings<'a> {
 
     /// Get PDF processing mode (default: Image)
     pub fn pdf_mode(&self) -> PdfMode {
-        self.get_or(keys::PDF_MODE, "image").parse().unwrap_or_default()
+        self.get_or(keys::PDF_MODE, "image")
+            .parse()
+            .unwrap_or_default()
     }
 
     /// Set PDF processing mode
@@ -373,7 +375,6 @@ impl<'a> Settings<'a> {
     pub fn set_bool(&self, key: &str, value: bool) {
         let _ = self.set(key, if value { "true" } else { "false" });
     }
-
 }
 
 #[cfg(test)]

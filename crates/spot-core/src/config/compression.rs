@@ -41,7 +41,8 @@ impl<'a> Settings<'a> {
 
     /// Get target tokens for compression (default: 30000).
     pub fn get_compression_target_tokens(&self) -> usize {
-        self.get_int(keys::COMPRESSION_TARGET_TOKENS).unwrap_or(30000) as usize
+        self.get_int(keys::COMPRESSION_TARGET_TOKENS)
+            .unwrap_or(30000) as usize
     }
 
     /// Set target tokens for compression.

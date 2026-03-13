@@ -474,7 +474,8 @@ impl TuiApp {
                                 if let Some(model_name) = available_models.get(*idx) {
                                     self.current_model = model_name.clone();
                                     let settings = Settings::new(&self.db);
-                                    let _ = settings.set(spot_core::config::keys::MODEL, model_name);
+                                    let _ =
+                                        settings.set(spot_core::config::keys::MODEL, model_name);
                                     self.update_context_usage();
                                 }
                                 self.settings_state.default_model_dropdown_open = false;
