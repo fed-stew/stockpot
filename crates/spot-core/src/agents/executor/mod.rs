@@ -13,6 +13,7 @@
 mod adapters;
 mod mcp;
 mod model_factory;
+pub mod resilience;
 mod retry;
 mod sub_agents;
 mod types;
@@ -42,7 +43,7 @@ use serdes_ai_tools::{Tool, ToolDefinition};
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 // Re-export stream event
 pub use serdes_ai_agent::AgentStreamEvent as StreamEvent;
@@ -137,6 +138,7 @@ impl<'a> AgentExecutor<'a> {
     ///
     /// This runs the full agent loop including tool calls until completion.
     /// Returns the final output and message history for context.
+    #[instrument(skip_all, fields(agent_name = %spot_agent.name(), model_name = %model_name))]
     pub async fn execute(
         &self,
         spot_agent: &dyn SpotAgent,
@@ -261,6 +263,7 @@ impl<'a> AgentExecutor<'a> {
     /// # Errors
     ///
     /// Returns an error if no message bus is configured (use `with_bus()` first).
+    #[instrument(skip_all, fields(agent_name = %spot_agent.name(), model_name = %model_name))]
     pub async fn execute_with_bus(
         &self,
         spot_agent: &dyn SpotAgent,

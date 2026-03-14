@@ -22,6 +22,17 @@ pub const COMPRESSION_TARGET_TOKENS: &str = "compression.target_tokens";
 pub const VDI_MODE: &str = "vdi.mode";
 pub const VDI_FRAME_INTERVAL_MS: &str = "vdi.frame_interval_ms";
 
+// Update check settings
+pub const UPDATE_CHECK_ENABLED: &str = "update_check.enabled";
+pub const UPDATE_CHECK_LAST_CHECK: &str = "update_check.last_check";
+pub const UPDATE_CHECK_LATEST_VERSION: &str = "update_check.latest_version";
+pub const UPDATE_CHECK_LATEST_TAG: &str = "update_check.latest_tag";
+pub const UPDATE_CHECK_LATEST_URL: &str = "update_check.latest_url";
+
+// Logging settings
+pub const LOG_LEVEL: &str = "log.level";
+pub const LOG_FILE_ENABLED: &str = "log.file_enabled";
+
 // Agent-scoped key prefixes
 const AGENT_PIN_PREFIX: &str = "agent_pin.";
 const AGENT_MCP_PREFIX: &str = "agent_mcp.";

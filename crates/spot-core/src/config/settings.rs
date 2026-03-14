@@ -375,6 +375,20 @@ impl<'a> Settings<'a> {
     pub fn set_bool(&self, key: &str, value: bool) {
         let _ = self.set(key, if value { "true" } else { "false" });
     }
+
+    /// Check if automatic update checking is enabled (default: true).
+    pub fn update_check_enabled(&self) -> bool {
+        self.get(super::keys::UPDATE_CHECK_ENABLED)
+            .ok()
+            .flatten()
+            .map(|v| matches!(v.to_lowercase().as_str(), "true" | "1" | "yes" | "on"))
+            .unwrap_or(true) // enabled by default
+    }
+
+    /// Set whether automatic update checking is enabled.
+    pub fn set_update_check_enabled(&self, enabled: bool) {
+        self.set_bool(super::keys::UPDATE_CHECK_ENABLED, enabled);
+    }
 }
 
 #[cfg(test)]

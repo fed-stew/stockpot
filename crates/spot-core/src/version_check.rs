@@ -8,6 +8,9 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::config::{keys, Settings};
+use crate::db::Database;
+
 /// GitHub API endpoint for latest release
 const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/fed-stew/stockpot/releases/latest";
 
@@ -123,6 +126,74 @@ pub async fn check_for_update() -> Option<LatestRelease> {
         }
         Err(e) => {
             tracing::debug!("Failed to check for updates: {}", e);
+            None
+        }
+    }
+}
+
+/// Cache TTL for update checks (24 hours).
+pub const CACHE_TTL_SECS: u64 = 86400;
+
+/// Check for updates with caching via the database.
+///
+/// Returns `None` if:
+/// - Update checking is disabled in settings
+/// - A cached result exists and is still fresh (< 24 hours)
+/// - No newer version is available
+pub async fn check_for_update_cached(db: &Database) -> Option<LatestRelease> {
+    let settings = Settings::new(db);
+
+    // Check if update checking is enabled
+    if !settings.update_check_enabled() {
+        return None;
+    }
+
+    // Check cache
+    if let Ok(Some(last_check)) = settings.get(keys::UPDATE_CHECK_LAST_CHECK) {
+        if let Ok(timestamp) = last_check.parse::<i64>() {
+            let now = chrono::Utc::now().timestamp();
+            if (now - timestamp) < CACHE_TTL_SECS as i64 {
+                // Return cached result
+                if let Ok(Some(version)) = settings.get(keys::UPDATE_CHECK_LATEST_VERSION) {
+                    if is_newer_version(CURRENT_VERSION, &version) {
+                        let tag = settings
+                            .get(keys::UPDATE_CHECK_LATEST_TAG)
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default();
+                        let url = settings
+                            .get(keys::UPDATE_CHECK_LATEST_URL)
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default();
+                        return Some(LatestRelease {
+                            version,
+                            tag_name: tag,
+                            html_url: url,
+                        });
+                    }
+                }
+                return None;
+            }
+        }
+    }
+
+    // Fetch fresh
+    match check_for_update().await {
+        Some(release) => {
+            // Cache the result
+            let now = chrono::Utc::now().timestamp().to_string();
+            let _ = settings.set(keys::UPDATE_CHECK_LAST_CHECK, &now);
+            let _ = settings.set(keys::UPDATE_CHECK_LATEST_VERSION, &release.version);
+            let _ = settings.set(keys::UPDATE_CHECK_LATEST_TAG, &release.tag_name);
+            let _ = settings.set(keys::UPDATE_CHECK_LATEST_URL, &release.html_url);
+            Some(release)
+        }
+        None => {
+            // Cache the negative result too
+            let now = chrono::Utc::now().timestamp().to_string();
+            let _ = settings.set(keys::UPDATE_CHECK_LAST_CHECK, &now);
+            let _ = settings.set(keys::UPDATE_CHECK_LATEST_VERSION, CURRENT_VERSION);
             None
         }
     }

@@ -75,23 +75,6 @@ impl ChatApp {
         self.text_view_cache.borrow_mut().insert(element_id, entity);
     }
 
-    fn flush_cache_updates(&mut self, cx: &mut Context<Self>) {
-        // Throttle updates to ~30fps (33ms) to prevent markdown re-parsing from blocking the main thread
-        // This keeps scrolling smooth (120fps) while text updates slightly less frequently
-        if self.pending_cache_updates.is_empty()
-            || self.last_text_flush.elapsed() < std::time::Duration::from_millis(33)
-        {
-            return;
-        }
-
-        let updates: Vec<_> = self.pending_cache_updates.drain().collect();
-        for (element_id, delta) in updates {
-            // We pass "" as full_text because we know the view exists (checked in handle_message)
-            self.update_text_view_cache(element_id, "", Some(&delta), cx);
-        }
-        self.last_text_flush = std::time::Instant::now();
-    }
-
     /// Start the unified UI event loop.
     ///
     /// Uses `tokio::select!` to handle messages and animation ticks independently:
@@ -125,27 +108,17 @@ impl ChatApp {
                 let is_active = this.update(cx, |app, _| app.is_generating).unwrap_or(false);
 
                 if is_active {
-                    // During streaming: run animation and messages in parallel with select!
+                    // During streaming: alternate between messages and animation ticks.
+                    // Message branch micro-batches all pending tokens per frame to reduce
+                    // latency and calls cx.notify() for immediate repaint.
                     tokio::select! {
-                        biased; // Prioritize in order listed
-
-                        // Animation tick
+                        // Animation tick — update scroll/throughput and trigger render
                         _ = animation_interval.tick() => {
                             let result = this.update(cx, |app, cx| {
-                                // Decouple data updates from rendering:
-                                // 1. Update data (always)
                                 app.tick_throughput();
                                 let scroll_moved = app.tick_scroll_animation();
-                                let has_pending_updates = !app.pending_cache_updates.is_empty()
-                                    && app.last_text_flush.elapsed() >= std::time::Duration::from_millis(33);
 
-                                // 2. Flush text cache if needed (data update)
-                                if has_pending_updates {
-                                    app.flush_cache_updates(cx);
-                                }
-
-                                // 3. Only notify (trigger render) when something visually changed
-                                if scroll_moved || has_pending_updates || app.needs_render {
+                                if scroll_moved || app.needs_render {
                                     app.needs_render = false;
                                     cx.notify();
                                 }
@@ -155,12 +128,30 @@ impl ChatApp {
                             }
                         }
 
-                        // Message received - process it
+                        // Message arrives — micro-batch all pending messages for this frame
                         msg = receiver.recv() => {
                             match msg {
                                 Ok(msg) => {
+                                    // Collect this message plus all immediately available ones
+                                    let mut messages = vec![msg];
+                                    // Drain pending (non-blocking) — micro-batch for this frame
+                                    loop {
+                                        match receiver.try_recv() {
+                                            Ok(Some(m)) => messages.push(m),
+                                            Ok(None) => break,      // No more pending
+                                            Err(_) => break,        // Lagged or closed — recover on next delta
+                                        }
+                                    }
+                                    // Process all collected messages in one update call
                                     let result = this.update(cx, |app, cx| {
-                                        app.handle_message(msg, cx);
+                                        for m in messages {
+                                            app.handle_message(m, cx);
+                                        }
+                                        // Trigger immediate repaint — don't wait for next tick
+                                        if app.needs_render {
+                                            app.needs_render = false;
+                                            cx.notify();
+                                        }
                                     });
                                     if result.is_err() {
                                         break; // Entity dropped
@@ -273,22 +264,13 @@ impl ChatApp {
                     }
                 };
 
-                // Apply update if we found a target
+                // Apply delta directly to the text view — no buffering.
+                // This ensures each token is applied as it arrives rather
+                // than being batched into large chunks.
                 if let Some((element_id, full_text)) = cache_update {
                     let delta_text = delta.text.clone();
-                    // Check if view exists to determine if we can buffer
-                    let view_exists = self.text_view_cache.borrow().contains_key(&element_id);
-
-                    if view_exists {
-                        // Buffer the update to be flushed in animation tick
-                        self.pending_cache_updates
-                            .entry(element_id)
-                            .and_modify(|s| s.push_str(&delta_text))
-                            .or_insert(delta_text);
-                    } else {
-                        // Create view immediately for first chunk
-                        self.update_text_view_cache(element_id, &full_text, Some(&delta_text), cx);
-                    }
+                    self.update_text_view_cache(element_id, &full_text, Some(&delta_text), cx);
+                    self.needs_render = true;
                 }
 
                 // Mark that we want to scroll to bottom - the independent animation loop handles the actual scrolling
@@ -324,27 +306,16 @@ impl ChatApp {
                         })
                     });
 
-                    // Apply update
+                    // Apply directly to the text view
                     if let Some((element_id, full_text)) = cache_update {
                         let delta_text = thinking.text.clone();
-                        // Check if view exists to determine if we can buffer
-                        let view_exists = self.text_view_cache.borrow().contains_key(&element_id);
-
-                        if view_exists {
-                            // Buffer the update
-                            self.pending_cache_updates
-                                .entry(element_id)
-                                .and_modify(|s| s.push_str(&delta_text))
-                                .or_insert(delta_text);
-                        } else {
-                            // Create view immediately
-                            self.update_text_view_cache(
-                                element_id,
-                                &full_text,
-                                Some(delta_text.as_str()),
-                                cx,
-                            );
-                        }
+                        self.update_text_view_cache(
+                            element_id,
+                            &full_text,
+                            Some(delta_text.as_str()),
+                            cx,
+                        );
+                        self.needs_render = true;
                     }
                 }
             }
@@ -450,6 +421,13 @@ impl ChatApp {
                         // Stop throughput tracking
                         self.is_streaming_active = false;
 
+                        // Finalize any in-progress tables in all cached text views
+                        for entity in self.text_view_cache.borrow().values() {
+                            entity.update(cx, |view, cx| {
+                                view.finalize_tables(cx);
+                            });
+                        }
+
                         // Clear section mappings - safe now since main agent is done
                         self.active_section_ids.clear();
                     }
@@ -525,20 +503,13 @@ impl ChatApp {
             _ => {}
         }
 
-        // Mark that a render is needed for the next animation tick.
-        // TextDelta just buffers data - the animation tick will flush and render.
-        // Other message types set needs_render so the next tick will notify.
-        match &msg {
-            Message::TextDelta(_) => {
-                // Data is buffered in pending_cache_updates; animation tick handles render
-            }
-            _ => {
-                // Flag for next animation tick to render, or notify immediately if idle
-                if self.is_generating {
-                    self.needs_render = true;
-                } else {
-                    cx.notify();
-                }
+        // For non-streaming messages, flag a render or notify immediately.
+        // TextDelta and Thinking already set needs_render above.
+        if !matches!(&msg, Message::TextDelta(_) | Message::Thinking(_)) {
+            if self.is_generating {
+                self.needs_render = true;
+            } else {
+                cx.notify();
             }
         }
     }

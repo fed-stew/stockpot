@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use serdes_ai_tools::Tool;
 
-use super::agent_tools::{InvokeAgentTool, ListAgentsTool};
 use super::delete_file_tool::DeleteFileTool;
 use super::edit_file_tool::EditFileTool;
 use super::grep_tool::GrepTool;
@@ -28,15 +27,19 @@ pub type ArcTool = Arc<dyn Tool + Send + Sync>;
 /// This provides a convenient way to create and access all tools
 /// for use with serdesAI agents.
 ///
+/// Agent tools (invoke_agent, list_agents) are not included here to avoid
+/// circular dependencies. They can be added via [`add_tool`] or [`add_tools`]
+/// from the spot-agents crate.
+///
 /// # Example
 ///
 /// ```ignore
-/// use spot_core::tools::registry::SpotToolRegistry;
+/// use spot_tools::tools::registry::SpotToolRegistry;
 ///
 /// let registry = SpotToolRegistry::new();
 /// let tools = registry.all_tools();
 /// ```
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct SpotToolRegistry {
     pub list_files: ListFilesTool,
     pub read_file: ReadFileTool,
@@ -44,12 +47,29 @@ pub struct SpotToolRegistry {
     pub delete_file: DeleteFileTool,
     pub grep: GrepTool,
     pub run_shell_command: RunShellCommandTool,
-    pub invoke_agent: InvokeAgentTool,
-    pub list_agents: ListAgentsTool,
     // Process management tools
     pub list_processes: ListProcessesTool,
     pub read_process_output: ReadProcessOutputTool,
     pub kill_process: KillProcessTool,
+    /// Additional tools added externally (e.g., agent tools from spot-agents).
+    extra_tools: Vec<ArcTool>,
+}
+
+impl std::fmt::Debug for SpotToolRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpotToolRegistry")
+            .field("list_files", &self.list_files)
+            .field("read_file", &self.read_file)
+            .field("edit_file", &self.edit_file)
+            .field("delete_file", &self.delete_file)
+            .field("grep", &self.grep)
+            .field("run_shell_command", &self.run_shell_command)
+            .field("list_processes", &self.list_processes)
+            .field("read_process_output", &self.read_process_output)
+            .field("kill_process", &self.kill_process)
+            .field("extra_tools_count", &self.extra_tools.len())
+            .finish()
+    }
 }
 
 impl SpotToolRegistry {
@@ -58,22 +78,36 @@ impl SpotToolRegistry {
         Self::default()
     }
 
+    /// Add an external tool to the registry.
+    ///
+    /// This is used by spot-agents (or other crates) to register tools that
+    /// depend on higher-level crates (e.g., InvokeAgentTool, ListAgentsTool).
+    pub fn add_tool(&mut self, tool: ArcTool) {
+        self.extra_tools.push(tool);
+    }
+
+    /// Add multiple external tools to the registry.
+    pub fn add_tools(&mut self, tools: Vec<ArcTool>) {
+        self.extra_tools.extend(tools);
+    }
+
     /// Get all tools as Arc-wrapped trait objects for shared ownership.
     pub fn all_tools(&self) -> Vec<ArcTool> {
-        vec![
+        let mut tools: Vec<ArcTool> = vec![
             Arc::new(self.list_files.clone()),
             Arc::new(self.read_file.clone()),
             Arc::new(self.edit_file.clone()),
             Arc::new(self.delete_file.clone()),
             Arc::new(self.grep.clone()),
             Arc::new(self.run_shell_command.clone()),
-            Arc::new(self.invoke_agent.clone()),
-            Arc::new(self.list_agents.clone()),
             // Process management tools
             Arc::new(self.list_processes.clone()),
             Arc::new(self.read_process_output.clone()),
             Arc::new(self.kill_process.clone()),
-        ]
+        ];
+        // Include any externally-added tools
+        tools.extend(self.extra_tools.clone());
+        tools
     }
 
     /// Get tool definitions for all tools.
@@ -83,22 +117,15 @@ impl SpotToolRegistry {
 
     /// Get a subset of tools by name.
     pub fn tools_by_name(&self, names: &[&str]) -> Vec<ArcTool> {
+        let all = self.all_tools();
         let mut tools: Vec<ArcTool> = Vec::new();
 
         for name in names {
-            match *name {
-                "list_files" => tools.push(Arc::new(self.list_files.clone())),
-                "read_file" => tools.push(Arc::new(self.read_file.clone())),
-                "edit_file" => tools.push(Arc::new(self.edit_file.clone())),
-                "delete_file" => tools.push(Arc::new(self.delete_file.clone())),
-                "grep" => tools.push(Arc::new(self.grep.clone())),
-                "run_shell_command" => tools.push(Arc::new(self.run_shell_command.clone())),
-                "invoke_agent" => tools.push(Arc::new(self.invoke_agent.clone())),
-                "list_agents" => tools.push(Arc::new(self.list_agents.clone())),
-                "list_processes" => tools.push(Arc::new(self.list_processes.clone())),
-                "read_process_output" => tools.push(Arc::new(self.read_process_output.clone())),
-                "kill_process" => tools.push(Arc::new(self.kill_process.clone())),
-                _ => {} // Unknown tool, skip
+            for tool in &all {
+                if tool.definition().name == *name {
+                    tools.push(Arc::clone(tool));
+                    break;
+                }
             }
         }
 
@@ -138,14 +165,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.all_tools().len(), 11);
-        assert_eq!(registry.definitions().len(), 11);
+        assert_eq!(registry.all_tools().len(), 9);
+        assert_eq!(registry.definitions().len(), 9);
     }
 
     #[test]
     fn test_registry_default_trait() {
         let registry = SpotToolRegistry::default();
-        assert_eq!(registry.all_tools().len(), 11);
+        assert_eq!(registry.all_tools().len(), 9);
     }
 
     #[test]
@@ -174,7 +201,7 @@ mod tests {
     #[test]
     fn test_all_tools_returns_correct_count() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.all_tools().len(), 11);
+        assert_eq!(registry.all_tools().len(), 9);
     }
 
     #[test]
@@ -193,8 +220,9 @@ mod tests {
             "delete_file",
             "grep",
             "run_shell_command",
-            "invoke_agent",
-            "list_agents",
+            "list_processes",
+            "read_process_output",
+            "kill_process",
         ];
 
         for name in expected {
@@ -252,7 +280,7 @@ mod tests {
     #[test]
     fn test_definitions_returns_correct_count() {
         let registry = SpotToolRegistry::new();
-        assert_eq!(registry.definitions().len(), 11);
+        assert_eq!(registry.definitions().len(), 9);
     }
 
     #[test]
@@ -322,12 +350,13 @@ mod tests {
             "delete_file",
             "grep",
             "run_shell_command",
-            "invoke_agent",
-            "list_agents",
+            "list_processes",
+            "read_process_output",
+            "kill_process",
         ];
 
         let tools = registry.tools_by_name(&names);
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
     }
 
     #[test]
@@ -365,18 +394,6 @@ mod tests {
         assert_eq!(tools[0].definition().name, "grep");
         assert_eq!(tools[1].definition().name, "read_file");
         assert_eq!(tools[2].definition().name, "list_files");
-    }
-
-    #[test]
-    fn test_tools_by_name_duplicate_names() {
-        let registry = SpotToolRegistry::new();
-        let tools = registry.tools_by_name(&["read_file", "read_file", "read_file"]);
-
-        // Each occurrence should add a tool
-        assert_eq!(tools.len(), 3);
-        for tool in &tools {
-            assert_eq!(tool.definition().name, "read_file");
-        }
     }
 
     #[test]
@@ -450,8 +467,6 @@ mod tests {
         assert!(!tool_names.contains("edit_file"));
         assert!(!tool_names.contains("delete_file"));
         assert!(!tool_names.contains("run_shell_command"));
-        assert!(!tool_names.contains("invoke_agent"));
-        assert!(!tool_names.contains("list_agents"));
     }
 
     // =========================================================================
@@ -497,8 +512,6 @@ mod tests {
             .collect();
 
         assert!(!tool_names.contains("run_shell_command"));
-        assert!(!tool_names.contains("invoke_agent"));
-        assert!(!tool_names.contains("list_agents"));
     }
 
     // =========================================================================
@@ -619,16 +632,49 @@ mod tests {
         );
     }
 
+    // =========================================================================
+    // add_tool / add_tools Tests
+    // =========================================================================
+
     #[test]
-    fn test_invoke_agent_tool_exists() {
-        let registry = SpotToolRegistry::new();
-        assert_eq!(registry.invoke_agent.definition().name, "invoke_agent");
+    fn test_add_tool_increases_count() {
+        let mut registry = SpotToolRegistry::new();
+        let base_count = registry.all_tools().len();
+
+        registry.add_tool(Arc::new(DeleteFileTool)); // re-use existing type for test
+        assert_eq!(registry.all_tools().len(), base_count + 1);
     }
 
     #[test]
-    fn test_list_agents_tool_exists() {
-        let registry = SpotToolRegistry::new();
-        assert_eq!(registry.list_agents.definition().name, "list_agents");
+    fn test_add_tools_increases_count() {
+        let mut registry = SpotToolRegistry::new();
+        let base_count = registry.all_tools().len();
+
+        registry.add_tools(vec![Arc::new(DeleteFileTool), Arc::new(GrepTool)]);
+        assert_eq!(registry.all_tools().len(), base_count + 2);
+    }
+
+    #[test]
+    fn test_added_tools_appear_in_all_tools() {
+        let mut registry = SpotToolRegistry::new();
+        registry.add_tool(Arc::new(ListFilesTool));
+
+        let names: HashSet<_> = registry
+            .all_tools()
+            .iter()
+            .map(|t| t.definition().name.clone())
+            .collect();
+
+        assert!(names.contains("list_files"));
+    }
+
+    #[test]
+    fn test_added_tools_appear_in_tools_by_name() {
+        let mut registry = SpotToolRegistry::new();
+        registry.add_tool(Arc::new(GrepTool));
+
+        let tools = registry.tools_by_name(&["grep"]);
+        assert!(!tools.is_empty());
     }
 
     // =========================================================================

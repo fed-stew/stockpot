@@ -1,7 +1,7 @@
 //! OAuth token storage in SQLite.
 
-use crate::db::Database;
 use chrono::Utc;
+use spot_storage::Database;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -72,7 +72,7 @@ impl<'a> TokenStorage<'a> {
         self.db.conn().execute(
             "INSERT INTO oauth_tokens (provider, access_token, refresh_token, expires_at, account_id, extra_data, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, unixepoch())
-             ON CONFLICT(provider) DO UPDATE SET 
+             ON CONFLICT(provider) DO UPDATE SET
                 access_token = excluded.access_token,
                 refresh_token = COALESCE(excluded.refresh_token, oauth_tokens.refresh_token),
                 expires_at = excluded.expires_at,

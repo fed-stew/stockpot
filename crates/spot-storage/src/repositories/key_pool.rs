@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::db::PoolKey;
+use crate::PoolKey;
 
 /// Repository for API key pool storage (the `api_key_pools` table).
 pub struct KeyPoolRepository<'a> {

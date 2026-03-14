@@ -4,11 +4,12 @@
 //! and system copy (Cmd+C) support.
 
 use std::ops::Range;
+use std::time::Instant;
 
 use gpui::{
     div, prelude::*, App, ClipboardItem, Context, CursorStyle, FocusHandle, Focusable, Hsla,
     IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point, SharedString,
-    StyledText, Window,
+    StyledText, TextRun, Window,
 };
 
 use crate::gui::theme::Theme;
@@ -16,6 +17,11 @@ use crate::gui::theme::Theme;
 use super::markdown_text;
 
 gpui::actions!(selectable_text, [Copy, SelectAll]);
+
+/// Duration of the trailing-edge fade-in for newly appended text (milliseconds).
+/// Only the last few characters (the "leading edge") are affected — older text
+/// stays at full opacity.
+const TRAILING_FADE_MS: f32 = 150.0;
 
 /// Selectable text component for displaying text that can be selected and copied
 pub struct SelectableText {
@@ -32,13 +38,28 @@ pub struct SelectableText {
     cached_font_size: gpui::Pixels,
     /// Whether the mouse is currently hovering over a link
     hovering_link: bool,
+    /// Mutable buffer for efficient append operations (avoids SharedString round-trips)
+    content_buffer: String,
+    /// Whether `content_buffer` has new data not yet reflected in `content`
+    content_dirty: bool,
+    /// Byte length of source text that has been stably rendered (complete lines)
+    stable_source_len: usize,
+    /// Cached rendered output for the stable prefix (all complete lines)
+    stable_rendered: Option<markdown_text::RenderedMarkdown>,
+    /// Number of trailing source bytes that are "new" and should fade in.
+    /// Set by `append()` and `set_content_with_trailing_fade()`.
+    fade_trailing_bytes: usize,
+    /// When the current trailing fade started. Cleared when the fade completes.
+    fade_trailing_start: Option<Instant>,
 }
 
 impl SelectableText {
     pub fn new(cx: &mut Context<Self>, content: impl Into<SharedString>, theme: Theme) -> Self {
+        let content: SharedString = content.into();
+        let content_buffer = content.to_string();
         Self {
             focus_handle: cx.focus_handle(),
-            content: content.into(),
+            content,
             selected_range: 0..0,
             is_selecting: false,
             theme,
@@ -49,6 +70,12 @@ impl SelectableText {
             cached_content: SharedString::from(""),
             cached_font_size: gpui::Pixels::ZERO,
             hovering_link: false,
+            content_buffer,
+            content_dirty: false,
+            stable_source_len: 0,
+            stable_rendered: None,
+            fade_trailing_bytes: 0,
+            fade_trailing_start: None,
         }
     }
 
@@ -58,20 +85,42 @@ impl SelectableText {
 
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = content.into();
+        self.content_buffer = self.content.to_string();
+        self.content_dirty = false;
         self.selected_range = 0..0;
         self.cached_rendered = None;
         self.cached_content = SharedString::from("");
+        self.stable_source_len = 0;
+        self.stable_rendered = None;
+        self.fade_trailing_bytes = 0;
+        self.fade_trailing_start = None;
+        cx.notify();
+    }
+
+    /// Replace content and mark the last `trailing_fade_bytes` as a fade-in zone.
+    /// Used by the streaming pending view to fade only the newly added characters.
+    pub fn set_content_with_trailing_fade(
+        &mut self,
+        content: impl Into<SharedString>,
+        trailing_fade_bytes: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.content = content.into();
+        self.content_buffer = self.content.to_string();
+        self.content_dirty = false;
+        self.selected_range = 0..0;
+        self.cached_rendered = None;
+        self.cached_content = SharedString::from("");
+        self.stable_source_len = 0;
+        self.stable_rendered = None;
+        self.fade_trailing_bytes = trailing_fade_bytes;
+        self.fade_trailing_start = Some(Instant::now());
         cx.notify();
     }
 
     pub fn append(&mut self, delta: &str, cx: &mut Context<Self>) {
-        let mut new_content = self.content.to_string();
-        new_content.push_str(delta);
-        self.content = new_content.into();
-        // We don't necessarily need to clear selection on append, but safe for now.
-        // self.selected_range = 0..0;
-        self.cached_rendered = None;
-        self.cached_content = SharedString::from("");
+        self.content_buffer.push_str(delta);
+        self.content_dirty = true;
         cx.notify();
     }
 
@@ -309,6 +358,74 @@ impl SelectableText {
     }
 }
 
+/// Apply reduced opacity to the trailing `fade_bytes` of rendered text runs.
+/// Splits runs at the fade boundary so that only the trailing portion is affected.
+/// Returns the original runs unchanged if the operation would produce invalid output.
+fn apply_trailing_opacity(
+    runs: &[TextRun],
+    total_text_len: usize,
+    fade_bytes: usize,
+    opacity: f32,
+) -> Vec<TextRun> {
+    if fade_bytes == 0 || opacity >= 1.0 || runs.is_empty() || total_text_len == 0 {
+        return runs.to_vec();
+    }
+
+    // Clamp fade_bytes to the actual text length to prevent mismatches
+    // between source-byte counts and rendered-byte counts.
+    let clamped_fade = fade_bytes.min(total_text_len);
+    let fade_start = total_text_len - clamped_fade;
+
+    let mut result = Vec::with_capacity(runs.len() + 1);
+    let mut cursor = 0;
+
+    for run in runs {
+        if run.len == 0 {
+            continue; // skip zero-length runs
+        }
+        let run_start = cursor;
+        let run_end = cursor + run.len;
+        cursor = run_end;
+
+        if run_end <= fade_start {
+            // Entirely before fade zone — full opacity
+            result.push(run.clone());
+        } else if run_start >= fade_start {
+            // Entirely in fade zone — apply reduced opacity
+            let mut faded = run.clone();
+            faded.color.a *= opacity;
+            result.push(faded);
+        } else {
+            // Split: part before fade, part in fade
+            let split_point = fade_start - run_start;
+
+            if split_point > 0 {
+                let mut before = run.clone();
+                before.len = split_point;
+                result.push(before);
+            }
+
+            let after_len = run_end - fade_start;
+            if after_len > 0 {
+                let mut after = run.clone();
+                after.len = after_len;
+                after.color.a *= opacity;
+                result.push(after);
+            }
+        }
+    }
+
+    // Safety: validate the total run length matches the text.
+    // If it doesn't (due to source/rendered byte mismatch), return the
+    // original runs unchanged rather than crashing GPUI.
+    let result_len: usize = result.iter().map(|r| r.len).sum();
+    if result_len != total_text_len {
+        return runs.to_vec();
+    }
+
+    result
+}
+
 impl Focusable for SelectableText {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -317,13 +434,23 @@ impl Focusable for SelectableText {
 
 impl Render for SelectableText {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Sync content from buffer if dirty (avoids SharedString alloc in append())
+        if self.content_dirty {
+            self.content = SharedString::from(self.content_buffer.clone());
+            self.content_dirty = false;
+        }
+
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
+
         let needs_rebuild = match &self.cached_rendered {
             Some(_) => self.cached_content != self.content || self.cached_font_size != font_size,
             None => true,
         };
+
         if needs_rebuild {
+            // Always do a full rebuild — safe and correct.
+            // (Incremental rendering disabled to isolate a GPUI text run panic.)
             self.cached_rendered = Some(markdown_text::render_markdown(
                 self.content.as_ref(),
                 &text_style,
@@ -332,6 +459,7 @@ impl Render for SelectableText {
             self.cached_content = self.content.clone();
             self.cached_font_size = font_size;
         }
+
         let rendered = self
             .cached_rendered
             .as_ref()

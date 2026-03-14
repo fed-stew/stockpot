@@ -3,6 +3,10 @@ members = [
     "crates/spot-core",
     "crates/spot-tui",
     "crates/spot-gui",
+    "crates/spot-storage",
+    "crates/spot-models",
+    "crates/spot-auth",
+    "crates/spot-tools",
 ]
 resolver = "2"
 

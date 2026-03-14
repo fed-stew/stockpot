@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use rusqlite::params;
 
-use crate::db::Database;
+use spot_storage::Database;
 
 use super::model_config::ModelConfig;
 use super::types::{ModelConfigError, ModelType};
@@ -332,7 +332,7 @@ impl ModelRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::types::CustomEndpoint;
+    use crate::types::CustomEndpoint;
     use std::collections::HashMap;
     use tempfile::TempDir;
 

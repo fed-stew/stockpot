@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use tracing::debug;
+use tracing::{debug, info_span};
 
 use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
@@ -63,15 +63,20 @@ impl Tool for GrepTool {
         )?;
 
         let directory = args.directory.as_deref().unwrap_or(".");
+        let _span =
+            info_span!("grep_tool", pattern = %args.pattern, directory = %directory).entered();
 
         match file_ops::grep(&args.pattern, directory, args.max_results) {
             Ok(result) => {
                 if result.matches.is_empty() {
+                    debug!(match_count = 0, "Grep found no matches");
                     return Ok(ToolReturn::text(format!(
                         "No matches found for pattern '{}' in {}",
                         args.pattern, directory
                     )));
                 }
+
+                debug!(match_count = result.total_matches, "Grep completed");
 
                 let mut output = format!(
                     "Found {} matches for '{}' in {}:\n",

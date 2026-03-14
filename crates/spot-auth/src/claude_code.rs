@@ -1,14 +1,14 @@
 //! Claude Code OAuth authentication.
 
-use super::storage::{TokenStorage, TokenStorageError};
-use crate::db::Database;
-use crate::models::{ModelConfig, ModelType};
+use crate::storage::{TokenStorage, TokenStorageError};
 use serde::Deserialize;
 use serdes_ai_models::claude_code_oauth::ClaudeCodeOAuthModel;
 use serdes_ai_providers::oauth::{
     config::claude_code_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow,
     OAuthError, TokenResponse,
 };
+use spot_models::{ModelConfig, ModelType};
+use spot_storage::Database;
 use std::collections::HashMap;
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
@@ -230,7 +230,7 @@ fn filter_latest_models(models: Vec<String>) -> Vec<String> {
 
 /// Save Claude models to database
 fn save_claude_models_to_db(db: &Database, models: &[String]) -> Result<(), std::io::Error> {
-    use crate::models::ModelRegistry;
+    use spot_models::ModelRegistry;
 
     for model_name in models {
         // Create prefixed name like "claude-code-claude-sonnet-4-20250514"
@@ -266,13 +266,13 @@ fn save_claude_models_to_db(db: &Database, models: &[String]) -> Result<(), std:
 
 /// Run the Claude Code OAuth flow (prints to stdout).
 pub async fn run_claude_code_auth(db: &Database) -> Result<(), ClaudeCodeAuthError> {
-    run_claude_code_auth_with_progress(db, &super::StdoutProgress).await
+    run_claude_code_auth_with_progress(db, &crate::StdoutProgress).await
 }
 
 /// Run the Claude Code OAuth flow with custom progress reporting.
 pub async fn run_claude_code_auth_with_progress(
     db: &Database,
-    progress: &impl super::AuthProgress,
+    progress: &impl crate::AuthProgress,
 ) -> Result<(), ClaudeCodeAuthError> {
     progress.info("🔐 Starting Claude Code OAuth authentication...");
 

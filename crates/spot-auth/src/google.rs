@@ -1,13 +1,13 @@
 //! Google OAuth authentication.
 
-use super::storage::{StoredTokens, TokenStorage, TokenStorageError};
-use crate::db::Database;
-use crate::models::{ModelConfig, ModelType};
+use crate::storage::{StoredTokens, TokenStorage, TokenStorageError};
 use serdes_ai_models::antigravity::AntigravityModel;
 use serdes_ai_providers::oauth::{
     config::google_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow, OAuthError,
     TokenResponse,
 };
+use spot_models::{ModelConfig, ModelType};
+use spot_storage::Database;
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 
@@ -240,7 +240,7 @@ fn extract_project_id(json: &serde_json::Value) -> Option<String> {
 // ============================================================================
 
 fn save_google_models_to_db(db: &Database, project_id: &str) -> Result<(), std::io::Error> {
-    use crate::models::ModelRegistry;
+    use spot_models::ModelRegistry;
 
     // List of models to register
     let models = vec![
@@ -299,13 +299,13 @@ fn save_google_models_to_db(db: &Database, project_id: &str) -> Result<(), std::
 
 /// Run the Google OAuth flow (prints to stdout).
 pub async fn run_google_auth(db: &Database) -> Result<(), GoogleAuthError> {
-    run_google_auth_with_progress(db, &super::StdoutProgress).await
+    run_google_auth_with_progress(db, &crate::StdoutProgress).await
 }
 
 /// Run the Google OAuth flow with custom progress reporting.
 pub async fn run_google_auth_with_progress(
     db: &Database,
-    progress: &impl super::AuthProgress,
+    progress: &impl crate::AuthProgress,
 ) -> Result<(), GoogleAuthError> {
     progress.info("🔐 Starting Google OAuth authentication...");
 

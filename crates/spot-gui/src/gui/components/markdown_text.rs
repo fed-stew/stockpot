@@ -86,11 +86,17 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     let mut list_depth: usize = 0;
     let mut ordered_list_counters: Vec<usize> = Vec::new();
 
+    // Table state
+    let mut in_table = false;
+    let mut in_table_head = false;
+    let mut table_cell_idx: usize = 0;
+
     // Enable GFM features
     let mut options = Options::empty();
 
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_TABLES);
 
     let parser = Parser::new_ext(source, options);
 
@@ -313,13 +319,54 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                         });
                         in_list_item = true;
                     }
+                    Tag::Table(_alignments) => {
+                        in_table = true;
+                        if !text.is_empty() && !text.ends_with('\n') {
+                            text.push('\n');
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                    }
+                    Tag::TableHead => {
+                        in_table_head = true;
+                        table_cell_idx = 0;
+                    }
+                    Tag::TableRow => {
+                        table_cell_idx = 0;
+                    }
+                    Tag::TableCell => {
+                        // Add column separator between cells
+                        if table_cell_idx > 0 {
+                            let sep = "  │  ";
+                            text.push_str(sep);
+                            runs.push(TextRun {
+                                len: sep.len(),
+                                font: base_font.clone(),
+                                color: theme.border.into(),
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                        // Apply bold for header cells
+                        if in_table_head {
+                            bold = true;
+                        }
+                        table_cell_idx += 1;
+                    }
                     Tag::Emphasis => italic = true,
                     Tag::Strong => bold = true,
                     Tag::Strikethrough => strikethrough = true,
 
                     Tag::Link { dest_url, .. } => {
                         link_dest = Some(dest_url.to_string());
-                        link_start = Some(text.len()); // Track where link text starts
+                        link_start = Some(text.len());
                     }
                     _ => {}
                 }
@@ -340,6 +387,61 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
                     }
                     TagEnd::BlockQuote => in_block_quote = false,
                     TagEnd::CodeBlock => {}
+                    TagEnd::Table => {
+                        in_table = false;
+                        if !text.ends_with('\n') {
+                            text.push('\n');
+                            runs.push(TextRun {
+                                len: 1,
+                                font: base_font.clone(),
+                                color: base_color,
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            });
+                        }
+                    }
+                    TagEnd::TableHead => {
+                        in_table_head = false;
+                        bold = false;
+                        // Add newline after header row
+                        text.push('\n');
+                        runs.push(TextRun {
+                            len: 1,
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
+                        // Add a visual separator line under the header
+                        let sep = "───────────────────────────────\n";
+                        text.push_str(sep);
+                        runs.push(TextRun {
+                            len: sep.len(),
+                            font: base_font.clone(),
+                            color: theme.border.into(),
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
+                    }
+                    TagEnd::TableRow => {
+                        text.push('\n');
+                        runs.push(TextRun {
+                            len: 1,
+                            font: base_font.clone(),
+                            color: base_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        });
+                    }
+                    TagEnd::TableCell => {
+                        if in_table_head {
+                            bold = false;
+                        }
+                    }
                     TagEnd::Emphasis => italic = false,
                     TagEnd::Strong => bold = false,
                     TagEnd::Strikethrough => strikethrough = false,
@@ -490,6 +592,66 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     }
 
     let runs = merge_adjacent_runs(runs);
+
+    RenderedMarkdown {
+        text: SharedString::from(text),
+        runs,
+        links,
+    }
+}
+
+/// Incrementally render markdown by reusing a cached stable prefix.
+///
+/// When text is being streamed (appended), the rendered output for all
+/// complete lines (up to the last `\n`) is stable — appending more text
+/// after a newline cannot retroactively change how earlier lines render.
+///
+/// This function:
+/// 1. Reuses the cached `RenderedMarkdown` for the stable prefix (if any).
+/// 2. Only calls `render_markdown` on the *tail* (from `stable_source_len`
+///    to the end of `source`), which is typically just the last incomplete line.
+/// 3. Concatenates the stable prefix output with the freshly-rendered tail.
+///
+/// If `stable_rendered` is `None` or `stable_source_len` is 0, falls back
+/// to a full `render_markdown` call.
+pub fn render_markdown_incremental(
+    source: &str,
+    text_style: &TextStyle,
+    theme: &Theme,
+    stable_rendered: Option<RenderedMarkdown>,
+    stable_source_len: usize,
+) -> RenderedMarkdown {
+    // If there's no usable stable prefix, do a full render
+    let stable = match stable_rendered {
+        Some(r) if stable_source_len > 0 && stable_source_len <= source.len() => r,
+        _ => return render_markdown(source, text_style, theme),
+    };
+
+    // The tail is everything after the stable prefix
+    let tail_source = &source[stable_source_len..];
+    if tail_source.is_empty() {
+        return stable;
+    }
+
+    // Render only the tail
+    let tail_rendered = render_markdown(tail_source, text_style, theme);
+
+    // Concatenate stable + tail
+    let mut text = String::with_capacity(stable.text.len() + tail_rendered.text.len());
+    text.push_str(&stable.text);
+    let stable_text_len = stable.text.len();
+    text.push_str(&tail_rendered.text);
+
+    let mut runs = stable.runs;
+    runs.extend(tail_rendered.runs);
+    let runs = merge_adjacent_runs(runs);
+
+    // Shift link regions from the tail by the stable text length
+    let mut links = stable.links;
+    for mut link in tail_rendered.links {
+        link.range = (link.range.start + stable_text_len)..(link.range.end + stable_text_len);
+        links.push(link);
+    }
 
     RenderedMarkdown {
         text: SharedString::from(text),

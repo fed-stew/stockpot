@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use tracing::debug;
+use tracing::{debug, info_span};
 
 use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
@@ -62,6 +62,8 @@ impl Tool for ReadFileTool {
             args.clone(),
             self.definition().parameters(),
         )?;
+
+        let _span = info_span!("read_file", file_path = %args.file_path).entered();
 
         match file_ops::read_file(
             &args.file_path,

@@ -228,12 +228,6 @@ pub struct ChatApp {
     text_view_cache:
         RefCell<HashMap<String, Entity<crate::gui::components::StreamingMarkdownView>>>,
 
-    /// Pending text updates to be applied in the next animation tick
-    /// Key: element_id, Value: pending delta string
-    pending_cache_updates: HashMap<String, String>,
-    /// Last time we flushed text updates (for throttling re-renders)
-    last_text_flush: std::time::Instant,
-
     // ── Smooth scroll animation state ──────────────────────────────────────────
     /// Target scroll offset for smooth animation (None = not animating)
     /// Uses lerp-based "chase" interpolation - the actual target (bottom) is computed per tick
@@ -404,8 +398,6 @@ impl ChatApp {
             active_agent_stack: Vec::new(),
             active_section_ids: HashMap::new(),
             text_view_cache: RefCell::new(HashMap::new()),
-            pending_cache_updates: HashMap::new(),
-            last_text_flush: std::time::Instant::now(),
 
             // Smooth scroll animation (None = not animating)
             scroll_animation_target: None,

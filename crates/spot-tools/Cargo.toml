@@ -1,0 +1,44 @@
+[package]
+name = "spot-tools"
+version = "0.25.1"
+edition = "2021"
+description = "Tool implementations and terminal emulation for Spot"
+license = "MIT"
+authors = ["Spot Contributors"]
+repository = "https://github.com/fed-stew/stockpot"
+keywords = ["ai", "tools", "terminal", "pty"]
+categories = ["development-tools"]
+
+[dependencies]
+# SerdesAI
+serdes-ai-tools = "0.2.6"
+
+# Async
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+thiserror = "1.0"
+tracing = "0.1"
+dirs = "5.0"
+regex = "1.10"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+ignore = "0.4"
+
+# Terminal emulation
+portable-pty = "0.8"
+alacritty_terminal = "0.24"
+parking_lot = "0.12"
+strip-ansi-escapes = "0.2"
+
+# Pin polling to avoid rustix version conflict with alacritty_terminal
+polling = ">=3.4, <3.8"
+
+[dev-dependencies]
+tempfile = "3.10"
+tokio-test = "0.4"

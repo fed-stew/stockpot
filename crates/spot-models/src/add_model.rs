@@ -3,8 +3,9 @@
 //! This module provides functionality to browse available AI providers
 //! and models from a build-time bundled catalog, and configure them for use.
 
-use crate::db::Database;
-use crate::models::{CustomEndpoint, ModelConfig, ModelRegistry, ModelType};
+use spot_storage::Database;
+
+use crate::{CustomEndpoint, ModelConfig, ModelRegistry, ModelType};
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -182,7 +183,11 @@ pub fn prompt_api_key(db: &Database, provider: &ProviderInfo) -> Result<Option<S
     let pool_key_count = db.count_active_pool_keys(env_var).unwrap_or(0);
     if pool_key_count > 0 || db.has_api_key(env_var) {
         let key_desc = if pool_key_count > 0 {
-            format!("{} key{} in pool", pool_key_count, if pool_key_count == 1 { "" } else { "s" })
+            format!(
+                "{} key{} in pool",
+                pool_key_count,
+                if pool_key_count == 1 { "" } else { "s" }
+            )
         } else {
             "1 key".to_string()
         };

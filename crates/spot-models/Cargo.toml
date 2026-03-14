@@ -1,0 +1,38 @@
+[package]
+name = "spot-models"
+version = "0.25.1"
+edition = "2021"
+description = "Model configuration and registry for Spot precision computer control system"
+license = "MIT"
+authors = ["Spot Contributors"]
+repository = "https://github.com/fed-stew/stockpot"
+keywords = ["ai", "models", "configuration", "registry"]
+categories = ["development-tools"]
+
+[dependencies]
+# Database / Storage
+spot-storage = { path = "../spot-storage" }
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+
+# Async
+tokio = { version = "1.0", features = ["time"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+shellexpand = "3.1"
+
+[build-dependencies]
+reqwest = { version = "0.12", features = ["blocking"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+tokio = { version = "1.0", features = ["full", "test-util"] }

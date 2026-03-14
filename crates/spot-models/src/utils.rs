@@ -3,16 +3,19 @@
 //! This module provides helper functions for:
 //! - Parsing model types from strings
 //! - Building custom endpoints from database fields
-//! - Checking API key and OAuth token availability
+//! - Checking API key availability
 //! - Resolving environment variables
+//!
+//! Note: OAuth token checking (`has_oauth_tokens`) lives in spot-core
+//! because it depends on auth::TokenStorage, which would create a
+//! circular dependency if included here.
 
 use std::collections::HashMap;
 
-use crate::auth::TokenStorage;
-use crate::db::Database;
+use spot_storage::Database;
 
-use super::key_pool::ApiKeyPoolManager;
 use super::types::{CustomEndpoint, ModelConfigError, ModelType};
+use crate::key_pool::ApiKeyPoolManager;
 
 /// Parse a model type string from the database.
 pub fn parse_model_type(s: &str) -> ModelType {
@@ -75,13 +78,26 @@ pub fn has_any_api_key(db: &Database, key_name: &str) -> bool {
 
 /// Check if valid OAuth tokens exist for a provider.
 /// Returns true if tokens exist and are not expired (or have a refresh token).
+///
+/// This queries the `oauth_tokens` table directly to avoid a dependency
+/// on the auth module (which would create a circular dependency).
 pub fn has_oauth_tokens(db: &Database, provider: &str) -> bool {
-    let storage = TokenStorage::new(db);
-    let result = match storage.load(provider) {
-        Ok(Some(tokens)) => {
-            // Tokens exist - check if valid or refreshable
-            let is_expired = tokens.is_expired();
-            let has_refresh = tokens.refresh_token.is_some();
+    let result = db.conn().query_row(
+        "SELECT expires_at, refresh_token FROM oauth_tokens WHERE provider = ?",
+        [provider],
+        |row| {
+            let expires_at: Option<i64> = row.get(0)?;
+            let refresh_token: Option<String> = row.get(1)?;
+            Ok((expires_at, refresh_token))
+        },
+    );
+
+    match result {
+        Ok((expires_at, refresh_token)) => {
+            let is_expired = expires_at
+                .map(|ea| chrono::Utc::now().timestamp() >= ea)
+                .unwrap_or(false);
+            let has_refresh = refresh_token.is_some();
             let valid = if is_expired { has_refresh } else { true };
             tracing::debug!(
                 provider = %provider,
@@ -92,7 +108,7 @@ pub fn has_oauth_tokens(db: &Database, provider: &str) -> bool {
             );
             valid
         }
-        Ok(None) => {
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
             tracing::debug!(provider = %provider, "No OAuth tokens found");
             false
         }
@@ -100,8 +116,7 @@ pub fn has_oauth_tokens(db: &Database, provider: &str) -> bool {
             tracing::debug!(provider = %provider, error = %e, "OAuth token load error");
             false
         }
-    };
-    result
+    }
 }
 
 /// Resolve an API key, checking all sources.
@@ -659,7 +674,7 @@ mod tests {
             .save_pool_key("OPENAI_API_KEY", "sk-pool-key", None, Some(1))
             .unwrap();
 
-        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+        let pool = crate::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
 
         let result = resolve_api_key_with_pool(&db, "OPENAI_API_KEY", Some(&pool));
         assert!(result.is_some());
@@ -679,7 +694,7 @@ mod tests {
         // Add a single key (not pool)
         db.save_api_key("MY_API_KEY", "sk-single-key").unwrap();
 
-        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+        let pool = crate::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
 
         let result = resolve_api_key_with_pool(&db, "MY_API_KEY", Some(&pool));
         assert!(result.is_some());
@@ -713,7 +728,7 @@ mod tests {
         // Remove any potential env var
         std::env::remove_var("NONEXISTENT_POOL_KEY_XYZ");
 
-        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+        let pool = crate::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
 
         let result = resolve_api_key_with_pool(&db, "NONEXISTENT_POOL_KEY_XYZ", Some(&pool));
         assert!(result.is_none());
@@ -733,7 +748,7 @@ mod tests {
             .unwrap();
         db.save_api_key("DUAL_KEY", "sk-single-version").unwrap();
 
-        let pool = super::super::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
+        let pool = crate::key_pool::ApiKeyPoolManager::with_defaults(db_arc);
 
         let result = resolve_api_key_with_pool(&db, "DUAL_KEY", Some(&pool));
         assert!(result.is_some());

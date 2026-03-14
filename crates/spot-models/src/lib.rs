@@ -8,6 +8,7 @@
 //! - Model catalog from models.dev API
 //! - API key pool management for multi-key rotation
 
+pub mod add_model;
 pub mod catalog;
 pub mod defaults;
 pub mod key_pool;

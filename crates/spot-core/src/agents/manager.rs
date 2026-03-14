@@ -47,6 +47,19 @@ impl AgentManager {
         }
     }
 
+    /// Register agents provided by a [`PluginManager`](crate::plugins::PluginManager).
+    ///
+    /// This integrates plugin-provided agents alongside built-in and JSON agents.
+    /// Agents with names starting with `_` are skipped (template/dev-only convention).
+    pub fn register_plugin_agents(&mut self, agents: Vec<BoxedAgent>) {
+        for agent in agents {
+            if agent.name().starts_with('_') {
+                continue;
+            }
+            self.register(agent);
+        }
+    }
+
     /// Register an agent.
     pub fn register(&mut self, agent: BoxedAgent) {
         let name = agent.name().to_string();
@@ -277,6 +290,69 @@ mod tests {
 
         let agent = manager.get("duplicate").unwrap();
         assert_eq!(agent.description(), "second");
+    }
+
+    // =========================================================================
+    // register_plugin_agents() Tests
+    // =========================================================================
+
+    #[test]
+    fn test_register_plugin_agents_adds_agents() {
+        let mut manager = AgentManager::new();
+        let initial_count = manager.list().len();
+
+        let agents: Vec<BoxedAgent> = vec![
+            Box::new(MockAgent::new("plugin-agent-1")),
+            Box::new(MockAgent::new("plugin-agent-2")),
+        ];
+        manager.register_plugin_agents(agents);
+
+        assert_eq!(manager.list().len(), initial_count + 2);
+        assert!(manager.exists("plugin-agent-1"));
+        assert!(manager.exists("plugin-agent-2"));
+    }
+
+    #[test]
+    fn test_register_plugin_agents_skips_underscore_prefix() {
+        let mut manager = AgentManager::new();
+        let initial_count = manager.list().len();
+
+        let agents: Vec<BoxedAgent> = vec![
+            Box::new(MockAgent::new("valid-agent")),
+            Box::new(MockAgent::new("_template-agent")),
+        ];
+        manager.register_plugin_agents(agents);
+
+        assert_eq!(manager.list().len(), initial_count + 1);
+        assert!(manager.exists("valid-agent"));
+        assert!(!manager.exists("_template-agent"));
+    }
+
+    #[test]
+    fn test_register_plugin_agents_empty_vec() {
+        let mut manager = AgentManager::new();
+        let initial_count = manager.list().len();
+
+        manager.register_plugin_agents(vec![]);
+        assert_eq!(manager.list().len(), initial_count);
+    }
+
+    #[test]
+    fn test_register_plugin_agents_can_overwrite() {
+        let mut manager = AgentManager::new();
+        manager.register(Box::new(
+            MockAgent::new("overwrite-me").with_description("original"),
+        ));
+
+        let agents: Vec<BoxedAgent> = vec![Box::new(
+            MockAgent::new("overwrite-me").with_description("from plugin"),
+        )];
+        manager.register_plugin_agents(agents);
+
+        assert_eq!(
+            manager.get("overwrite-me").unwrap().description(),
+            "from plugin"
+        );
     }
 
     // =========================================================================

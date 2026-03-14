@@ -1,0 +1,42 @@
+[package]
+name = "spot-auth"
+version = "0.25.1"
+edition = "2021"
+description = "OAuth authentication and token management for Spot precision computer control system"
+license = "MIT"
+authors = ["Spot Contributors"]
+repository = "https://github.com/fed-stew/stockpot"
+keywords = ["auth", "oauth", "tokens"]
+categories = ["authentication"]
+
+[dependencies]
+# Spot crates
+spot-storage = { path = "../spot-storage" }
+spot-models = { path = "../spot-models" }
+
+# SerdesAI
+serdes-ai-models = { version = "0.2.6", features = ["anthropic", "chatgpt-oauth", "claude-code-oauth", "antigravity"] }
+serdes-ai-providers = { version = "0.2.6", features = ["full"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+
+# Async
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP
+reqwest = { version = "0.12", features = ["json"] }
+
+# Utilities
+thiserror = "1.0"
+tracing = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+webbrowser = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"

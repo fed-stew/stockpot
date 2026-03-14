@@ -4,12 +4,12 @@
 //! Supports both PTY-based terminal execution (when available) and
 //! fallback synchronous execution.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use tracing::{debug, info};
+use tracing::{debug, info, info_span};
 
 use serdes_ai_tools::{RunContext, SchemaBuilder, Tool, ToolDefinition, ToolResult, ToolReturn};
 
@@ -96,7 +96,11 @@ impl Tool for RunShellCommandTool {
     }
 
     async fn call(&self, _ctx: &RunContext, args: JsonValue) -> ToolResult {
+        let start = Instant::now();
+        let span = info_span!("shell_tool", tool_name = "run_shell_command");
+        let _enter = span.enter();
         debug!(tool = "run_shell_command", ?args, "Tool called");
+        drop(_enter);
 
         let args: RunShellCommandArgs = crate::tools::common::parse_tool_args_lenient(
             "run_shell_command",
@@ -105,12 +109,16 @@ impl Tool for RunShellCommandTool {
         )?;
 
         // Try to use terminal system if available
-        if let Some(tool_ctx) = get_global_context() {
-            return self.call_with_terminal(tool_ctx, args).await;
-        }
+        let result = if let Some(tool_ctx) = get_global_context() {
+            self.call_with_terminal(tool_ctx, args).await
+        } else {
+            // Fallback to synchronous execution
+            self.call_fallback(args)
+        };
 
-        // Fallback to synchronous execution
-        self.call_fallback(args)
+        let duration_ms = start.elapsed().as_millis();
+        debug!(tool = "run_shell_command", duration_ms = %duration_ms, "Shell command completed");
+        result
     }
 }
 

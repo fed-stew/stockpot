@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use tokio::time::sleep;
 use tracing::{debug, info};
 
-use crate::db::{Database, PoolKey};
+use spot_storage::{Database, PoolKey};
 
 /// Configuration for the key pool retry behavior
 #[derive(Debug, Clone)]

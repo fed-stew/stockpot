@@ -3,8 +3,8 @@
 //! Model settings are stored with keys prefixed by `model_settings.<model_name>.<key>`.
 //! This allows each model to have its own temperature, max_tokens, etc.
 
-use crate::db::Database;
 use serde::{Deserialize, Serialize};
+use spot_storage::Database;
 use thiserror::Error;
 
 /// Errors that can occur with model settings.

@@ -1,0 +1,27 @@
+[package]
+name = "spot-storage"
+version = "0.25.1"
+edition = "2021"
+description = "SQLite storage layer for Spot precision computer control system"
+license = "MIT"
+authors = ["Spot Contributors"]
+repository = "https://github.com/fed-stew/stockpot"
+keywords = ["database", "sqlite", "storage"]
+categories = ["database"]
+
+[dependencies]
+# Database
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+anyhow = "1.0"
+tracing = "0.1"
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.10"

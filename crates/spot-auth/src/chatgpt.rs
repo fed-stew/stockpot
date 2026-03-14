@@ -1,14 +1,14 @@
 //! ChatGPT OAuth authentication.
 
-use super::storage::{StoredTokens, TokenStorage, TokenStorageError};
-use crate::db::Database;
-use crate::models::{ModelConfig, ModelType};
+use crate::storage::{StoredTokens, TokenStorage, TokenStorageError};
 use base64::Engine;
 use serdes_ai_models::chatgpt_oauth::ChatGptOAuthModel;
 use serdes_ai_providers::oauth::{
     config::chatgpt_oauth_config, refresh_token as oauth_refresh_token, run_pkce_flow, OAuthError,
     TokenResponse,
 };
+use spot_models::{ModelConfig, ModelType};
+use spot_storage::Database;
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -178,7 +178,7 @@ fn known_chatgpt_models() -> Vec<String> {
 
 /// Save ChatGPT models to database
 fn save_chatgpt_models_to_db(db: &Database, models: &[String]) -> Result<(), std::io::Error> {
-    use crate::models::ModelRegistry;
+    use spot_models::ModelRegistry;
 
     println!("💾 Saving {} models to database...", models.len());
     let mut success_count = 0;
@@ -268,13 +268,13 @@ fn save_chatgpt_models_to_db(db: &Database, models: &[String]) -> Result<(), std
 
 /// Run the ChatGPT OAuth flow (prints to stdout).
 pub async fn run_chatgpt_auth(db: &Database) -> Result<(), ChatGptAuthError> {
-    run_chatgpt_auth_with_progress(db, &super::StdoutProgress).await
+    run_chatgpt_auth_with_progress(db, &crate::StdoutProgress).await
 }
 
 /// Run the ChatGPT OAuth flow with custom progress reporting.
 pub async fn run_chatgpt_auth_with_progress(
     db: &Database,
-    progress: &impl super::AuthProgress,
+    progress: &impl crate::AuthProgress,
 ) -> Result<(), ChatGptAuthError> {
     progress.info("🔐 Starting ChatGPT OAuth authentication...");
 

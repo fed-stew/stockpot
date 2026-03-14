@@ -12,17 +12,25 @@ pub fn enable_debug_stream_events() {
     DEBUG_STREAM_EVENTS.store(true, Ordering::SeqCst);
 }
 
+// Re-export extracted crates under their original module names
+pub use spot_auth as auth;
+pub use spot_models as models;
+pub use spot_storage as db;
+pub use spot_tools::terminal;
+
+// Modules that remain in spot-core
 pub mod agents;
-pub mod auth;
 pub mod config;
-pub mod db;
 pub mod display_detect;
 pub mod mcp;
 pub mod messaging;
-pub mod models;
+pub mod metrics;
+pub mod plugins;
 pub mod runner;
 pub mod session;
-pub mod terminal;
 pub mod tokens;
 pub mod tools;
 pub mod version_check;
+
+#[cfg(test)]
+mod test_utils;
