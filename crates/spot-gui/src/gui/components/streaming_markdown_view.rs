@@ -1,7 +1,10 @@
 use std::time::Instant;
 
 use gpui::*;
-use pulldown_cmark::{Alignment as CmarkAlignment, Event as CmarkEvent, Options as CmarkOptions, Parser as CmarkParser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment as CmarkAlignment, Event as CmarkEvent, Options as CmarkOptions,
+    Parser as CmarkParser, Tag, TagEnd,
+};
 use streamdown_parser::{ParseEvent, Parser};
 
 use super::selectable_text::SelectableText;
@@ -440,9 +443,8 @@ impl StreamingMarkdownView {
                                     .iter()
                                     .filter(|b| matches!(b, Block::Text(_)))
                                     .count();
-                                let view = cx.new(move |cx| {
-                                    SelectableText::new(cx, text_owned, theme)
-                                });
+                                let view =
+                                    cx.new(move |cx| SelectableText::new(cx, text_owned, theme));
                                 self.text_views.insert(tv_idx, view);
                                 self.blocks.insert(i, seg);
                                 self.block_born_at.insert(i, ts);
@@ -492,14 +494,12 @@ impl StreamingMarkdownView {
         let mut alignments: Vec<ColumnAlign> = Vec::new();
         let mut current_cell = String::new();
         let mut current_row: Vec<String> = Vec::new();
-        let mut table_start_offset: usize = 0;
 
         for (event, range) in parser {
             match event {
                 CmarkEvent::Start(Tag::Table(cmark_aligns)) => {
-                    table_start_offset = range.start;
-                    if table_start_offset > last_end {
-                        let before = &content[last_end..table_start_offset];
+                    if range.start > last_end {
+                        let before = &content[last_end..range.start];
                         if !before.trim().is_empty() {
                             segments.push(Block::Text(before.to_string()));
                         }
@@ -691,10 +691,13 @@ impl Render for StreamingMarkdownView {
                     );
                 }
                 Block::Table(data) => {
-                    let table_div =
-                        Self::render_table_div(&data.headers, &data.rows, &data.alignments, &self.theme);
-                    col = col
-                        .child(div().opacity(block_opacity).child(table_div.my(px(4.))));
+                    let table_div = Self::render_table_div(
+                        &data.headers,
+                        &data.rows,
+                        &data.alignments,
+                        &self.theme,
+                    );
+                    col = col.child(div().opacity(block_opacity).child(table_div.my(px(4.))));
                 }
             }
         }
@@ -708,7 +711,7 @@ impl Render for StreamingMarkdownView {
         if let Some(ref view) = self.pending_view {
             let (pending_opacity, fading) = self
                 .pending_created_at
-                .map(|t| Self::fade_opacity(t))
+                .map(Self::fade_opacity)
                 .unwrap_or((1.0, false));
             if fading {
                 needs_animation = true;

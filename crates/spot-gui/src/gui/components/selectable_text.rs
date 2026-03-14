@@ -4,12 +4,11 @@
 //! and system copy (Cmd+C) support.
 
 use std::ops::Range;
-use std::time::Instant;
 
 use gpui::{
     div, prelude::*, App, ClipboardItem, Context, CursorStyle, FocusHandle, Focusable, Hsla,
     IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point, SharedString,
-    StyledText, TextRun, Window,
+    StyledText, Window,
 };
 
 use crate::gui::theme::Theme;
@@ -17,11 +16,6 @@ use crate::gui::theme::Theme;
 use super::markdown_text;
 
 gpui::actions!(selectable_text, [Copy, SelectAll]);
-
-/// Duration of the trailing-edge fade-in for newly appended text (milliseconds).
-/// Only the last few characters (the "leading edge") are affected — older text
-/// stays at full opacity.
-const TRAILING_FADE_MS: f32 = 150.0;
 
 /// Selectable text component for displaying text that can be selected and copied
 pub struct SelectableText {
@@ -46,11 +40,6 @@ pub struct SelectableText {
     stable_source_len: usize,
     /// Cached rendered output for the stable prefix (all complete lines)
     stable_rendered: Option<markdown_text::RenderedMarkdown>,
-    /// Number of trailing source bytes that are "new" and should fade in.
-    /// Set by `append()` and `set_content_with_trailing_fade()`.
-    fade_trailing_bytes: usize,
-    /// When the current trailing fade started. Cleared when the fade completes.
-    fade_trailing_start: Option<Instant>,
 }
 
 impl SelectableText {
@@ -74,8 +63,6 @@ impl SelectableText {
             content_dirty: false,
             stable_source_len: 0,
             stable_rendered: None,
-            fade_trailing_bytes: 0,
-            fade_trailing_start: None,
         }
     }
 
@@ -92,29 +79,6 @@ impl SelectableText {
         self.cached_content = SharedString::from("");
         self.stable_source_len = 0;
         self.stable_rendered = None;
-        self.fade_trailing_bytes = 0;
-        self.fade_trailing_start = None;
-        cx.notify();
-    }
-
-    /// Replace content and mark the last `trailing_fade_bytes` as a fade-in zone.
-    /// Used by the streaming pending view to fade only the newly added characters.
-    pub fn set_content_with_trailing_fade(
-        &mut self,
-        content: impl Into<SharedString>,
-        trailing_fade_bytes: usize,
-        cx: &mut Context<Self>,
-    ) {
-        self.content = content.into();
-        self.content_buffer = self.content.to_string();
-        self.content_dirty = false;
-        self.selected_range = 0..0;
-        self.cached_rendered = None;
-        self.cached_content = SharedString::from("");
-        self.stable_source_len = 0;
-        self.stable_rendered = None;
-        self.fade_trailing_bytes = trailing_fade_bytes;
-        self.fade_trailing_start = Some(Instant::now());
         cx.notify();
     }
 
@@ -356,74 +320,6 @@ impl SelectableText {
 
         (start, end)
     }
-}
-
-/// Apply reduced opacity to the trailing `fade_bytes` of rendered text runs.
-/// Splits runs at the fade boundary so that only the trailing portion is affected.
-/// Returns the original runs unchanged if the operation would produce invalid output.
-fn apply_trailing_opacity(
-    runs: &[TextRun],
-    total_text_len: usize,
-    fade_bytes: usize,
-    opacity: f32,
-) -> Vec<TextRun> {
-    if fade_bytes == 0 || opacity >= 1.0 || runs.is_empty() || total_text_len == 0 {
-        return runs.to_vec();
-    }
-
-    // Clamp fade_bytes to the actual text length to prevent mismatches
-    // between source-byte counts and rendered-byte counts.
-    let clamped_fade = fade_bytes.min(total_text_len);
-    let fade_start = total_text_len - clamped_fade;
-
-    let mut result = Vec::with_capacity(runs.len() + 1);
-    let mut cursor = 0;
-
-    for run in runs {
-        if run.len == 0 {
-            continue; // skip zero-length runs
-        }
-        let run_start = cursor;
-        let run_end = cursor + run.len;
-        cursor = run_end;
-
-        if run_end <= fade_start {
-            // Entirely before fade zone — full opacity
-            result.push(run.clone());
-        } else if run_start >= fade_start {
-            // Entirely in fade zone — apply reduced opacity
-            let mut faded = run.clone();
-            faded.color.a *= opacity;
-            result.push(faded);
-        } else {
-            // Split: part before fade, part in fade
-            let split_point = fade_start - run_start;
-
-            if split_point > 0 {
-                let mut before = run.clone();
-                before.len = split_point;
-                result.push(before);
-            }
-
-            let after_len = run_end - fade_start;
-            if after_len > 0 {
-                let mut after = run.clone();
-                after.len = after_len;
-                after.color.a *= opacity;
-                result.push(after);
-            }
-        }
-    }
-
-    // Safety: validate the total run length matches the text.
-    // If it doesn't (due to source/rendered byte mismatch), return the
-    // original runs unchanged rather than crashing GPUI.
-    let result_len: usize = result.iter().map(|r| r.len).sum();
-    if result_len != total_text_len {
-        return runs.to_vec();
-    }
-
-    result
 }
 
 impl Focusable for SelectableText {
