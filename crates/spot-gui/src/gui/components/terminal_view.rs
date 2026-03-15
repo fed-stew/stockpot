@@ -1,12 +1,10 @@
 //! Terminal view component - renders alacritty_terminal grid in GPUI.
 //!
-//! Renders the terminal grid using div-based layout with proper:
-//! - Font metrics from the actual resolved monospace font
-//! - Cell background colors (ANSI, 256-color, truecolor)
-//! - All text attributes: bold, italic, underline, strikethrough, dim, hidden, inverse
-//! - Wide character handling
-//! - Cursor rendering
-//! - Scroll wheel support
+//! Uses canvas-based direct painting (paint_quad + shape_line) for
+//! seamless terminal rendering:
+//! - Background rects via paint_quad (no div seams between color spans)
+//! - Text via shape_line with force_width for monospace grid alignment
+//! - Dynamic resize to fill parent container
 
 use gpui::*;
 use parking_lot::FairMutex;
@@ -79,7 +77,6 @@ impl Default for TerminalColors {
 }
 
 impl TerminalColors {
-    /// Convert an ANSI color to Hsla. `bold` brightens named foreground colors.
     fn convert(&self, color: AnsiColor, bold: bool) -> Hsla {
         match color {
             AnsiColor::Named(named) => self.named(named, bold),
@@ -92,62 +89,22 @@ impl TerminalColors {
 
     fn named(&self, named: NamedColor, bold: bool) -> Hsla {
         match named {
-            NamedColor::Black => {
-                if bold {
-                    self.bright_black
-                } else {
-                    self.black
-                }
-            }
-            NamedColor::Red => {
-                if bold {
-                    self.bright_red
-                } else {
-                    self.red
-                }
-            }
-            NamedColor::Green => {
-                if bold {
-                    self.bright_green
-                } else {
-                    self.green
-                }
-            }
-            NamedColor::Yellow => {
-                if bold {
-                    self.bright_yellow
-                } else {
-                    self.yellow
-                }
-            }
-            NamedColor::Blue => {
-                if bold {
-                    self.bright_blue
-                } else {
-                    self.blue
-                }
-            }
-            NamedColor::Magenta => {
-                if bold {
-                    self.bright_magenta
-                } else {
-                    self.magenta
-                }
-            }
-            NamedColor::Cyan => {
-                if bold {
-                    self.bright_cyan
-                } else {
-                    self.cyan
-                }
-            }
-            NamedColor::White => {
-                if bold {
-                    self.bright_white
-                } else {
-                    self.white
-                }
-            }
+            NamedColor::Black if bold => self.bright_black,
+            NamedColor::Black => self.black,
+            NamedColor::Red if bold => self.bright_red,
+            NamedColor::Red => self.red,
+            NamedColor::Green if bold => self.bright_green,
+            NamedColor::Green => self.green,
+            NamedColor::Yellow if bold => self.bright_yellow,
+            NamedColor::Yellow => self.yellow,
+            NamedColor::Blue if bold => self.bright_blue,
+            NamedColor::Blue => self.blue,
+            NamedColor::Magenta if bold => self.bright_magenta,
+            NamedColor::Magenta => self.magenta,
+            NamedColor::Cyan if bold => self.bright_cyan,
+            NamedColor::Cyan => self.cyan,
+            NamedColor::White if bold => self.bright_white,
+            NamedColor::White => self.white,
             NamedColor::BrightBlack => self.bright_black,
             NamedColor::BrightRed => self.bright_red,
             NamedColor::BrightGreen => self.bright_green,
@@ -219,7 +176,6 @@ const FONT_FAMILIES: &[&str] = &[
     "monospace",
 ];
 
-/// Resolve the first available monospace font.
 fn resolve_terminal_font_family(text_system: &Arc<TextSystem>) -> SharedString {
     for &family in FONT_FAMILIES {
         let candidate = font(family);
@@ -229,6 +185,27 @@ fn resolve_terminal_font_family(text_system: &Arc<TextSystem>) -> SharedString {
         }
     }
     SharedString::from("monospace")
+}
+
+// ---------------------------------------------------------------------------
+// Paint data — extracted from the grid under lock, painted in canvas
+// ---------------------------------------------------------------------------
+
+/// A horizontal run of cells with the same background color.
+struct BgRect {
+    row: i32,
+    col: i32,
+    len: usize,
+    color: Hsla,
+}
+
+/// A horizontal run of text with the same style.
+struct TextBatch {
+    row: i32,
+    col: i32,
+    text: String,
+    cell_count: usize,
+    run: TextRun,
 }
 
 // ---------------------------------------------------------------------------
@@ -244,20 +221,8 @@ pub struct TerminalView {
     scroll_offset: i32,
     last_cols: u16,
     last_rows: u16,
-}
-
-/// Style for a span of cells with the same visual appearance.
-#[derive(PartialEq)]
-struct CellStyle {
-    fg: Hsla,
-    bg: Hsla,
-    bg_is_default: bool,
-    bold: bool,
-    italic: bool,
-    underline: bool,
-    wavy_underline: bool,
-    strikethrough: bool,
-    is_cursor: bool,
+    available_width: Pixels,
+    available_height: Pixels,
 }
 
 impl TerminalView {
@@ -265,6 +230,7 @@ impl TerminalView {
         terminal: Arc<FairMutex<Term<TerminalEventBridge>>>,
         input_tx: UnboundedSender<Vec<u8>>,
         resize_tx: UnboundedSender<portable_pty::PtySize>,
+        initial_height: f32,
         cx: &mut Context<Self>,
     ) -> Self {
         Self {
@@ -276,10 +242,16 @@ impl TerminalView {
             scroll_offset: 0,
             last_cols: 0,
             last_rows: 0,
+            available_width: px(800.0),
+            available_height: px(initial_height),
         }
     }
 
-    /// Resize the terminal grid and PTY if the view size changed.
+    pub fn set_available_size(&mut self, width: Pixels, height: Pixels) {
+        self.available_width = width;
+        self.available_height = height;
+    }
+
     fn resize_if_needed(&mut self, available_width: Pixels, available_height: Pixels, cx: &App) {
         let (_, cell_width, line_height) = Self::measure_cell(cx);
         let cw = f32::from(cell_width);
@@ -288,9 +260,9 @@ impl TerminalView {
             return;
         }
 
-        let new_cols = ((f32::from(available_width) - PADDING * 2.0) / cw).floor() as u16;
-        let new_rows = ((f32::from(available_height) - PADDING * 2.0) / lh).floor() as u16;
-
+        let chrome = PADDING * 2.0 + 2.0;
+        let new_cols = ((f32::from(available_width) - chrome) / cw).floor() as u16;
+        let new_rows = ((f32::from(available_height) - chrome) / lh).floor() as u16;
         let new_cols = new_cols.max(10);
         let new_rows = new_rows.max(4);
 
@@ -298,19 +270,14 @@ impl TerminalView {
             self.last_cols = new_cols;
             self.last_rows = new_rows;
 
-            // Resize alacritty terminal grid
             let term_size = spot_core::terminal::TerminalSize {
                 cols: new_cols,
                 rows: new_rows,
                 cell_width: cw,
                 cell_height: lh,
             };
-            {
-                let mut term = self.terminal.lock();
-                term.resize(term_size);
-            }
+            self.terminal.lock().resize(term_size);
 
-            // Resize PTY
             let _ = self.resize_tx.send(portable_pty::PtySize {
                 rows: new_rows,
                 cols: new_cols,
@@ -373,169 +340,180 @@ impl TerminalView {
         self.send_input(sequence);
     }
 
-    /// Compute the style for a cell, handling inverse, dim, hidden, etc.
-    fn cell_style(
-        &self,
-        cell: &alacritty_terminal::term::cell::Cell,
-        is_cursor: bool,
-    ) -> CellStyle {
-        let flags = cell.flags;
-        let bold = flags.contains(Flags::BOLD);
-
-        let (mut fg_raw, mut bg_raw) = (cell.fg, cell.bg);
-        if flags.contains(Flags::INVERSE) {
-            mem::swap(&mut fg_raw, &mut bg_raw);
-        }
-
-        // Bold brightens foreground only (not background)
-        let mut fg = self.colors.convert(fg_raw, bold);
-        let bg = self.colors.convert(bg_raw, false);
-
-        let bg_is_default =
-            self.colors.is_default_bg(bg_raw) && !flags.contains(Flags::INVERSE);
-
-        if flags.contains(Flags::DIM) {
-            fg.a *= 0.7;
-        }
-        if flags.contains(Flags::HIDDEN) {
-            fg.a = 0.0;
-        }
-
-        // Cursor: override fg/bg
-        if is_cursor {
-            return CellStyle {
-                fg: self.colors.background,
-                bg: self.colors.foreground,
-                bg_is_default: false,
-                bold,
-                italic: flags.contains(Flags::ITALIC),
-                underline: flags.intersects(Flags::ALL_UNDERLINES),
-                wavy_underline: flags.contains(Flags::UNDERCURL),
-                strikethrough: flags.contains(Flags::STRIKEOUT),
-                is_cursor: true,
-            };
-        }
-
-        CellStyle {
-            fg,
-            bg,
-            bg_is_default,
-            bold,
-            italic: flags.contains(Flags::ITALIC),
-            underline: flags.intersects(Flags::ALL_UNDERLINES),
-            wavy_underline: flags.contains(Flags::UNDERCURL),
-            strikethrough: flags.contains(Flags::STRIKEOUT),
-            is_cursor: false,
-        }
-    }
-
-    /// Build a single row as a div with coalesced styled spans.
-    fn render_row(
+    /// Extract background rects, text batches, and cursor from the grid.
+    fn extract_paint_data(
         &self,
         term: &Term<TerminalEventBridge>,
-        row_idx: usize,
-        cell_width: Pixels,
-        line_height: Pixels,
-        font_family: &SharedString,
-    ) -> Div {
-        let line = Line(row_idx as i32);
+        base_font: &Font,
+    ) -> (Vec<BgRect>, Vec<TextBatch>, Option<(i32, i32)>) {
+        let rows = term.screen_lines();
         let cols = term.columns();
         let cursor = term.grid().cursor.point;
+        let cursor_pos = (cursor.line.0, cursor.column.0 as i32);
 
-        let mut spans: Vec<AnyElement> = Vec::new();
-        let mut span_text = String::new();
-        let mut span_style: Option<CellStyle> = None;
-        let mut span_len: usize = 0;
+        let mut bg_rects: Vec<BgRect> = Vec::new();
+        let mut text_batches: Vec<TextBatch> = Vec::new();
 
-        for col_idx in 0..cols {
-            let point = AlacPoint::new(line, Column(col_idx));
-            let cell = &term.grid()[point];
+        for row_idx in 0..rows {
+            let line = Line(row_idx as i32);
 
-            // Skip wide char spacers
-            if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                continue;
+            // --- Background rects ---
+            let mut bg_start: Option<(i32, Hsla, usize)> = None;
+            for col_idx in 0..cols {
+                let point = AlacPoint::new(line, Column(col_idx));
+                let cell = &term.grid()[point];
+                let flags = cell.flags;
+
+                let (_, mut bg_color) = (cell.fg, cell.bg);
+                if flags.contains(Flags::INVERSE) {
+                    bg_color = cell.fg; // swapped
+                }
+
+                let bg_is_default =
+                    self.colors.is_default_bg(bg_color) && !flags.contains(Flags::INVERSE);
+                let bg_hsla = self.colors.convert(bg_color, false);
+
+                if !bg_is_default {
+                    if let Some((sc, pc, cnt)) = &mut bg_start {
+                        if *pc == bg_hsla {
+                            *cnt += 1;
+                        } else {
+                            bg_rects.push(BgRect {
+                                row: row_idx as i32,
+                                col: *sc,
+                                len: *cnt,
+                                color: *pc,
+                            });
+                            bg_start = Some((col_idx as i32, bg_hsla, 1));
+                        }
+                    } else {
+                        bg_start = Some((col_idx as i32, bg_hsla, 1));
+                    }
+                } else if let Some((sc, pc, cnt)) = bg_start.take() {
+                    bg_rects.push(BgRect {
+                        row: row_idx as i32,
+                        col: sc,
+                        len: cnt,
+                        color: pc,
+                    });
+                }
+            }
+            if let Some((sc, pc, cnt)) = bg_start.take() {
+                bg_rects.push(BgRect {
+                    row: row_idx as i32,
+                    col: sc,
+                    len: cnt,
+                    color: pc,
+                });
             }
 
-            let is_cursor = cursor.line == line && cursor.column == Column(col_idx);
-            let style = self.cell_style(cell, is_cursor);
-            let c = if cell.c == '\0' { ' ' } else { cell.c };
+            // --- Text batches ---
+            let mut cur_batch: Option<TextBatch> = None;
 
-            // Check if style changed — flush span
-            let style_changed = span_style
-                .as_ref()
-                .map_or(false, |prev| *prev != style);
+            for col_idx in 0..cols {
+                let point = AlacPoint::new(line, Column(col_idx));
+                let cell = &term.grid()[point];
+                let flags = cell.flags;
 
-            if span_len > 0 && style_changed {
-                let prev = span_style.take().unwrap();
-                let text = std::mem::take(&mut span_text);
-                spans.push(self.build_span(text, &prev, span_len, cell_width));
-                span_len = 0;
+                if flags.contains(Flags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+
+                let c = if cell.c == '\0' { ' ' } else { cell.c };
+                let bold = flags.contains(Flags::BOLD);
+                let is_cursor = cursor.line == line && cursor.column == Column(col_idx);
+
+                let (mut fg_raw, mut bg_raw) = (cell.fg, cell.bg);
+                if flags.contains(Flags::INVERSE) {
+                    mem::swap(&mut fg_raw, &mut bg_raw);
+                }
+
+                let mut fg = if is_cursor {
+                    self.colors.background
+                } else {
+                    self.colors.convert(fg_raw, bold)
+                };
+
+                if flags.contains(Flags::DIM) && !is_cursor {
+                    fg.a *= 0.7;
+                }
+                if flags.contains(Flags::HIDDEN) && !is_cursor {
+                    fg.a = 0.0;
+                }
+
+                let weight = if bold {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::default()
+                };
+                let font_style = if flags.contains(Flags::ITALIC) {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                };
+
+                let underline = flags
+                    .intersects(Flags::ALL_UNDERLINES)
+                    .then(|| UnderlineStyle {
+                        color: Some(fg),
+                        thickness: px(1.0),
+                        wavy: flags.contains(Flags::UNDERCURL),
+                    });
+                let strikethrough =
+                    flags
+                        .contains(Flags::STRIKEOUT)
+                        .then(|| StrikethroughStyle {
+                            color: Some(fg),
+                            thickness: px(1.0),
+                        });
+
+                let run = TextRun {
+                    len: c.len_utf8(),
+                    font: Font {
+                        weight,
+                        style: font_style,
+                        ..base_font.clone()
+                    },
+                    color: fg,
+                    background_color: None, // backgrounds painted separately
+                    underline,
+                    strikethrough,
+                };
+
+                // Try to merge with current batch
+                if let Some(ref mut batch) = cur_batch {
+                    let can_merge = batch.row == row_idx as i32
+                        && batch.col + batch.cell_count as i32 == col_idx as i32
+                        && batch.run.font == run.font
+                        && batch.run.color == run.color
+                        && batch.run.underline == run.underline
+                        && batch.run.strikethrough == run.strikethrough;
+
+                    if can_merge {
+                        batch.text.push(c);
+                        batch.cell_count += 1;
+                        batch.run.len += c.len_utf8();
+                        continue;
+                    }
+                    text_batches.push(cur_batch.take().unwrap());
+                }
+
+                cur_batch = Some(TextBatch {
+                    row: row_idx as i32,
+                    col: col_idx as i32,
+                    text: String::from(c),
+                    cell_count: 1,
+                    run,
+                });
             }
-
-            if span_len == 0 {
-                span_style = Some(style);
+            if let Some(batch) = cur_batch.take() {
+                text_batches.push(batch);
             }
-            span_text.push(c);
-            span_len += 1;
         }
 
-        // Flush final span
-        if span_len > 0 {
-            if let Some(style) = span_style {
-                spans.push(self.build_span(span_text, &style, span_len, cell_width));
-            }
-        }
-
-        div()
-            .h(line_height)
-            .flex()
-            .flex_row()
-            .flex_shrink_0()
-            .font_family(font_family.clone())
-            .text_size(px(FONT_SIZE))
-            .children(spans)
+        (bg_rects, text_batches, Some(cursor_pos))
     }
 
-    /// Build a styled span div from coalesced cells.
-    fn build_span(
-        &self,
-        text: String,
-        style: &CellStyle,
-        cell_count: usize,
-        cell_width: Pixels,
-    ) -> AnyElement {
-        let width = cell_width * cell_count as f32;
-        let mut span = div().w(width).text_color(style.fg).flex_shrink_0();
-
-        // Background (skip default to let parent bg show through)
-        if !style.bg_is_default {
-            span = span.bg(style.bg);
-        }
-
-        // Bold
-        if style.bold {
-            span = span.font_weight(FontWeight::BOLD);
-        }
-
-        // Italic
-        if style.italic {
-            span = span.italic();
-        }
-
-        // Underline
-        if style.underline {
-            span = span.text_decoration_1().text_decoration_color(style.fg);
-        }
-
-        // Strikethrough
-        if style.strikethrough {
-            span = span.line_through();
-        }
-
-        span.child(text).into_any_element()
-    }
-
-    /// Measure cell dimensions from the actual font.
     fn measure_cell(cx: &App) -> (SharedString, Pixels, Pixels) {
         let text_system = cx.text_system();
         let family = resolve_terminal_font_family(&text_system);
@@ -546,10 +524,6 @@ impl TerminalView {
             .advance(font_id, font_size, 'm')
             .map(|s| s.width)
             .unwrap_or(px(8.4));
-        let ascent = text_system.ascent(font_id, font_size);
-        let descent = text_system.descent(font_id, font_size);
-        // Terminal line height needs enough room for ascenders + descenders + spacing.
-        // Use font_size as baseline (it already accounts for the em square) with leading.
         let line_height = font_size * 1.4;
         (family, cell_width, line_height)
     }
@@ -562,26 +536,22 @@ impl Focusable for TerminalView {
 }
 
 impl Render for TerminalView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Resize terminal to fill available space
-        let window_size = window.viewport_size();
-        // Use a reasonable portion of the window for the terminal
-        self.resize_if_needed(window_size.width * 0.95, px(400.0), cx);
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.resize_if_needed(self.available_width, self.available_height, cx);
 
         let (font_family, cell_width, line_height) = Self::measure_cell(cx);
+        let font_size = px(FONT_SIZE);
+        let base_font = font(font_family.clone());
+        let colors = self.colors.clone();
 
+        // Extract all paint data under lock
         let term = self.terminal.lock();
-        let rows = term.screen_lines();
-        let cols = term.columns();
-
-        let mut row_elements: Vec<Div> = Vec::with_capacity(rows);
-        for row_idx in 0..rows {
-            row_elements.push(self.render_row(&term, row_idx, cell_width, line_height, &font_family));
-        }
+        let (bg_rects, text_batches, cursor_pos) =
+            self.extract_paint_data(&term, &base_font);
         drop(term);
 
-        let content_height = rows as f32 * f32::from(line_height) + PADDING * 2.0;
         let focus_handle = self.focus_handle.clone();
+        let terminal_ref = cx.entity().downgrade();
 
         div()
             .id("terminal-view")
@@ -607,21 +577,109 @@ impl Render for TerminalView {
                 this.scroll_offset = (this.scroll_offset + delta).clamp(-(history as i32), 0);
                 cx.notify();
             }))
-            .w_full()
-            .h(px(content_height))
+            .size_full()
             .overflow_hidden()
-            .bg(self.colors.background)
-            .p(px(PADDING))
+            .bg(colors.background)
             .rounded(px(4.))
             .border_1()
             .border_color(Hsla::from(rgba(0x40404080)))
             .cursor_text()
             .child(
-                div()
-                    .id("terminal-content")
-                    .flex()
-                    .flex_col()
-                    .children(row_elements),
+                canvas(
+                    // Prepaint: shape all text lines (immutable borrow of text_system)
+                    move |bounds, window, _cx| {
+                        let origin =
+                            bounds.origin + point(px(PADDING), px(PADDING));
+
+                        let shaped: Vec<(Point<Pixels>, ShapedLine)> = text_batches
+                            .iter()
+                            .map(|batch| {
+                                let pos = point(
+                                    origin.x + batch.col as f32 * cell_width,
+                                    origin.y + batch.row as f32 * line_height,
+                                );
+                                let shaped = window.text_system().shape_line(
+                                    batch.text.clone().into(),
+                                    font_size,
+                                    std::slice::from_ref(&batch.run),
+                                    None, // monospace font handles spacing naturally
+                                );
+                                (pos, shaped)
+                            })
+                            .collect();
+
+                        (bounds, origin, shaped)
+                    },
+                    // Paint: backgrounds, cursor, then text
+                    move |_bounds,
+                          (content_bounds, origin, shaped_lines): (
+                        Bounds<Pixels>,
+                        Point<Pixels>,
+                        Vec<(Point<Pixels>, ShapedLine)>,
+                    ),
+                          window,
+                          cx| {
+                        // 1. Background rects
+                        for rect in &bg_rects {
+                            let pos = point(
+                                (origin.x + rect.col as f32 * cell_width).floor(),
+                                origin.y + rect.row as f32 * line_height,
+                            );
+                            let sz = size(
+                                (cell_width * rect.len as f32).ceil(),
+                                line_height,
+                            );
+                            window
+                                .paint_quad(fill(Bounds::new(pos, sz), rect.color));
+                        }
+
+                        // 2. Cursor
+                        if let Some((cr, cc)) = cursor_pos {
+                            let cx_pos = point(
+                                (origin.x + cc as f32 * cell_width).floor(),
+                                origin.y + cr as f32 * line_height,
+                            );
+                            window.paint_quad(fill(
+                                Bounds::new(
+                                    cx_pos,
+                                    size(cell_width.ceil(), line_height),
+                                ),
+                                colors.foreground,
+                            ));
+                        }
+
+                        // 3. Text
+                        for (pos, shaped) in &shaped_lines {
+                            let _ = shaped.paint(
+                                *pos,
+                                line_height,
+                                TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            );
+                        }
+
+                        // 4. Observe bounds for dynamic resize
+                        if let Some(view) = terminal_ref.upgrade() {
+                            let w = content_bounds.size.width;
+                            let h = content_bounds.size.height;
+                            if w > px(0.0) && h > px(0.0) {
+                                view.update(cx, |this, cx| {
+                                    if (this.available_width - w).abs() > px(20.0)
+                                        || (this.available_height - h).abs()
+                                            > px(20.0)
+                                    {
+                                        this.available_width = w;
+                                        this.available_height = h;
+                                        cx.notify();
+                                    }
+                                });
+                            }
+                        }
+                    },
+                )
+                .size_full(),
             )
     }
 }

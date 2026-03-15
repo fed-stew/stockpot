@@ -651,14 +651,12 @@ impl ChatApp {
 
                 if let Some(terminal_view) = self.system_executions.terminal_views.get(&process_id)
                 {
-                    // Graphical terminal rendering - responsive width, custom height
+                    // Graphical terminal rendering - fits container exactly
                     div()
                         .id(SharedString::from(format!("term-container-{}", process_id)))
                         .w_full()
-                        .pr(px(14.)) // Right padding for vertical scrollbar visibility
-                        .pb(px(14.)) // Bottom padding for horizontal scrollbar visibility
                         .h(px(terminal_height))
-                        .overflow_y_scroll()
+                        .overflow_hidden()
                         .child(terminal_view.clone())
                         .into_any_element()
                 } else if has_output {
@@ -1046,11 +1044,12 @@ impl ChatApp {
                 let term = Arc::new(parking_lot::FairMutex::new(term));
                 let term_for_view = term.clone();
 
-                // Create TerminalView entity
+                // Create TerminalView entity with container height
                 let writer_tx_for_view = spawned.writer_tx.clone();
                 let resize_tx_for_view = spawned.resize_tx.clone();
+                let default_height = 250.0_f32;
                 let terminal_view =
-                    cx.new(|cx| TerminalView::new(term_for_view, writer_tx_for_view, resize_tx_for_view, cx));
+                    cx.new(|cx| TerminalView::new(term_for_view, writer_tx_for_view, resize_tx_for_view, default_height, cx));
                 self.system_executions
                     .terminal_views
                     .insert(process_id.clone(), terminal_view);
