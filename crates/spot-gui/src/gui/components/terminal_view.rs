@@ -164,7 +164,7 @@ impl TerminalColors {
 // Font resolution
 // ---------------------------------------------------------------------------
 
-const FONT_SIZE: f32 = 13.0;
+const FONT_SIZE: f32 = 12.0;
 const PADDING: f32 = 8.0;
 
 const FONT_FAMILIES: &[&str] = &[
@@ -527,6 +527,122 @@ impl TerminalView {
         let line_height = font_size * 1.4;
         (family, cell_width, line_height)
     }
+
+    /// Build a single row of div-based text spans (no backgrounds — those
+    /// are painted by the canvas layer underneath).
+    fn render_row(
+        &self,
+        term: &Term<TerminalEventBridge>,
+        row_idx: usize,
+        cell_width: Pixels,
+        line_height: Pixels,
+        font_family: &SharedString,
+    ) -> Div {
+        let line = Line(row_idx as i32);
+        let cols = term.columns();
+        let cursor = term.grid().cursor.point;
+        let cw = f32::from(cell_width);
+
+        let mut spans: Vec<AnyElement> = Vec::new();
+        let mut span_text = String::new();
+        let mut span_fg: Option<Hsla> = None;
+        let mut span_bold = false;
+        let mut span_italic = false;
+        let mut span_is_cursor = false;
+        let mut span_start_col: usize = 0;
+        let mut span_len: usize = 0;
+
+        for col_idx in 0..cols {
+            let point = AlacPoint::new(line, Column(col_idx));
+            let cell = &term.grid()[point];
+            if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+
+            let is_cursor = cursor.line == line && cursor.column == Column(col_idx);
+            let flags = cell.flags;
+            let bold = flags.contains(Flags::BOLD);
+            let italic = flags.contains(Flags::ITALIC);
+
+            let (mut fg_raw, _) = (cell.fg, cell.bg);
+            if flags.contains(Flags::INVERSE) {
+                fg_raw = cell.bg;
+            }
+
+            let mut fg = if is_cursor {
+                self.colors.background
+            } else {
+                self.colors.convert(fg_raw, bold)
+            };
+            if flags.contains(Flags::DIM) && !is_cursor {
+                fg.a *= 0.7;
+            }
+            if flags.contains(Flags::HIDDEN) && !is_cursor {
+                fg.a = 0.0;
+            }
+
+            let c = if cell.c == '\0' { ' ' } else { cell.c };
+
+            // Check if style changed
+            let changed = span_len > 0
+                && (span_fg != Some(fg)
+                    || span_bold != bold
+                    || span_italic != italic
+                    || span_is_cursor != is_cursor);
+
+            if changed {
+                let text = std::mem::take(&mut span_text);
+                let left = (span_start_col as f32 * cw).round();
+                let right = ((span_start_col + span_len) as f32 * cw).round();
+                let w = px(right - left);
+
+                let mut s = div().w(w).text_color(span_fg.unwrap()).flex_shrink_0();
+                if span_bold {
+                    s = s.font_weight(FontWeight::BOLD);
+                }
+                if span_italic {
+                    s = s.italic();
+                }
+                spans.push(s.child(text).into_any_element());
+
+                span_start_col = col_idx;
+                span_len = 0;
+            }
+
+            if span_len == 0 {
+                span_fg = Some(fg);
+                span_bold = bold;
+                span_italic = italic;
+                span_is_cursor = is_cursor;
+            }
+            span_text.push(c);
+            span_len += 1;
+        }
+
+        // Flush final span
+        if span_len > 0 {
+            let left = (span_start_col as f32 * cw).round();
+            let right = ((span_start_col + span_len) as f32 * cw).round();
+            let w = px(right - left);
+            let mut s = div().w(w).text_color(span_fg.unwrap()).flex_shrink_0();
+            if span_bold {
+                s = s.font_weight(FontWeight::BOLD);
+            }
+            if span_italic {
+                s = s.italic();
+            }
+            spans.push(s.child(span_text).into_any_element());
+        }
+
+        div()
+            .h(line_height)
+            .flex()
+            .flex_row()
+            .flex_shrink_0()
+            .font_family(font_family.clone())
+            .text_size(px(FONT_SIZE))
+            .children(spans)
+    }
 }
 
 impl Focusable for TerminalView {
@@ -540,14 +656,21 @@ impl Render for TerminalView {
         self.resize_if_needed(self.available_width, self.available_height, cx);
 
         let (font_family, cell_width, line_height) = Self::measure_cell(cx);
-        let font_size = px(FONT_SIZE);
         let base_font = font(font_family.clone());
         let colors = self.colors.clone();
 
-        // Extract all paint data under lock
+        // Extract paint data under lock
         let term = self.terminal.lock();
-        let (bg_rects, text_batches, cursor_pos) =
+        let rows = term.screen_lines();
+        let (bg_rects, _, cursor_pos) =
             self.extract_paint_data(&term, &base_font);
+
+        // Build text rows as divs (correct monospace spacing)
+        let mut row_elements: Vec<Div> = Vec::with_capacity(rows);
+        for row_idx in 0..rows {
+            row_elements
+                .push(self.render_row(&term, row_idx, cell_width, line_height, &font_family));
+        }
         drop(term);
 
         let focus_handle = self.focus_handle.clone();
@@ -580,46 +703,19 @@ impl Render for TerminalView {
             .size_full()
             .overflow_hidden()
             .bg(colors.background)
+            .p(px(PADDING))
             .rounded(px(4.))
             .border_1()
             .border_color(Hsla::from(rgba(0x40404080)))
             .cursor_text()
+            // Layer 1: Canvas for backgrounds + cursor (painted underneath text)
             .child(
                 canvas(
-                    // Prepaint: shape all text lines (immutable borrow of text_system)
-                    move |bounds, window, _cx| {
-                        let origin =
-                            bounds.origin + point(px(PADDING), px(PADDING));
+                    move |bounds, _window, _cx| bounds,
+                    move |_bounds, content_bounds: Bounds<Pixels>, window, cx| {
+                        let origin = content_bounds.origin;
 
-                        let shaped: Vec<(Point<Pixels>, ShapedLine)> = text_batches
-                            .iter()
-                            .map(|batch| {
-                                let pos = point(
-                                    origin.x + batch.col as f32 * cell_width,
-                                    origin.y + batch.row as f32 * line_height,
-                                );
-                                let shaped = window.text_system().shape_line(
-                                    batch.text.clone().into(),
-                                    font_size,
-                                    std::slice::from_ref(&batch.run),
-                                    None, // monospace font handles spacing naturally
-                                );
-                                (pos, shaped)
-                            })
-                            .collect();
-
-                        (bounds, origin, shaped)
-                    },
-                    // Paint: backgrounds, cursor, then text
-                    move |_bounds,
-                          (content_bounds, origin, shaped_lines): (
-                        Bounds<Pixels>,
-                        Point<Pixels>,
-                        Vec<(Point<Pixels>, ShapedLine)>,
-                    ),
-                          window,
-                          cx| {
-                        // 1. Background rects
+                        // Background rects
                         for rect in &bg_rects {
                             let pos = point(
                                 (origin.x + rect.col as f32 * cell_width).floor(),
@@ -629,46 +725,29 @@ impl Render for TerminalView {
                                 (cell_width * rect.len as f32).ceil(),
                                 line_height,
                             );
-                            window
-                                .paint_quad(fill(Bounds::new(pos, sz), rect.color));
+                            window.paint_quad(fill(Bounds::new(pos, sz), rect.color));
                         }
 
-                        // 2. Cursor
+                        // Cursor
                         if let Some((cr, cc)) = cursor_pos {
-                            let cx_pos = point(
+                            let cpos = point(
                                 (origin.x + cc as f32 * cell_width).floor(),
                                 origin.y + cr as f32 * line_height,
                             );
                             window.paint_quad(fill(
-                                Bounds::new(
-                                    cx_pos,
-                                    size(cell_width.ceil(), line_height),
-                                ),
+                                Bounds::new(cpos, size(cell_width.ceil(), line_height)),
                                 colors.foreground,
                             ));
                         }
 
-                        // 3. Text
-                        for (pos, shaped) in &shaped_lines {
-                            let _ = shaped.paint(
-                                *pos,
-                                line_height,
-                                TextAlign::Left,
-                                None,
-                                window,
-                                cx,
-                            );
-                        }
-
-                        // 4. Observe bounds for dynamic resize
+                        // Observe bounds for dynamic resize
                         if let Some(view) = terminal_ref.upgrade() {
                             let w = content_bounds.size.width;
                             let h = content_bounds.size.height;
                             if w > px(0.0) && h > px(0.0) {
                                 view.update(cx, |this, cx| {
                                     if (this.available_width - w).abs() > px(20.0)
-                                        || (this.available_height - h).abs()
-                                            > px(20.0)
+                                        || (this.available_height - h).abs() > px(20.0)
                                     {
                                         this.available_width = w;
                                         this.available_height = h;
@@ -679,7 +758,16 @@ impl Render for TerminalView {
                         }
                     },
                 )
+                .absolute()
                 .size_full(),
+            )
+            // Layer 2: Div-based text rows (correct monospace alignment)
+            .child(
+                div()
+                    .id("terminal-text")
+                    .flex()
+                    .flex_col()
+                    .children(row_elements),
             )
     }
 }
