@@ -203,6 +203,14 @@ fn terminal_font(family: SharedString) -> Font {
 // Paint data — extracted from the grid under lock, painted in canvas
 // ---------------------------------------------------------------------------
 
+/// Canvas prepaint state: (bounds, origin, shaped_lines, cell_width).
+type CanvasPrepaint = (
+    Bounds<Pixels>,
+    Point<Pixels>,
+    Vec<(Point<Pixels>, ShapedLine)>,
+    Pixels,
+);
+
 /// A horizontal run of cells with the same background color.
 struct BgRect {
     row: i32,
@@ -471,13 +479,12 @@ impl TerminalView {
                         thickness: px(1.0),
                         wavy: flags.contains(Flags::UNDERCURL),
                     });
-                let strikethrough =
-                    flags
-                        .contains(Flags::STRIKEOUT)
-                        .then(|| StrikethroughStyle {
-                            color: Some(fg),
-                            thickness: px(1.0),
-                        });
+                let strikethrough = flags
+                    .contains(Flags::STRIKEOUT)
+                    .then(|| StrikethroughStyle {
+                        color: Some(fg),
+                        thickness: px(1.0),
+                    });
 
                 let run = TextRun {
                     len: c.len_utf8(),
@@ -528,7 +535,7 @@ impl TerminalView {
 
     fn measure_cell(cx: &App) -> (SharedString, Pixels, Pixels) {
         let text_system = cx.text_system();
-        let family = resolve_terminal_font_family(&text_system);
+        let family = resolve_terminal_font_family(text_system);
         let font_size = px(FONT_SIZE);
 
         // Measure cell width using the same advance() API used for grid calculations
@@ -568,122 +575,6 @@ impl TerminalView {
             px(8.0)
         }
     }
-
-    /// Build a single row of div-based text spans (no backgrounds — those
-    /// are painted by the canvas layer underneath).
-    fn render_row(
-        &self,
-        term: &Term<TerminalEventBridge>,
-        row_idx: usize,
-        cell_width: Pixels,
-        line_height: Pixels,
-        font_family: &SharedString,
-    ) -> Div {
-        let line = Line(row_idx as i32);
-        let cols = term.columns();
-        let cursor = term.grid().cursor.point;
-        let cw = f32::from(cell_width);
-
-        let mut spans: Vec<AnyElement> = Vec::new();
-        let mut span_text = String::new();
-        let mut span_fg: Option<Hsla> = None;
-        let mut span_bold = false;
-        let mut span_italic = false;
-        let mut span_is_cursor = false;
-        let mut span_start_col: usize = 0;
-        let mut span_len: usize = 0;
-
-        for col_idx in 0..cols {
-            let point = AlacPoint::new(line, Column(col_idx));
-            let cell = &term.grid()[point];
-            if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                continue;
-            }
-
-            let is_cursor = cursor.line == line && cursor.column == Column(col_idx);
-            let flags = cell.flags;
-            let bold = flags.contains(Flags::BOLD);
-            let italic = flags.contains(Flags::ITALIC);
-
-            let (mut fg_raw, _) = (cell.fg, cell.bg);
-            if flags.contains(Flags::INVERSE) {
-                fg_raw = cell.bg;
-            }
-
-            let mut fg = if is_cursor {
-                self.colors.background
-            } else {
-                self.colors.convert(fg_raw, bold)
-            };
-            if flags.contains(Flags::DIM) && !is_cursor {
-                fg.a *= 0.7;
-            }
-            if flags.contains(Flags::HIDDEN) && !is_cursor {
-                fg.a = 0.0;
-            }
-
-            let c = if cell.c == '\0' { ' ' } else { cell.c };
-
-            // Check if style changed
-            let changed = span_len > 0
-                && (span_fg != Some(fg)
-                    || span_bold != bold
-                    || span_italic != italic
-                    || span_is_cursor != is_cursor);
-
-            if changed {
-                let text = std::mem::take(&mut span_text);
-                let left = (span_start_col as f32 * cw).round();
-                let right = ((span_start_col + span_len) as f32 * cw).round();
-                let w = px(right - left);
-
-                let mut s = div().w(w).text_color(span_fg.unwrap()).flex_shrink_0();
-                if span_bold {
-                    s = s.font_weight(FontWeight::BOLD);
-                }
-                if span_italic {
-                    s = s.italic();
-                }
-                spans.push(s.child(text).into_any_element());
-
-                span_start_col = col_idx;
-                span_len = 0;
-            }
-
-            if span_len == 0 {
-                span_fg = Some(fg);
-                span_bold = bold;
-                span_italic = italic;
-                span_is_cursor = is_cursor;
-            }
-            span_text.push(c);
-            span_len += 1;
-        }
-
-        // Flush final span
-        if span_len > 0 {
-            let left = (span_start_col as f32 * cw).round();
-            let right = ((span_start_col + span_len) as f32 * cw).round();
-            let w = px(right - left);
-            let mut s = div().w(w).text_color(span_fg.unwrap()).flex_shrink_0();
-            if span_bold {
-                s = s.font_weight(FontWeight::BOLD);
-            }
-            if span_italic {
-                s = s.italic();
-            }
-            spans.push(s.child(span_text).into_any_element());
-        }
-
-        div()
-            .h(line_height)
-            .flex()
-            .flex_row()
-            .flex_shrink_0()
-            .font_family(font_family.clone())
-            .text_size(px(FONT_SIZE))
-            .children(spans)
-    }
 }
 
 impl Focusable for TerminalView {
@@ -703,8 +594,7 @@ impl Render for TerminalView {
 
         // Extract all paint data under lock
         let term = self.terminal.lock();
-        let (bg_rects, text_batches, cursor_pos) =
-            self.extract_paint_data(&term, &base_font);
+        let (bg_rects, text_batches, cursor_pos) = self.extract_paint_data(&term, &base_font);
         drop(term);
 
         let focus_handle = self.focus_handle.clone();
@@ -749,8 +639,7 @@ impl Render for TerminalView {
                         let origin = bounds.origin;
 
                         // Measure cell width through the SAME shaping pipeline
-                        let shaped_cw =
-                            Self::measure_cell_via_shaping(window, &font_family);
+                        let shaped_cw = Self::measure_cell_via_shaping(window, &font_family);
 
                         let _ = cell_width; // used for grid resize calculations
 
@@ -778,12 +667,7 @@ impl Render for TerminalView {
                     },
                     // Paint: backgrounds, cursor, text
                     move |_bounds,
-                          (content_bounds, origin, shaped_lines, shaped_cw): (
-                        Bounds<Pixels>,
-                        Point<Pixels>,
-                        Vec<(Point<Pixels>, ShapedLine)>,
-                        Pixels,
-                    ),
+                          (content_bounds, origin, shaped_lines, shaped_cw): CanvasPrepaint,
                           window,
                           cx| {
                         // Use shaped_cw for bg rects too (consistent with text)
@@ -795,10 +679,7 @@ impl Render for TerminalView {
                                 (origin.x + rect.col as f32 * cw).floor(),
                                 origin.y + rect.row as f32 * line_height,
                             );
-                            let sz = size(
-                                (cw * rect.len as f32).ceil(),
-                                line_height,
-                            );
+                            let sz = size((cw * rect.len as f32).ceil(), line_height);
                             window.paint_quad(fill(Bounds::new(pos, sz), rect.color));
                         }
 
@@ -816,14 +697,8 @@ impl Render for TerminalView {
 
                         // 3. Text
                         for (pos, shaped) in &shaped_lines {
-                            let _ = shaped.paint(
-                                *pos,
-                                line_height,
-                                TextAlign::Left,
-                                None,
-                                window,
-                                cx,
-                            );
+                            let _ =
+                                shaped.paint(*pos, line_height, TextAlign::Left, None, window, cx);
                         }
 
                         // 4. Observe bounds for dynamic resize

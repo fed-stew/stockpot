@@ -1048,8 +1048,15 @@ impl ChatApp {
                 let writer_tx_for_view = spawned.writer_tx.clone();
                 let resize_tx_for_view = spawned.resize_tx.clone();
                 let default_height = 250.0_f32;
-                let terminal_view =
-                    cx.new(|cx| TerminalView::new(term_for_view, writer_tx_for_view, resize_tx_for_view, default_height, cx));
+                let terminal_view = cx.new(|cx| {
+                    TerminalView::new(
+                        term_for_view,
+                        writer_tx_for_view,
+                        resize_tx_for_view,
+                        default_height,
+                        cx,
+                    )
+                });
                 self.system_executions
                     .terminal_views
                     .insert(process_id.clone(), terminal_view);
