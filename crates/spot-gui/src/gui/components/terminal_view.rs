@@ -164,7 +164,7 @@ impl TerminalColors {
 // Font resolution
 // ---------------------------------------------------------------------------
 
-const FONT_SIZE: f32 = 12.0;
+const FONT_SIZE: f32 = 11.25;
 const PADDING: f32 = 8.0;
 
 const FONT_FAMILIES: &[&str] = &[
@@ -517,15 +517,44 @@ impl TerminalView {
     fn measure_cell(cx: &App) -> (SharedString, Pixels, Pixels) {
         let text_system = cx.text_system();
         let family = resolve_terminal_font_family(&text_system);
+        let font_size = px(FONT_SIZE);
+
+        // Measure cell width using the same advance() API used for grid calculations
         let base_font = font(family.clone());
         let font_id = text_system.resolve_font(&base_font);
-        let font_size = px(FONT_SIZE);
+        // Use '0' for cell width measurement (same as alacritty)
         let cell_width = text_system
-            .advance(font_id, font_size, 'm')
+            .advance(font_id, font_size, '0')
             .map(|s| s.width)
             .unwrap_or(px(8.4));
         let line_height = font_size * 1.4;
         (family, cell_width, line_height)
+    }
+
+    /// Measure cell width through shape_line (same code path as rendering).
+    /// Uses '0' (digit zero) like alacritty does for cell width measurement.
+    fn measure_cell_via_shaping(window: &Window, font_family: &SharedString) -> Pixels {
+        let font_size = px(FONT_SIZE);
+        let base_font = font(font_family.clone());
+        let run = TextRun {
+            len: 1,
+            font: base_font,
+            color: Hsla::default(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let shaped = window.text_system().shape_line(
+            "0".into(),
+            font_size,
+            std::slice::from_ref(&run),
+            None,
+        );
+        if shaped.width > px(0.0) {
+            shaped.width
+        } else {
+            px(8.0)
+        }
     }
 
     /// Build a single row of div-based text spans (no backgrounds — those
@@ -656,21 +685,14 @@ impl Render for TerminalView {
         self.resize_if_needed(self.available_width, self.available_height, cx);
 
         let (font_family, cell_width, line_height) = Self::measure_cell(cx);
+        let font_size = px(FONT_SIZE);
         let base_font = font(font_family.clone());
         let colors = self.colors.clone();
 
-        // Extract paint data under lock
+        // Extract all paint data under lock
         let term = self.terminal.lock();
-        let rows = term.screen_lines();
-        let (bg_rects, _, cursor_pos) =
+        let (bg_rects, text_batches, cursor_pos) =
             self.extract_paint_data(&term, &base_font);
-
-        // Build text rows as divs (correct monospace spacing)
-        let mut row_elements: Vec<Div> = Vec::with_capacity(rows);
-        for row_idx in 0..rows {
-            row_elements
-                .push(self.render_row(&term, row_idx, cell_width, line_height, &font_family));
-        }
         drop(term);
 
         let focus_handle = self.focus_handle.clone();
@@ -708,39 +730,87 @@ impl Render for TerminalView {
             .border_1()
             .border_color(Hsla::from(rgba(0x40404080)))
             .cursor_text()
-            // Layer 1: Canvas for backgrounds + cursor (painted underneath text)
             .child(
                 canvas(
-                    move |bounds, _window, _cx| bounds,
-                    move |_bounds, content_bounds: Bounds<Pixels>, window, cx| {
-                        let origin = content_bounds.origin;
+                    // Prepaint: measure actual cell width via shaping, then shape all text
+                    move |bounds, window, _cx| {
+                        let origin = bounds.origin;
 
-                        // Background rects
+                        // Measure cell width through the SAME shaping pipeline
+                        let shaped_cw =
+                            Self::measure_cell_via_shaping(window, &font_family);
+
+                        // Shape all text batches with force_width = shaped cell width
+                        let shaped: Vec<(Point<Pixels>, ShapedLine)> = text_batches
+                            .iter()
+                            .map(|batch| {
+                                let pos = point(
+                                    origin.x + batch.col as f32 * shaped_cw,
+                                    origin.y + batch.row as f32 * line_height,
+                                );
+                                let shaped = window.text_system().shape_line(
+                                    batch.text.clone().into(),
+                                    font_size,
+                                    std::slice::from_ref(&batch.run),
+                                    Some(shaped_cw),
+                                );
+                                (pos, shaped)
+                            })
+                            .collect();
+
+                        (bounds, origin, shaped, shaped_cw)
+                    },
+                    // Paint: backgrounds, cursor, text
+                    move |_bounds,
+                          (content_bounds, origin, shaped_lines, shaped_cw): (
+                        Bounds<Pixels>,
+                        Point<Pixels>,
+                        Vec<(Point<Pixels>, ShapedLine)>,
+                        Pixels,
+                    ),
+                          window,
+                          cx| {
+                        // Use shaped_cw for bg rects too (consistent with text)
+                        let cw = shaped_cw;
+
+                        // 1. Background rects
                         for rect in &bg_rects {
                             let pos = point(
-                                (origin.x + rect.col as f32 * cell_width).floor(),
+                                (origin.x + rect.col as f32 * cw).floor(),
                                 origin.y + rect.row as f32 * line_height,
                             );
                             let sz = size(
-                                (cell_width * rect.len as f32).ceil(),
+                                (cw * rect.len as f32).ceil(),
                                 line_height,
                             );
                             window.paint_quad(fill(Bounds::new(pos, sz), rect.color));
                         }
 
-                        // Cursor
+                        // 2. Cursor
                         if let Some((cr, cc)) = cursor_pos {
                             let cpos = point(
-                                (origin.x + cc as f32 * cell_width).floor(),
+                                (origin.x + cc as f32 * cw).floor(),
                                 origin.y + cr as f32 * line_height,
                             );
                             window.paint_quad(fill(
-                                Bounds::new(cpos, size(cell_width.ceil(), line_height)),
+                                Bounds::new(cpos, size(cw.ceil(), line_height)),
                                 colors.foreground,
                             ));
                         }
 
-                        // Observe bounds for dynamic resize
+                        // 3. Text
+                        for (pos, shaped) in &shaped_lines {
+                            let _ = shaped.paint(
+                                *pos,
+                                line_height,
+                                TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            );
+                        }
+
+                        // 4. Observe bounds for dynamic resize
                         if let Some(view) = terminal_ref.upgrade() {
                             let w = content_bounds.size.width;
                             let h = content_bounds.size.height;
@@ -758,16 +828,7 @@ impl Render for TerminalView {
                         }
                     },
                 )
-                .absolute()
                 .size_full(),
-            )
-            // Layer 2: Div-based text rows (correct monospace alignment)
-            .child(
-                div()
-                    .id("terminal-text")
-                    .flex()
-                    .flex_col()
-                    .children(row_elements),
             )
     }
 }
