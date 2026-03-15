@@ -740,7 +740,13 @@ impl Render for TerminalView {
                         let shaped_cw =
                             Self::measure_cell_via_shaping(window, &font_family);
 
-                        // Shape all text batches with force_width = shaped cell width
+                        let _ = cell_width; // used for grid resize calculations
+
+                        // Shape text. On Retina (scale_factor=2), gpui's shape_line
+                        // internally works in device pixels for glyph positions,
+                        // but force_width is in logical pixels. We must NOT use
+                        // force_width — instead rely on the monospace font's
+                        // natural uniform advance width.
                         let shaped: Vec<(Point<Pixels>, ShapedLine)> = text_batches
                             .iter()
                             .map(|batch| {
@@ -752,7 +758,7 @@ impl Render for TerminalView {
                                     batch.text.clone().into(),
                                     font_size,
                                     std::slice::from_ref(&batch.run),
-                                    Some(shaped_cw),
+                                    None,
                                 );
                                 (pos, shaped)
                             })
