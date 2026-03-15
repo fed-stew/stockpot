@@ -132,7 +132,7 @@ impl SpotToolRegistry {
         tools
     }
 
-    /// Get read-only tools (safe for reviewers and planning agents).
+    /// Get read-only tools (safe for reviewers and read-only agents).
     pub fn read_only_tools(&self) -> Vec<ArcTool> {
         vec![
             Arc::new(self.list_files.clone()),

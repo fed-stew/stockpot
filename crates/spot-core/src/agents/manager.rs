@@ -27,12 +27,12 @@ impl AgentManager {
 
     /// Register built-in agents.
     fn register_builtins(&mut self) {
-        // Main agents
+        // Main orchestrator
         self.register(Box::new(builtin::SpotMainAgent));
-        self.register(Box::new(builtin::PlanningAgent));
-        self.register(Box::new(builtin::ExploreAgent));
 
-        // Reviewers
+        // Sub-agents
+        self.register(Box::new(builtin::CodeAgent));
+        self.register(Box::new(builtin::ExploreAgent));
         self.register(Box::new(builtin::CodeReviewerAgent));
     }
 
@@ -235,7 +235,7 @@ mod tests {
 
         // Core built-ins should exist
         assert!(manager.exists("spot"), "spot agent missing");
-        assert!(manager.exists("planning-agent"), "planning-agent missing");
+        assert!(manager.exists("code-agent"), "code-agent missing");
         assert!(manager.exists("explore"), "explore agent missing");
         assert!(
             manager.exists("code-reviewer"),
@@ -1107,7 +1107,7 @@ mod tests {
         // Original builtins should still exist
         assert!(manager.exists("spot"));
         assert!(manager.exists("explore"));
-        assert!(manager.exists("planning-agent"));
+        assert!(manager.exists("code-agent"));
 
         // All temp agents should exist
         for i in 0..50 {

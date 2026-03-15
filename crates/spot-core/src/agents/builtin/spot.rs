@@ -1,8 +1,8 @@
-//! Spot - The main control agent.
+//! Spot - The main orchestrator agent.
 
 use crate::agents::{AgentCapabilities, SpotAgent};
 
-/// Spot - Precision control agent
+/// Spot - Main orchestrator that triages, plans, and delegates
 pub struct SpotMainAgent;
 
 impl SpotAgent for SpotMainAgent {
@@ -11,11 +11,11 @@ impl SpotAgent for SpotMainAgent {
     }
 
     fn display_name(&self) -> &str {
-        "Control Agent"
+        "Spot"
     }
 
     fn description(&self) -> &str {
-        "Precision control agent - spots and handles any task"
+        "Main orchestrator - triages tasks, plans, and delegates to specialized agents"
     }
 
     fn system_prompt(&self) -> String {
@@ -26,21 +26,14 @@ impl SpotAgent for SpotMainAgent {
         vec![
             "list_files",
             "read_file",
-            "edit_file",
-            "delete_file",
             "grep",
-            "run_shell_command",
             "invoke_agent",
             "list_agents",
-            // Process management tools
-            "list_processes",
-            "read_process_output",
-            "kill_process",
         ]
     }
 
     fn capabilities(&self) -> AgentCapabilities {
-        AgentCapabilities::full()
+        AgentCapabilities::planning()
     }
 }
 
@@ -58,14 +51,14 @@ mod tests {
     #[test]
     fn test_spot_display_name() {
         let agent = SpotMainAgent;
-        assert_eq!(agent.display_name(), "Control Agent");
+        assert_eq!(agent.display_name(), "Spot");
     }
 
     #[test]
     fn test_spot_description_not_empty() {
         let agent = SpotMainAgent;
         assert!(!agent.description().is_empty());
-        assert!(agent.description().contains("control"));
+        assert!(agent.description().contains("orchestrator"));
     }
 
     #[test]
@@ -73,74 +66,41 @@ mod tests {
         let agent = SpotMainAgent;
         let prompt = agent.system_prompt();
         assert!(!prompt.is_empty());
-        // Prompt should contain relevant keywords
         assert!(
-            prompt.contains("Spot") || prompt.contains("code") || prompt.contains("assistant"),
-            "System prompt should mention Spot or coding"
+            prompt.contains("Spot") || prompt.contains("orchestrator") || prompt.contains("triage"),
+            "System prompt should mention Spot or orchestration"
         );
     }
 
     #[test]
-    fn test_spot_has_core_tools() {
+    fn test_spot_has_read_and_delegation_tools() {
         let agent = SpotMainAgent;
         let tools = agent.available_tools();
 
-        // Must have file operations
         assert!(tools.contains(&"list_files"), "Should have list_files");
         assert!(tools.contains(&"read_file"), "Should have read_file");
-        assert!(tools.contains(&"edit_file"), "Should have edit_file");
-        assert!(tools.contains(&"delete_file"), "Should have delete_file");
-
-        // Must have search
         assert!(tools.contains(&"grep"), "Should have grep");
-
-        // Must have shell
-        assert!(
-            tools.contains(&"run_shell_command"),
-            "Should have run_shell_command"
-        );
-
-        // Must have agent collaboration
         assert!(tools.contains(&"invoke_agent"), "Should have invoke_agent");
         assert!(tools.contains(&"list_agents"), "Should have list_agents");
     }
 
     #[test]
-    fn test_spot_has_full_capabilities() {
-        let agent = SpotMainAgent;
-        let caps = agent.capabilities();
-
-        assert!(caps.shell, "Spot should have shell capability");
-        assert!(caps.file_write, "Spot should have file_write capability");
-        assert!(caps.file_read, "Spot should have file_read capability");
-        assert!(caps.sub_agents, "Spot should have sub_agents capability");
-        assert!(caps.mcp, "Spot should have mcp capability");
-    }
-
-    #[test]
-    fn test_spot_default_visibility() {
-        let agent = SpotMainAgent;
-        // Default visibility should be Main (primary agent)
-        assert_eq!(agent.visibility(), AgentVisibility::Main);
-    }
-
-    #[test]
-    fn test_spot_no_model_override() {
-        let agent = SpotMainAgent;
-        // Spot should not force a specific model
-        assert!(
-            agent.model_override().is_none(),
-            "Spot should not have a model override"
-        );
-    }
-
-    #[test]
-    fn test_spot_tool_count() {
+    fn test_spot_no_write_tools() {
         let agent = SpotMainAgent;
         let tools = agent.available_tools();
-        // Should have a reasonable number of tools
-        assert!(tools.len() >= 8, "Spot should have at least 8 tools");
-        assert!(tools.len() <= 20, "Spot shouldn't have too many tools");
+
+        assert!(
+            !tools.contains(&"edit_file"),
+            "Spot should not have edit_file"
+        );
+        assert!(
+            !tools.contains(&"delete_file"),
+            "Spot should not have delete_file"
+        );
+        assert!(
+            !tools.contains(&"run_shell_command"),
+            "Spot should not have shell"
+        );
     }
 
     #[test]
@@ -149,37 +109,40 @@ mod tests {
         let tools = agent.available_tools();
         assert_eq!(
             tools.len(),
-            11,
-            "Spot should have exactly 11 tools: {:?}",
+            5,
+            "Spot should have exactly 5 tools: {:?}",
             tools
         );
     }
 
     #[test]
-    fn test_spot_capabilities_match_tools() {
+    fn test_spot_planning_capabilities() {
         let agent = SpotMainAgent;
         let caps = agent.capabilities();
-        let tools = agent.available_tools();
 
-        // file_read capability should match having read tools
-        assert!(caps.file_read);
-        assert!(tools.contains(&"read_file"));
-        assert!(tools.contains(&"list_files"));
-        assert!(tools.contains(&"grep"));
+        assert!(!caps.shell, "Spot should not have shell capability");
+        assert!(
+            !caps.file_write,
+            "Spot should not have file_write capability"
+        );
+        assert!(caps.file_read, "Spot should have file_read capability");
+        assert!(caps.sub_agents, "Spot should have sub_agents capability");
+        assert!(!caps.mcp, "Spot should not have mcp capability");
+    }
 
-        // file_write capability should match having write tools
-        assert!(caps.file_write);
-        assert!(tools.contains(&"edit_file"));
-        assert!(tools.contains(&"delete_file"));
+    #[test]
+    fn test_spot_default_visibility() {
+        let agent = SpotMainAgent;
+        assert_eq!(agent.visibility(), AgentVisibility::Main);
+    }
 
-        // shell capability should match having shell tool
-        assert!(caps.shell);
-        assert!(tools.contains(&"run_shell_command"));
-
-        // sub_agents capability should match having agent tools
-        assert!(caps.sub_agents);
-        assert!(tools.contains(&"invoke_agent"));
-        assert!(tools.contains(&"list_agents"));
+    #[test]
+    fn test_spot_no_model_override() {
+        let agent = SpotMainAgent;
+        assert!(
+            agent.model_override().is_none(),
+            "Spot should not have a model override"
+        );
     }
 
     #[test]
@@ -196,48 +159,34 @@ mod tests {
     #[test]
     fn test_spot_is_main_agent() {
         let agent = SpotMainAgent;
-        // Spot is the primary agent
         assert_eq!(agent.visibility(), AgentVisibility::Main);
     }
 
     #[test]
-    fn test_spot_full_capabilities() {
-        let caps = AgentCapabilities::full();
-
-        // Full capabilities should have everything enabled
-        assert!(caps.shell, "full() should have shell");
-        assert!(caps.file_write, "full() should have file_write");
-        assert!(caps.file_read, "full() should have file_read");
-        assert!(caps.sub_agents, "full() should have sub_agents");
-        assert!(caps.mcp, "full() should have mcp");
-    }
-
-    #[test]
-    fn test_spot_has_more_tools_than_planning() {
-        use crate::agents::builtin::PlanningAgent;
+    fn test_spot_has_fewer_tools_than_code_agent() {
+        use crate::agents::builtin::CodeAgent;
 
         let spot = SpotMainAgent;
-        let planning = PlanningAgent;
+        let code = CodeAgent;
 
         let spot_tools = spot.available_tools();
-        let planning_tools = planning.available_tools();
+        let code_tools = code.available_tools();
 
         assert!(
-            spot_tools.len() > planning_tools.len(),
-            "Spot ({}) should have more tools than Planning ({})",
+            spot_tools.len() < code_tools.len(),
+            "Spot ({}) should have fewer tools than Code Agent ({})",
             spot_tools.len(),
-            planning_tools.len()
+            code_tools.len()
         );
     }
 
     #[test]
-    fn test_spot_has_more_capabilities_than_planning() {
-        use crate::agents::builtin::PlanningAgent;
+    fn test_code_agent_has_more_capabilities_than_spot() {
+        use crate::agents::builtin::CodeAgent;
 
         let spot_caps = SpotMainAgent.capabilities();
-        let planning_caps = PlanningAgent.capabilities();
+        let code_caps = CodeAgent.capabilities();
 
-        // Count enabled capabilities
         let spot_count = [
             spot_caps.shell,
             spot_caps.file_write,
@@ -249,22 +198,22 @@ mod tests {
         .filter(|&&x| x)
         .count();
 
-        let planning_count = [
-            planning_caps.shell,
-            planning_caps.file_write,
-            planning_caps.file_read,
-            planning_caps.sub_agents,
-            planning_caps.mcp,
+        let code_count = [
+            code_caps.shell,
+            code_caps.file_write,
+            code_caps.file_read,
+            code_caps.sub_agents,
+            code_caps.mcp,
         ]
         .iter()
         .filter(|&&x| x)
         .count();
 
         assert!(
-            spot_count > planning_count,
-            "Spot ({}) should have more capabilities than Planning ({})",
-            spot_count,
-            planning_count
+            code_count > spot_count,
+            "Code Agent ({}) should have more capabilities than Spot ({})",
+            code_count,
+            spot_count
         );
     }
 }

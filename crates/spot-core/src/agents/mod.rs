@@ -3,7 +3,7 @@
 //! This module provides:
 //! - [`SpotAgent`] trait for defining agents
 //! - [`AgentManager`] for agent registry and switching
-//! - Built-in agents (Spot, Planning, Reviewers)
+//! - Built-in agents (Spot, Code Agent, Explore, Reviewers)
 //! - JSON-defined custom agents
 
 use std::fmt;
