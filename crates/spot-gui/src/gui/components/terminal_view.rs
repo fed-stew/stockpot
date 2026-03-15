@@ -187,6 +187,18 @@ fn resolve_terminal_font_family(text_system: &Arc<TextSystem>) -> SharedString {
     SharedString::from("monospace")
 }
 
+/// Create a terminal Font with ligatures disabled (prevents extra glyphs
+/// that break force_width grid alignment).
+fn terminal_font(family: SharedString) -> Font {
+    Font {
+        family,
+        features: FontFeatures::disable_ligatures(),
+        weight: FontWeight::default(),
+        style: FontStyle::default(),
+        fallbacks: None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Paint data — extracted from the grid under lock, painted in canvas
 // ---------------------------------------------------------------------------
@@ -520,7 +532,7 @@ impl TerminalView {
         let font_size = px(FONT_SIZE);
 
         // Measure cell width using the same advance() API used for grid calculations
-        let base_font = font(family.clone());
+        let base_font = terminal_font(family.clone());
         let font_id = text_system.resolve_font(&base_font);
         // Use '0' for cell width measurement (same as alacritty)
         let cell_width = text_system
@@ -535,7 +547,7 @@ impl TerminalView {
     /// Uses '0' (digit zero) like alacritty does for cell width measurement.
     fn measure_cell_via_shaping(window: &Window, font_family: &SharedString) -> Pixels {
         let font_size = px(FONT_SIZE);
-        let base_font = font(font_family.clone());
+        let base_font = terminal_font(font_family.clone());
         let run = TextRun {
             len: 1,
             font: base_font,
@@ -686,7 +698,7 @@ impl Render for TerminalView {
 
         let (font_family, cell_width, line_height) = Self::measure_cell(cx);
         let font_size = px(FONT_SIZE);
-        let base_font = font(font_family.clone());
+        let base_font = terminal_font(font_family.clone());
         let colors = self.colors.clone();
 
         // Extract all paint data under lock
@@ -742,11 +754,9 @@ impl Render for TerminalView {
 
                         let _ = cell_width; // used for grid resize calculations
 
-                        // Shape text. On Retina (scale_factor=2), gpui's shape_line
-                        // internally works in device pixels for glyph positions,
-                        // but force_width is in logical pixels. We must NOT use
-                        // force_width — instead rely on the monospace font's
-                        // natural uniform advance width.
+                        // Shape text with force_width to enforce monospace grid.
+                        // Ligatures are disabled in the font to prevent extra glyphs
+                        // that would break force_width positioning.
                         let shaped: Vec<(Point<Pixels>, ShapedLine)> = text_batches
                             .iter()
                             .map(|batch| {
@@ -758,7 +768,7 @@ impl Render for TerminalView {
                                     batch.text.clone().into(),
                                     font_size,
                                     std::slice::from_ref(&batch.run),
-                                    None,
+                                    Some(shaped_cw),
                                 );
                                 (pos, shaped)
                             })
