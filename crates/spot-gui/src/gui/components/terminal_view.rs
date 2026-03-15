@@ -548,8 +548,9 @@ impl TerminalView {
             .unwrap_or(px(8.4));
         let ascent = text_system.ascent(font_id, font_size);
         let descent = text_system.descent(font_id, font_size);
-        // Standard terminal line height: ~1.2x the font size, or ascent+descent+leading
-        let line_height = (ascent + descent) * 1.3;
+        // Terminal line height needs enough room for ascenders + descenders + spacing.
+        // Use font_size as baseline (it already accounts for the em square) with leading.
+        let line_height = font_size * 1.4;
         (family, cell_width, line_height)
     }
 }
