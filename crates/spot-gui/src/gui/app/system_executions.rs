@@ -1048,8 +1048,9 @@ impl ChatApp {
 
                 // Create TerminalView entity
                 let writer_tx_for_view = spawned.writer_tx.clone();
+                let resize_tx_for_view = spawned.resize_tx.clone();
                 let terminal_view =
-                    cx.new(|cx| TerminalView::new(term_for_view, writer_tx_for_view, cx));
+                    cx.new(|cx| TerminalView::new(term_for_view, writer_tx_for_view, resize_tx_for_view, cx));
                 self.system_executions
                     .terminal_views
                     .insert(process_id.clone(), terminal_view);

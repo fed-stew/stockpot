@@ -87,7 +87,7 @@ pub fn render_markdown(source: &str, text_style: &TextStyle, theme: &Theme) -> R
     let mut ordered_list_counters: Vec<usize> = Vec::new();
 
     // Table state
-    let mut __in_table = false;
+    let mut _in_table = false;
     let mut in_table_head = false;
     let mut table_cell_idx: usize = 0;
 
